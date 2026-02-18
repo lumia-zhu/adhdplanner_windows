@@ -26,7 +26,7 @@ export default function WidgetView({ tasks, onToggle, onExit }: WidgetViewProps)
      * drag-region：让整条可被拖动（移动小组件位置）
      * h-11 = 44px，与主进程设置的 WIDGET_HEIGHT 保持一致
      */
-    <div className="drag-region w-full h-11 flex items-center bg-white border border-gray-200 rounded-xl shadow-lg px-2 gap-1.5 select-none overflow-hidden">
+    <div className="drag-region w-full h-full flex items-center bg-white border border-gray-200 rounded-xl shadow-lg px-2 gap-1.5 select-none overflow-hidden">
 
       {/* ===== 左侧：应用图标 + 待办数量角标 ===== */}
       <div className="no-drag flex items-center gap-1.5 flex-shrink-0">

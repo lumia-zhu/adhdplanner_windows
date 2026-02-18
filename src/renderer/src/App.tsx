@@ -167,7 +167,7 @@ export default function App() {
   // -------- 小组件模式：渲染细长条 UI --------
   if (isWidgetMode) {
     return (
-      <div className="w-full h-full">
+      <div className="w-full h-full bg-white overflow-hidden">
         <WidgetView
           tasks={tasks}
           onToggle={handleToggleTask}

@@ -80,7 +80,7 @@ function createMainWindow(): void {
     height: MAIN_HEIGHT,
     show: false,
     frame: false,
-    resizable: false,
+    resizable: true,   // ★ 必须为 true，否则 Windows 系统最小高度限制会阻止 setSize() 缩小到 44px
     transparent: false,
     backgroundColor: '#ffffff',
     autoHideMenuBar: true,
@@ -237,6 +237,8 @@ function enterWidget(): void {
   const x = saved ? saved.x : Math.round((sw - WIDGET_WIDTH) / 2)
   const y = saved ? saved.y : 8
 
+  mainWindow.setMinimumSize(WIDGET_WIDTH, WIDGET_HEIGHT)
+  mainWindow.setMaximumSize(WIDGET_WIDTH, WIDGET_HEIGHT)  // 固定小组件大小，防止用户拖拽缩放
   mainWindow.setAlwaysOnTop(true, 'floating')
   mainWindow.setVisibleOnAllWorkspaces(true)
   mainWindow.setSize(WIDGET_WIDTH, WIDGET_HEIGHT)
@@ -255,6 +257,9 @@ function exitWidget(): void {
 
   const { screen } = require('electron')
   const { width: sw, height: sh } = screen.getPrimaryDisplay().workAreaSize
+
+  mainWindow.setMaximumSize(0, 0)    // 0,0 表示取消最大尺寸限制
+  mainWindow.setMinimumSize(MAIN_WIDTH, MAIN_HEIGHT)
   mainWindow.setAlwaysOnTop(false)
   mainWindow.setVisibleOnAllWorkspaces(false)
   mainWindow.setSize(MAIN_WIDTH, MAIN_HEIGHT)
