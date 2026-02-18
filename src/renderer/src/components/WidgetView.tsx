@@ -4,6 +4,7 @@ import { triggerEffect } from '../effects'
 
 interface WidgetViewProps {
   tasks: Task[]
+  focusTaskId?: string | null      // 专注模式：只显示这一个任务（点击播放按钮时传入）
   onToggle: (id: string) => void   // 勾选完成任务
   onExit: () => void               // 退出小组件，恢复主界面
 }
@@ -13,78 +14,107 @@ interface WidgetViewProps {
  * 高度固定 44px，宽度 380px，始终悬浮在屏幕顶部
  * 布局：[拖动区] [待办数] [任务列表] [展开按钮] [退出按钮]
  */
-export default function WidgetView({ tasks, onToggle, onExit }: WidgetViewProps) {
+export default function WidgetView({ tasks, focusTaskId, onToggle, onExit }: WidgetViewProps) {
   // 只取未完成的任务显示
   const pendingTasks = tasks.filter(t => !t.completed)
-  // 小组件最多展示 3 条任务，超出显示数量
+
+  // 专注模式：只显示指定的那一个任务
+  const isFocusMode = !!focusTaskId
+  const focusTask = focusTaskId ? tasks.find(t => t.id === focusTaskId) : null
+
+  // 普通模式：最多展示 3 条，超出显示数量
   const visibleTasks = pendingTasks.slice(0, 3)
   const hiddenCount = pendingTasks.length - visibleTasks.length
 
   return (
-    /**
-     * 整个细长条容器
-     * drag-region：让整条可被拖动（移动小组件位置）
-     * h-11 = 44px，与主进程设置的 WIDGET_HEIGHT 保持一致
-     */
     <div className="drag-region w-full h-full flex items-center bg-white border border-gray-200 rounded-xl shadow-lg px-2 gap-1.5 select-none overflow-hidden">
 
-      {/* ===== 左侧：应用图标 + 待办数量角标 ===== */}
+      {/* ===== 左侧：图标区 ===== */}
       <div className="no-drag flex items-center gap-1.5 flex-shrink-0">
         <div className="relative">
-          <div className="w-7 h-7 rounded-lg bg-indigo-500 flex items-center justify-center flex-shrink-0">
-            <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"
-              />
-            </svg>
-          </div>
-          {/* 红色角标：显示待办数量 */}
-          {pendingTasks.length > 0 && (
+          {isFocusMode ? (
+            /* 专注模式：绿色播放图标 */
+            <div className="w-7 h-7 rounded-lg bg-green-500 flex items-center justify-center flex-shrink-0">
+              <svg className="w-4 h-4 text-white" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M8 5v14l11-7z" />
+              </svg>
+            </div>
+          ) : (
+            /* 普通模式：蓝色清单图标 + 待办数角标 */
+            <div className="w-7 h-7 rounded-lg bg-indigo-500 flex items-center justify-center flex-shrink-0">
+              <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                  d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"
+                />
+              </svg>
+            </div>
+          )}
+          {/* 待办数量角标（仅普通模式显示） */}
+          {!isFocusMode && pendingTasks.length > 0 && (
             <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white text-xs rounded-full flex items-center justify-center font-bold leading-none">
               {pendingTasks.length > 9 ? '9+' : pendingTasks.length}
             </span>
           )}
         </div>
-
         {/* 分割线 */}
         <div className="w-px h-5 bg-gray-200 flex-shrink-0" />
       </div>
 
-      {/* ===== 中间：任务列表（可滚动横向展示）===== */}
+      {/* ===== 中间：任务内容区 ===== */}
       <div className="no-drag flex-1 flex items-center gap-1.5 overflow-hidden">
-        {pendingTasks.length === 0 ? (
-          /* 全部完成时显示庆祝提示 */
-          <span className="text-xs text-gray-400 flex items-center gap-1">
-            <span>🎉</span>
-            <span>所有任务已完成！</span>
-          </span>
-        ) : (
-          <>
-            {/* 展示前3条待办任务 */}
-            {visibleTasks.map((task) => (
-              <WidgetTaskChip
-                key={task.id}
-                task={task}
-                onToggle={onToggle}
-              />
-            ))}
-
-            {/* 超出3条时显示剩余数量 */}
-            {hiddenCount > 0 && (
-              <span className="text-xs text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded-full flex-shrink-0">
-                +{hiddenCount}
+        {        isFocusMode ? (
+          /* 专注模式：只显示这一个任务 */
+          focusTask && !focusTask.completed ? (
+            <div className="flex items-center gap-1.5 w-full overflow-hidden">
+              {/* 绿色"专注"标签 */}
+              <span className="text-xs text-green-600 bg-green-50 border border-green-200 px-1.5 py-0.5 rounded-full flex-shrink-0 font-medium">
+                专注
               </span>
-            )}
-          </>
+              {/* 专注任务胶囊 */}
+              <WidgetTaskChip task={focusTask} onToggle={onToggle} />
+              {/* 子任务进度（有子任务时显示，如 1/3） */}
+              {focusTask.subtasks && focusTask.subtasks.length > 0 && (
+                <span className={`text-xs px-1.5 py-0.5 rounded-full flex-shrink-0 font-medium ${
+                  focusTask.subtasks.every(s => s.completed)
+                    ? 'text-green-600 bg-green-50'
+                    : 'text-gray-400 bg-gray-100'
+                }`}>
+                  {focusTask.subtasks.filter(s => s.completed).length}/{focusTask.subtasks.length}
+                </span>
+              )}
+            </div>
+          ) : (
+            /* 专注的任务已完成 */
+            <span className="text-xs text-green-500 flex items-center gap-1">
+              <span>🎉</span>
+              <span>任务完成！干得漂亮！</span>
+            </span>
+          )
+        ) : (
+          /* 普通模式：最多显示 3 条待办任务 */
+          pendingTasks.length === 0 ? (
+            <span className="text-xs text-gray-400 flex items-center gap-1">
+              <span>🎉</span>
+              <span>所有任务已完成！</span>
+            </span>
+          ) : (
+            <>
+              {visibleTasks.map((task) => (
+                <WidgetTaskChip key={task.id} task={task} onToggle={onToggle} />
+              ))}
+              {hiddenCount > 0 && (
+                <span className="text-xs text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded-full flex-shrink-0">
+                  +{hiddenCount}
+                </span>
+              )}
+            </>
+          )
         )}
       </div>
 
-      {/* ===== 右侧：展开（退出小组件）按钮 ===== */}
+      {/* ===== 右侧：展开按钮 ===== */}
       <div className="no-drag flex items-center gap-0.5 flex-shrink-0">
-        {/* 分割线 */}
         <div className="w-px h-5 bg-gray-200 flex-shrink-0 mr-1" />
-
-        {/* 展开按钮：点击恢复主界面 */}
         <button
           onClick={onExit}
           className="w-7 h-7 rounded-lg hover:bg-indigo-50 flex items-center justify-center text-gray-400 hover:text-indigo-500 transition-colors"

@@ -30,7 +30,8 @@ export default function App() {
   const [loading, setLoading] = useState(true)
   const [showCompleted, setShowCompleted] = useState(true)
   const [activeTask, setActiveTask] = useState<Task | null>(null)
-  const [isWidgetMode, setIsWidgetMode] = useState(false) // 是否处于小组件模式
+  const [isWidgetMode, setIsWidgetMode] = useState(false)       // 是否处于小组件模式
+  const [focusTaskId, setFocusTaskId] = useState<string | null>(null) // 专注模式：只显示这个任务
 
   // -------- 数据加载 --------
   useEffect(() => {
@@ -113,9 +114,31 @@ export default function App() {
   }
 
   const handleToggleTask = (id: string) => {
-    setTasks(prev => prev.map(t =>
-      t.id === id ? { ...t, completed: !t.completed } : t
-    ))
+    setTasks(prev => prev.map(t => {
+      if (t.id !== id) return t
+      const nowCompleted = !t.completed
+      // 取消勾选父任务时，同步把所有子任务也重置为未完成
+      if (!nowCompleted && t.subtasks?.length) {
+        return { ...t, completed: false, subtasks: t.subtasks.map(s => ({ ...s, completed: false })) }
+      }
+      return { ...t, completed: nowCompleted }
+    }))
+  }
+
+  /**
+   * 勾选/取消某个子任务
+   * 规则：子任务全部完成 → 父任务自动完成（并触发庆祝特效在 TaskItem 里触发）
+   */
+  const handleToggleSubtask = (taskId: string, subtaskId: string) => {
+    setTasks(prev => prev.map(t => {
+      if (t.id !== taskId) return t
+      const updatedSubtasks = (t.subtasks ?? []).map(s =>
+        s.id === subtaskId ? { ...s, completed: !s.completed } : s
+      )
+      // 检查是否所有子任务都完成了
+      const allDone = updatedSubtasks.length > 0 && updatedSubtasks.every(s => s.completed)
+      return { ...t, subtasks: updatedSubtasks, completed: allDone ? true : t.completed }
+    }))
   }
 
   const handleEditTask = (updatedTask: Task) => {
@@ -140,10 +163,21 @@ export default function App() {
     setIsWidgetMode(true)
   }
 
-  /** 退出小组件模式：通知主进程恢复窗口 */
+  /** 退出小组件模式：通知主进程恢复窗口，同时清除专注任务 */
   const handleExitWidget = () => {
     window.electronAPI.exitWidget()
     setIsWidgetMode(false)
+    setFocusTaskId(null)
+  }
+
+  /**
+   * 专注某个任务：进入小组件模式，并只显示这一个任务
+   * 就像"全屏播放"一样，让你专心做完这一件事
+   */
+  const handleFocusTask = (id: string) => {
+    setFocusTaskId(id)
+    window.electronAPI.enterWidget()
+    setIsWidgetMode(true)
   }
 
   // -------- 数据分组 --------
@@ -170,6 +204,7 @@ export default function App() {
       <div className="w-full h-full bg-white overflow-hidden">
         <WidgetView
           tasks={tasks}
+          focusTaskId={focusTaskId}
           onToggle={handleToggleTask}
           onExit={handleExitWidget}
         />
@@ -238,8 +273,10 @@ export default function App() {
                         key={task.id}
                         task={task}
                         onToggle={handleToggleTask}
+                        onToggleSubtask={handleToggleSubtask}
                         onEdit={handleEditTask}
                         onDelete={handleDeleteTask}
+                        onFocus={handleFocusTask}
                       />
                     ))}
                   </div>
@@ -283,8 +320,10 @@ export default function App() {
                           key={task.id}
                           task={task}
                           onToggle={handleToggleTask}
+                          onToggleSubtask={handleToggleSubtask}
                           onEdit={handleEditTask}
                           onDelete={handleDeleteTask}
+                          onFocus={handleFocusTask}
                         />
                       ))}
                     </div>
