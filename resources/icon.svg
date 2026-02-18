@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <!-- 紫色圆角背景 -->
+  <rect width="512" height="512" rx="100" fill="#6366f1"/>
+  <!-- 半透明卡片背景 -->
+  <rect x="130" y="130" width="252" height="252" rx="24" fill="white" opacity="0.12"/>
+  <!-- 任务列表线条 -->
+  <line x1="165" y1="205" x2="295" y2="205" stroke="white" stroke-width="22" stroke-linecap="round"/>
+  <line x1="165" y1="256" x2="280" y2="256" stroke="white" stroke-width="22" stroke-linecap="round"/>
+  <line x1="165" y1="307" x2="260" y2="307" stroke="white" stroke-width="22" stroke-linecap="round"/>
+  <!-- 右下角绿色勾选圆圈 -->
+  <circle cx="340" cy="310" r="60" fill="#22c55e"/>
+  <polyline points="315,310 334,330 368,290" fill="none" stroke="white" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

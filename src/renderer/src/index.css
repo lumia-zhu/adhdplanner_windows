@@ -1,0 +1,54 @@
+/* 引入 Tailwind CSS 的三个核心层 */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* 全局基础样式 */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+/* 根容器样式 */
+html, body, #root {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  font-family: 'Microsoft YaHei', 'PingFang SC', -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+/* 自定义滚动条样式 */
+::-webkit-scrollbar {
+  width: 4px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #d1d5db;
+  border-radius: 2px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #9ca3af;
+}
+
+/* 拖动区域（用于移动无边框窗口） */
+.drag-region {
+  -webkit-app-region: drag;
+}
+/* 拖动区域内的按钮不可被拖动 */
+.no-drag {
+  -webkit-app-region: no-drag;
+}
+
+/* 任务项过渡动画 */
+.task-item-enter {
+  opacity: 0;
+  transform: translateY(-8px);
+}
+.task-item-enter-active {
+  opacity: 1;
+  transform: translateY(0);
+  transition: all 0.2s ease;
+}

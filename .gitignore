@@ -1,0 +1,26 @@
+# 依赖包目录（几百MB，不需要上传，别人 clone 后 npm install 会自动生成）
+node_modules/
+
+# 构建产物
+out/
+dist/
+release/
+
+# 编辑器配置（每个人电脑不一样，不上传）
+.vscode/
+.idea/
+
+# 系统文件
+.DS_Store
+Thumbs.db
+
+# 环境变量（可能包含密钥，不上传）
+.env
+.env.local
+
+# 日志文件
+*.log
+npm-debug.log*
+
+# 临时文件
+*.tmp
