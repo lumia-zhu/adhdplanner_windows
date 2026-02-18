@@ -216,12 +216,9 @@ export default function App() {
     <div className="h-screen flex flex-col bg-gray-50 overflow-hidden">
       <TitleBar taskCount={pendingTasks.length} onEnterWidget={handleEnterWidget} />
 
+      {/* 任务列表滚动区域 */}
       <div className="flex-1 overflow-y-auto">
-        <div className="bg-white mb-2">
-          <AddTask onAdd={handleAddTask} />
-        </div>
-
-        <div className="px-4 pb-4 space-y-4">
+        <div className="px-4 pt-3 pb-4 space-y-4">
           {/* 空状态提示 */}
           {tasks.length === 0 && (
             <div className="flex flex-col items-center justify-center py-12 text-center">
@@ -365,27 +362,33 @@ export default function App() {
         </div>
       </div>
 
-      {/* 底部状态栏 */}
-      {tasks.length > 0 && (
-        <div className="border-t border-gray-100 bg-white px-4 py-2 flex items-center justify-between">
-          <span className="text-xs text-gray-400">
-            共 {tasks.length} 个任务，{pendingTasks.length} 个待完成
-          </span>
-          {completedTasks.length > 0 && (
-            <div className="flex items-center gap-1.5">
-              <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden w-20">
-                <div
-                  className="h-full bg-green-400 rounded-full transition-all duration-500"
-                  style={{ width: `${(completedTasks.length / tasks.length) * 100}%` }}
-                />
+      {/* ===== 底部固定区域：输入条 + 状态栏 ===== */}
+      <div className="flex-shrink-0 bg-gray-50">
+        {/* 添加任务输入条 */}
+        <AddTask onAdd={handleAddTask} />
+
+        {/* 状态栏：显示在输入条正下方 */}
+        {tasks.length > 0 && (
+          <div className="px-5 pb-3 flex items-center justify-between">
+            <span className="text-xs text-gray-400">
+              共 {tasks.length} 个任务，{pendingTasks.length} 个待完成
+            </span>
+            {completedTasks.length > 0 && (
+              <div className="flex items-center gap-1.5">
+                <div className="h-1.5 bg-gray-200 rounded-full overflow-hidden w-20">
+                  <div
+                    className="h-full bg-green-400 rounded-full transition-all duration-500"
+                    style={{ width: `${(completedTasks.length / tasks.length) * 100}%` }}
+                  />
+                </div>
+                <span className="text-xs text-gray-400">
+                  {Math.round((completedTasks.length / tasks.length) * 100)}%
+                </span>
               </div>
-              <span className="text-xs text-gray-400">
-                {Math.round((completedTasks.length / tasks.length) * 100)}%
-              </span>
-            </div>
-          )}
-        </div>
-      )}
+            )}
+          </div>
+        )}
+      </div>
     </div>
   )
 }
