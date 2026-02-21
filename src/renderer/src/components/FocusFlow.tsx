@@ -17,7 +17,7 @@ import { generateMicroActions } from '../services/ai'
 interface FocusFlowProps {
   task: Task
   aiConfig: AIConfig
-  onStart: (microTask: string) => void   // 用户确认微任务 → 进入执行
+  onStart: (microTask: string, source: 'self' | 'ai_chip') => void   // 用户确认微任务 → 进入执行
   onCancel: () => void                    // 取消
 }
 
@@ -27,6 +27,8 @@ export default function FocusFlow({ task, aiConfig, onStart, onCancel }: FocusFl
   const [loadingChips, setLoadingChips] = useState(false)
   const [chipError, setChipError] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  /** 追踪用户的微动作来源：自己打字 or 点了 AI 筹码 */
+  const sourceRef = useRef<'self' | 'ai_chip'>('self')
 
   // 自动请求 AI 建议
   useEffect(() => {
@@ -44,7 +46,7 @@ export default function FocusFlow({ task, aiConfig, onStart, onCancel }: FocusFl
 
   const handleStart = () => {
     const text = microTask.trim()
-    if (text) onStart(text)
+    if (text) onStart(text, sourceRef.current)
   }
 
   return (
@@ -101,7 +103,7 @@ export default function FocusFlow({ task, aiConfig, onStart, onCancel }: FocusFl
               ref={inputRef}
               type="text"
               value={microTask}
-              onChange={(e) => setMicroTask(e.target.value)}
+              onChange={(e) => { setMicroTask(e.target.value); sourceRef.current = 'self' }}
               onKeyDown={(e) => { if (e.key === 'Enter') handleStart(); if (e.key === 'Escape') onCancel() }}
               placeholder="例如：打开空白文档…"
               maxLength={50}
@@ -133,7 +135,7 @@ export default function FocusFlow({ task, aiConfig, onStart, onCancel }: FocusFl
             {!loadingChips && chips.map((chip, i) => (
               <button
                 key={i}
-                onClick={() => { setMicroTask(chip); inputRef.current?.focus() }}
+                onClick={() => { setMicroTask(chip); sourceRef.current = 'ai_chip'; inputRef.current?.focus() }}
                 className="text-xs px-3 py-1.5 rounded-full
                            bg-emerald-50 text-emerald-700 border border-emerald-200
                            hover:bg-emerald-100 hover:border-emerald-300

@@ -49,4 +49,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   /** 托盘点击"切换小组件"时，主进程通知前端切换 UI（监听事件） */
   onWidgetEnter: (cb: () => void): void => { ipcRenderer.on('widget:enter', cb) },
   onWidgetExit:  (cb: () => void): void => { ipcRenderer.on('widget:exit',  cb) },
+
+  // -------- 行为追踪 --------
+  /** 追加事件到指定日期的日志文件 */
+  appendTrackerEvents: (date: string, events: unknown[]): Promise<boolean> =>
+    ipcRenderer.invoke('tracker:append', date, events),
+  /** 读取指定日期的所有事件 */
+  loadTrackerEvents: (date: string): Promise<unknown[]> =>
+    ipcRenderer.invoke('tracker:load', date),
 })

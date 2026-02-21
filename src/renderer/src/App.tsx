@@ -1,13 +1,15 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import type { Task } from './types'
 import type { AIConfig } from './services/ai'
 import { DEFAULT_AI_CONFIG } from './services/ai'
 import type { FocusSession } from './components/WidgetView'
+import { tracker } from './services/tracker'
 import TitleBar from './components/TitleBar'
 import NoteEditor from './components/NoteEditor'
 import WidgetView from './components/WidgetView'
 import FocusFlow from './components/FocusFlow'
 import AISettings from './components/AISettings'
+import ReflectionView from './components/ReflectionView'
 
 /**
  * 主应用组件
@@ -33,6 +35,18 @@ export default function App() {
   // -------- AI 配置 --------
   const [aiConfig, setAIConfig] = useState<AIConfig>({ ...DEFAULT_AI_CONFIG })
   const [showAISettings, setShowAISettings] = useState(false)
+
+  // -------- 每日反思 --------
+  const [showReflection, setShowReflection] = useState(false)
+
+  // -------- 会话 ID（用于关联同一次专注的所有事件）--------
+  const sessionIdRef = useRef<string>('')
+
+  // -------- 初始化追踪器 --------
+  useEffect(() => {
+    tracker.init()
+    return () => tracker.destroy()
+  }, [])
 
   // -------- 数据加载 --------
   useEffect(() => {
@@ -105,6 +119,32 @@ export default function App() {
 
   /** 退出小组件 */
   const handleExitWidget = () => {
+    // 📊 埋点：如果有正在进行的会话，记录放弃/结束
+    if (session && session.phase === 'executing') {
+      const elapsed = Math.floor((Date.now() - session.startTime) / 1000)
+      tracker.track('abandon.exit', {
+        sessionId: sessionIdRef.current,
+        taskId: session.taskId,
+        taskTitle: session.taskTitle,
+        microAction: session.currentMicroTask,
+        elapsedSeconds: elapsed,
+        phase: session.phase,
+      })
+    }
+    if (session) {
+      const sessionStart = session.microHistory.length > 0
+        ? session.startTime
+        : Date.now()
+      tracker.track('session.ended', {
+        sessionId: sessionIdRef.current,
+        taskId: session.taskId,
+        taskTitle: session.taskTitle,
+        totalDurationSeconds: Math.floor((Date.now() - sessionStart) / 1000),
+        completedMicroSteps: session.microHistory.length,
+        endReason: 'exit',
+      })
+    }
+
     window.electronAPI.exitWidget()
     setIsWidgetMode(false)
     setFocusTaskId(null)
@@ -117,18 +157,39 @@ export default function App() {
    */
   const handleFocusTask = (id: string) => {
     setScaffoldTaskId(id)
+
+    // 📊 埋点：记录选中的焦点任务
+    const task = tasks.find(t => t.id === id)
+    if (task) {
+      // 记录脑暴池（当前所有待办任务的快照）
+      const pendingSnap = tasks.filter(t => !t.completed)
+      tracker.track('plan.brain_dump', {
+        tasks: pendingSnap.map(t => ({ id: t.id, title: t.title })),
+        taskCount: pendingSnap.length,
+      })
+      tracker.track('plan.focus_selected', {
+        taskId: task.id,
+        taskTitle: task.title,
+        taskNote: task.note || undefined,
+      })
+    }
   }
 
   /**
    * FocusFlow 阶段1 确认微任务 → 进入执行（阶段2）
    */
-  const handleStartMicro = (microTask: string) => {
+  const handleStartMicro = (microTask: string, source: 'self' | 'ai_chip') => {
     const task = tasks.find(t => t.id === scaffoldTaskId)
     if (!task) return
     setScaffoldTaskId(null)
 
+    // 生成会话 ID
+    const sid = `s-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+    sessionIdRef.current = sid
+
     // 创建 FocusSession
     const newSession: FocusSession = {
+      sessionId: sid,
       taskId: task.id,
       taskTitle: task.title,
       currentMicroTask: microTask,
@@ -140,6 +201,25 @@ export default function App() {
     setSession(newSession)
     setFocusTaskId(task.id)
 
+    // 📊 埋点：破冰第一步 + 会话开始 + 微任务开始
+    tracker.track('plan.first_micro', {
+      taskId: task.id,
+      taskTitle: task.title,
+      microAction: microTask,
+      source,
+    })
+    tracker.track('session.started', {
+      sessionId: sid,
+      taskId: task.id,
+      taskTitle: task.title,
+    })
+    tracker.track('exec.micro_started', {
+      sessionId: sid,
+      taskId: task.id,
+      taskTitle: task.title,
+      microAction: microTask,
+    })
+
     // 进入小组件模式
     window.electronAPI.enterWidget()
     setIsWidgetMode(true)
@@ -148,6 +228,17 @@ export default function App() {
   /** 微任务完成 → 进入 relay 阶段 */
   const handleMicroComplete = () => {
     if (!session) return
+
+    // 📊 埋点：微任务完成
+    const elapsed = Math.floor((Date.now() - session.startTime) / 1000)
+    tracker.track('exec.micro_completed', {
+      sessionId: sessionIdRef.current,
+      taskId: session.taskId,
+      taskTitle: session.taskTitle,
+      microAction: session.currentMicroTask,
+      actualSeconds: elapsed,
+    })
+
     setSession(s => s ? {
       ...s,
       phase: 'relay',
@@ -158,6 +249,15 @@ export default function App() {
   /** 接力：继续下一个微任务 */
   const handleNextMicro = (micro: string) => {
     if (!session) return
+
+    // 📊 埋点：新微任务开始
+    tracker.track('exec.micro_started', {
+      sessionId: sessionIdRef.current,
+      taskId: session.taskId,
+      taskTitle: session.taskTitle,
+      microAction: micro,
+    })
+
     setSession(s => s ? {
       ...s,
       phase: 'executing',
@@ -166,9 +266,61 @@ export default function App() {
     } : s)
   }
 
+  /** 🆘 卡住了 → 进入急救状态A */
+  const handleStuck = () => {
+    if (!session) return
+
+    // 📊 埋点：卡住事件
+    const elapsed = Math.floor((Date.now() - session.startTime) / 1000)
+    tracker.track('stuck.triggered', {
+      sessionId: sessionIdRef.current,
+      taskId: session.taskId,
+      microAction: session.currentMicroTask,
+      elapsedSeconds: elapsed,
+    })
+
+    setSession(s => s ? { ...s, phase: 'stuck_a' } : s)
+  }
+
+  /** 急救状态A → B：用户提交了卡点原因 */
+  const handleStuckToB = () => {
+    if (!session) return
+    setSession(s => s ? { ...s, phase: 'stuck_b' } : s)
+  }
+
+  /** 急救完成 → 用新微任务重启执行（状态C） */
+  const handleResume = (newMicro: string) => {
+    if (!session) return
+
+    // 📊 埋点：新微任务开始（急救后）
+    tracker.track('exec.micro_started', {
+      sessionId: sessionIdRef.current,
+      taskId: session.taskId,
+      taskTitle: session.taskTitle,
+      microAction: newMicro,
+    })
+
+    setSession(s => s ? {
+      ...s,
+      phase: 'executing',
+      currentMicroTask: newMicro,
+      startTime: Date.now(),
+    } : s)
+  }
+
   /** 进入心流模式 */
   const handleEnterFlow = () => {
     if (!session) return
+
+    // 📊 埋点：进入心流
+    tracker.track('exec.flow_entered', {
+      sessionId: sessionIdRef.current,
+      taskId: session.taskId,
+      taskTitle: session.taskTitle,
+      lastMicroAction: session.currentMicroTask,
+      completedStepCount: session.microHistory.length,
+    })
+
     setSession(s => s ? {
       ...s,
       phase: 'executing',
@@ -181,6 +333,30 @@ export default function App() {
   /** 心流模式下完成整个任务 */
   const handleTaskDone = () => {
     if (!session) return
+
+    // 📊 埋点：心流结束 + 宏观任务完成 + 会话结束
+    const flowDuration = Math.floor((Date.now() - session.startTime) / 1000)
+    tracker.track('exec.flow_ended', {
+      sessionId: sessionIdRef.current,
+      taskId: session.taskId,
+      taskTitle: session.taskTitle,
+      flowDurationSeconds: flowDuration,
+      endReason: 'task_done',
+    })
+    tracker.track('session.macro_completed', {
+      taskId: session.taskId,
+      taskTitle: session.taskTitle,
+      completedVia: 'flow',
+    })
+    tracker.track('session.ended', {
+      sessionId: sessionIdRef.current,
+      taskId: session.taskId,
+      taskTitle: session.taskTitle,
+      totalDurationSeconds: flowDuration,
+      completedMicroSteps: session.microHistory.length,
+      endReason: 'task_done',
+    })
+
     // 标记任务为已完成
     setTasks(prev => prev.map(t => {
       if (t.id !== session.taskId) return t
@@ -190,8 +366,12 @@ export default function App() {
         subtasks: t.subtasks?.map(s => ({ ...s, completed: true })),
       }
     }))
-    // 退出小组件
-    handleExitWidget()
+
+    // 退出小组件（不再重复记录退出事件）
+    window.electronAPI.exitWidget()
+    setIsWidgetMode(false)
+    setFocusTaskId(null)
+    setSession(null)
   }
 
   /** 小组件模式下的任务勾选（旧版小组件用） */
@@ -247,6 +427,22 @@ export default function App() {
           onNextMicro={handleNextMicro}
           onEnterFlow={handleEnterFlow}
           onTaskDone={handleTaskDone}
+          onStuck={handleStuck}
+          onStuckToB={handleStuckToB}
+          onResume={handleResume}
+        />
+      </div>
+    )
+  }
+
+  // -------- 每日反思界面 --------
+  if (showReflection) {
+    return (
+      <div className="h-screen bg-white overflow-hidden">
+        <ReflectionView
+          tasks={tasks}
+          aiConfig={aiConfig}
+          onClose={() => setShowReflection(false)}
         />
       </div>
     )
@@ -259,6 +455,7 @@ export default function App() {
         taskCount={pendingTasks.length}
         onEnterWidget={handleEnterWidget}
         onOpenAISettings={() => setShowAISettings(true)}
+        onOpenReflection={() => setShowReflection(true)}
       />
 
       {/* 核心编辑区域 */}

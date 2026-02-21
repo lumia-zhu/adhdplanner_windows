@@ -37,6 +37,43 @@ function saveTasks(tasks: unknown[]): boolean {
   } catch (e) { console.error('[saveTasks]', e); return false }
 }
 
+// ===================== 行为追踪数据存储 =====================
+
+/** 获取某天的追踪日志文件路径，如 tracker-2026-02-21.json */
+const getTrackerPath = (date: string): string =>
+  join(app.getPath('userData'), `tracker-${date}.json`)
+
+/**
+ * 追加事件到指定日期的日志文件
+ * 采用"读取→合并→写入"策略，保证幂等性
+ */
+function appendTrackerEvents(date: string, events: unknown[]): boolean {
+  try {
+    const p = getTrackerPath(date)
+    let existing: unknown[] = []
+    if (fs.existsSync(p)) {
+      existing = JSON.parse(fs.readFileSync(p, 'utf-8'))
+    }
+    const merged = [...existing, ...events]
+    fs.writeFileSync(p, JSON.stringify(merged, null, 2), 'utf-8')
+    return true
+  } catch (e) {
+    console.error('[Tracker] 追加事件失败:', e)
+    return false
+  }
+}
+
+/**
+ * 读取指定日期的所有事件
+ */
+function loadTrackerEvents(date: string): unknown[] {
+  try {
+    const p = getTrackerPath(date)
+    if (fs.existsSync(p)) return JSON.parse(fs.readFileSync(p, 'utf-8'))
+  } catch (e) { console.error('[Tracker] 读取事件失败:', e) }
+  return []
+}
+
 // ===================== 窗口尺寸常量 =====================
 
 const MAIN_WIDTH  = 480
@@ -336,6 +373,12 @@ function setupIPC(): void {
       return { ok: false, status: 0, body: String(e) }
     }
   })
+
+  // -------- 行为追踪数据 --------
+  ipcMain.handle('tracker:append', (_, date: string, events: unknown[]) =>
+    appendTrackerEvents(date, events))
+  ipcMain.handle('tracker:load', (_, date: string) =>
+    loadTrackerEvents(date))
 }
 
 // ===================== 应用生命周期 =====================

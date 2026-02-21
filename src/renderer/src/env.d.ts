@@ -20,5 +20,8 @@ interface Window {
     saveAIConfig: (config: Record<string, string>) => Promise<boolean>
     /** AI 请求代理（绕过 CORS） */
     aiRequest: (payload: { url: string; apiKey: string; body: string }) => Promise<{ ok: boolean; status: number; body: string }>
+    // 行为追踪
+    appendTrackerEvents: (date: string, events: unknown[]) => Promise<boolean>
+    loadTrackerEvents: (date: string) => Promise<unknown[]>
   }
 }
