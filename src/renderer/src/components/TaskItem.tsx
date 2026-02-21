@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import type { Task, Subtask } from '../types'
@@ -23,7 +23,11 @@ export default function TaskItem({ task, onToggle, onToggleSubtask, onEdit, onDe
   const [editSubtaskInput, setEditSubtaskInput] = useState('')
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [subtasksExpanded, setSubtasksExpanded] = useState(true) // 子任务默认展开
+  // 子任务行内编辑
+  const [editingSubtaskId, setEditingSubtaskId] = useState<string | null>(null)
+  const [editingSubtaskTitle, setEditingSubtaskTitle] = useState('')
   const subtaskInputRef = useRef<HTMLInputElement>(null)
+  const inlineSubtaskInputRef = useRef<HTMLInputElement>(null)
 
   // ---- dnd-kit 拖拽 ----
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: task.id })
@@ -79,6 +83,71 @@ export default function TaskItem({ task, onToggle, onToggleSubtask, onEdit, onDe
     setIsEditing(false)
   }
 
+  // ===== 父任务标题行内双击编辑 =====
+  const [editingTitle, setEditingTitle] = useState(false)
+  const [inlineTitleValue, setInlineTitleValue] = useState(task.title)
+  const inlineTitleRef = useRef<HTMLInputElement>(null)
+
+  const handleTitleDoubleClick = () => {
+    if (task.completed) return
+    setInlineTitleValue(task.title)
+    setEditingTitle(true)
+    setTimeout(() => inlineTitleRef.current?.select(), 0)
+  }
+
+  const handleTitleInlineSave = () => {
+    const trimmed = inlineTitleValue.trim()
+    if (trimmed && trimmed !== task.title) {
+      onEdit({ ...task, title: trimmed })
+    }
+    setEditingTitle(false)
+  }
+
+  const handleTitleInlineCancel = () => {
+    setEditingTitle(false)
+    setInlineTitleValue(task.title)
+  }
+
+  // ===== 子任务行内双击编辑 =====
+  const handleSubtaskDoubleClick = (sub: Subtask) => {
+    if (sub.completed) return // 已完成的子任务不允许编辑
+    setEditingSubtaskId(sub.id)
+    setEditingSubtaskTitle(sub.title)
+    // 等 DOM 更新后自动聚焦
+    setTimeout(() => inlineSubtaskInputRef.current?.select(), 0)
+  }
+
+  const handleSubtaskInlineSave = () => {
+    if (!editingSubtaskId) return
+    const trimmed = editingSubtaskTitle.trim()
+    if (!trimmed) {
+      setEditingSubtaskId(null)
+      return
+    }
+    const newSubtasks = (task.subtasks ?? []).map(s =>
+      s.id === editingSubtaskId ? { ...s, title: trimmed } : s
+    )
+    onEdit({ ...task, subtasks: newSubtasks })
+    setEditingSubtaskId(null)
+  }
+
+  const handleSubtaskInlineCancel = () => {
+    setEditingSubtaskId(null)
+    setEditingSubtaskTitle('')
+  }
+
+  // 点击外部自动保存
+  useEffect(() => {
+    if (!editingSubtaskId) return
+    const handleClickOutside = (e: MouseEvent) => {
+      if (inlineSubtaskInputRef.current && !inlineSubtaskInputRef.current.contains(e.target as Node)) {
+        handleSubtaskInlineSave()
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [editingSubtaskId, editingSubtaskTitle])
+
   const priorities = [
     { value: 'high',   label: '高', activeClass: 'bg-red-500 text-white',    inactiveClass: 'text-red-400 border border-red-200 hover:bg-red-50' },
     { value: 'medium', label: '中', activeClass: 'bg-orange-500 text-white', inactiveClass: 'text-orange-400 border border-orange-200 hover:bg-orange-50' },
@@ -111,9 +180,8 @@ export default function TaskItem({ task, onToggle, onToggleSubtask, onEdit, onDe
         <div className="space-y-1">
           <span className="text-xs text-gray-400 font-medium">子任务</span>
           {editSubtasks.map((sub, idx) => (
-            <div key={sub.id} className="flex items-center gap-1.5 pl-1">
-              <div className="w-3 h-px bg-gray-300 flex-shrink-0" />
-              <span className="text-xs text-gray-400 flex-shrink-0">{idx + 1}.</span>
+            <div key={sub.id} className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-gray-50">
+              <span className="text-xs text-gray-300 flex-shrink-0 w-3 text-right">{idx + 1}</span>
               <span className={`flex-1 text-xs truncate ${sub.completed ? 'line-through text-gray-300' : 'text-gray-700'}`}>
                 {sub.title}
               </span>
@@ -129,7 +197,6 @@ export default function TaskItem({ task, onToggle, onToggleSubtask, onEdit, onDe
           ))}
           {/* 新增子任务输入 */}
           <div className="flex items-center gap-1.5 pl-1">
-            <div className="w-3 h-px bg-gray-200 flex-shrink-0" />
             <input
               ref={subtaskInputRef}
               type="text"
@@ -218,9 +285,34 @@ export default function TaskItem({ task, onToggle, onToggleSubtask, onEdit, onDe
 
           {/* 标题 + 备注 */}
           <div className="flex-1 min-w-0">
-            <p className={`text-sm font-medium truncate ${task.completed ? 'line-through text-gray-400' : 'text-gray-800'}`}>
-              {task.title}
-            </p>
+            {editingTitle ? (
+              <input
+                ref={inlineTitleRef}
+                autoFocus
+                type="text"
+                value={inlineTitleValue}
+                onChange={(e) => setInlineTitleValue(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') { e.preventDefault(); handleTitleInlineSave() }
+                  if (e.key === 'Escape') handleTitleInlineCancel()
+                }}
+                onBlur={handleTitleInlineSave}
+                maxLength={100}
+                className="w-full text-sm font-medium bg-transparent border-b border-indigo-300 outline-none text-gray-800 pb-0.5"
+              />
+            ) : (
+              <p
+                onDoubleClick={handleTitleDoubleClick}
+                title={task.completed ? '' : '双击修改'}
+                className={`text-sm font-medium truncate select-none ${
+                  task.completed
+                    ? 'line-through text-gray-400 cursor-default'
+                    : 'text-gray-800 cursor-text'
+                }`}
+              >
+                {task.title}
+              </p>
+            )}
             {task.note && (
               <p className="text-xs text-gray-400 mt-0.5 truncate">{task.note}</p>
             )}
@@ -311,22 +403,25 @@ export default function TaskItem({ task, onToggle, onToggleSubtask, onEdit, onDe
 
       {/* ===== 子任务列表（可折叠）===== */}
       {hasSubtasks && subtasksExpanded && (
-        <div className="pb-2 pr-2 pl-10 space-y-1">
+        <div className="pb-2.5 px-3 pl-9 space-y-0.5">
           {subtasks.map((sub) => (
-            <div key={sub.id} className="flex items-center gap-2 group/sub">
-              {/* 层级连接线 */}
-              <div className="w-3 h-px bg-gray-200 flex-shrink-0" />
-
+            <div
+              key={sub.id}
+              className={`flex items-center gap-2 px-2 py-1 rounded-lg transition-colors group/sub ${
+                sub.completed ? 'opacity-50' : 'hover:bg-gray-50'
+              } ${editingSubtaskId === sub.id ? 'bg-indigo-50/60 ring-1 ring-indigo-200' : ''}`}
+            >
               {/* 子任务勾选按钮 */}
               <button
                 onClick={(e) => {
+                  if (editingSubtaskId === sub.id) return // 编辑中不触发勾选
                   onToggleSubtask(task.id, sub.id)
                   if (!sub.completed) triggerEffect(e.currentTarget)
                 }}
-                className={`w-3.5 h-3.5 rounded-full border flex-shrink-0 flex items-center justify-center transition-all ${
+                className={`w-3.5 h-3.5 rounded-sm border flex-shrink-0 flex items-center justify-center transition-all ${
                   sub.completed
                     ? 'bg-green-400 border-green-400'
-                    : 'border-gray-300 hover:border-indigo-400'
+                    : 'border-gray-300 group-hover/sub:border-indigo-400'
                 }`}
               >
                 {sub.completed && (
@@ -336,10 +431,39 @@ export default function TaskItem({ task, onToggle, onToggleSubtask, onEdit, onDe
                 )}
               </button>
 
-              {/* 子任务标题 */}
-              <span className={`flex-1 text-xs truncate ${sub.completed ? 'line-through text-gray-300' : 'text-gray-600'}`}>
-                {sub.title}
-              </span>
+              {/* 子任务标题：双击进入行内编辑 */}
+              {editingSubtaskId === sub.id ? (
+                <input
+                  ref={inlineSubtaskInputRef}
+                  autoFocus
+                  type="text"
+                  value={editingSubtaskTitle}
+                  onChange={(e) => setEditingSubtaskTitle(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') { e.preventDefault(); handleSubtaskInlineSave() }
+                    if (e.key === 'Escape') handleSubtaskInlineCancel()
+                  }}
+                  maxLength={50}
+                  className="flex-1 text-xs bg-transparent border-none outline-none text-gray-700 min-w-0"
+                />
+              ) : (
+                <span
+                  onDoubleClick={() => handleSubtaskDoubleClick(sub)}
+                  title={sub.completed ? '' : '双击修改'}
+                  className={`flex-1 text-xs truncate select-none ${
+                    sub.completed
+                      ? 'line-through text-gray-400 cursor-default'
+                      : 'text-gray-500 cursor-text hover:text-gray-700'
+                  }`}
+                >
+                  {sub.title}
+                </span>
+              )}
+
+              {/* 编辑状态下的保存提示 */}
+              {editingSubtaskId === sub.id && (
+                <span className="text-[10px] text-indigo-400 flex-shrink-0 select-none">Enter ✓</span>
+              )}
             </div>
           ))}
         </div>

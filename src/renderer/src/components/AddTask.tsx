@@ -90,9 +90,8 @@ export default function AddTask({ onAdd }: AddTaskProps) {
           {/* 子任务 */}
           <div className="space-y-1.5">
             {subtasks.map((sub, idx) => (
-              <div key={sub.id} className="flex items-center gap-1.5 pl-1">
-                <div className="w-3 h-px bg-gray-300 flex-shrink-0" />
-                <span className="text-xs text-gray-400 flex-shrink-0">{idx + 1}.</span>
+              <div key={sub.id} className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-gray-50">
+                <span className="text-xs text-gray-300 flex-shrink-0 w-3 text-right">{idx + 1}</span>
                 <span className="flex-1 text-xs text-gray-700 truncate">{sub.title}</span>
                 <button
                   onClick={() => setSubtasks(prev => prev.filter(s => s.id !== sub.id))}
@@ -105,7 +104,6 @@ export default function AddTask({ onAdd }: AddTaskProps) {
               </div>
             ))}
             <div className="flex items-center gap-1.5 pl-1">
-              <div className="w-3 h-px bg-gray-200 flex-shrink-0" />
               <input
                 ref={subtaskInputRef}
                 type="text"
