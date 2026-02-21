@@ -1,10 +1,26 @@
-import { app, shell, BrowserWindow, ipcMain, Tray, Menu, nativeImage } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, Tray, Menu, nativeImage, net } from 'electron'
 import { join } from 'path'
 import fs from 'fs'
 
 // ===================== 数据存储相关 =====================
 
 const getDataPath = (): string => join(app.getPath('userData'), 'tasks.json')
+const getAIConfigPath = (): string => join(app.getPath('userData'), 'ai-config.json')
+
+function loadAIConfig(): Record<string, string> {
+  try {
+    const p = getAIConfigPath()
+    if (fs.existsSync(p)) return JSON.parse(fs.readFileSync(p, 'utf-8'))
+  } catch (e) { console.error('[loadAIConfig]', e) }
+  return {}
+}
+
+function saveAIConfig(config: Record<string, string>): boolean {
+  try {
+    fs.writeFileSync(getAIConfigPath(), JSON.stringify(config, null, 2), 'utf-8')
+    return true
+  } catch (e) { console.error('[saveAIConfig]', e); return false }
+}
 
 function loadTasks(): unknown[] {
   try {
@@ -285,6 +301,41 @@ function setupIPC(): void {
 
   ipcMain.on('window:enterWidget', () => { enterWidget(); updateTrayMenu() })
   ipcMain.on('window:exitWidget',  () => { exitWidget();  updateTrayMenu() })
+
+  // -------- 小组件动态调整大小 --------
+  ipcMain.on('window:resizeWidget', (_, width: number, height: number) => {
+    if (!mainWindow || !isWidgetMode) return
+    mainWindow.setMinimumSize(width, height)
+    mainWindow.setMaximumSize(width, height)
+    mainWindow.setSize(width, height)
+  })
+
+  // -------- AI 配置 --------
+  ipcMain.handle('ai:loadConfig', () => loadAIConfig())
+  ipcMain.handle('ai:saveConfig', (_, config: Record<string, string>) => saveAIConfig(config))
+
+  // -------- AI 请求代理（绕过 CORS） --------
+  ipcMain.handle('ai:request', async (_, payload: { url: string; apiKey: string; body: string }) => {
+    try {
+      const resp = await net.fetch(payload.url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${payload.apiKey}`,
+        },
+        body: payload.body,
+      })
+
+      const text = await resp.text()
+
+      if (!resp.ok) {
+        return { ok: false, status: resp.status, body: text }
+      }
+      return { ok: true, status: resp.status, body: text }
+    } catch (e) {
+      return { ok: false, status: 0, body: String(e) }
+    }
+  })
 }
 
 // ===================== 应用生命周期 =====================

@@ -7,9 +7,10 @@
 interface TitleBarProps {
   taskCount: number         // 未完成的任务数量，显示在标题旁边
   onEnterWidget: () => void // 切换到小组件模式的回调
+  onOpenAISettings?: () => void // 打开 AI 设置面板
 }
 
-export default function TitleBar({ taskCount, onEnterWidget }: TitleBarProps) {
+export default function TitleBar({ taskCount, onEnterWidget, onOpenAISettings }: TitleBarProps) {
   return (
     // drag-region 类让这块区域可以被鼠标拖动来移动窗口
     <div className="drag-region flex items-center justify-between px-4 py-3 bg-white border-b border-gray-100 select-none">
@@ -32,6 +33,21 @@ export default function TitleBar({ taskCount, onEnterWidget }: TitleBarProps) {
 
       {/* 右侧：窗口控制按钮 */}
       <div className="no-drag flex items-center gap-1">
+        {/* AI 设置按钮 */}
+        {onOpenAISettings && (
+          <button
+            onClick={onOpenAISettings}
+            className="w-7 h-7 rounded-md hover:bg-violet-50 flex items-center justify-center text-gray-400 hover:text-violet-500 transition-colors"
+            title="AI 配置"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
+              />
+            </svg>
+          </button>
+        )}
+
         {/* 切换小组件模式按钮 */}
         <button
           onClick={onEnterWidget}

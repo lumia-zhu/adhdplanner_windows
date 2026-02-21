@@ -33,6 +33,19 @@ contextBridge.exposeInMainWorld('electronAPI', {
   /** 同步当前待办数量到托盘提示文字 */
   updateTrayCount: (count: number): void => ipcRenderer.send('tray:updateCount', count),
 
+  /** 动态调整小组件窗口大小（展开/收起接力输入框时用） */
+  resizeWidget: (width: number, height: number): void =>
+    ipcRenderer.send('window:resizeWidget', width, height),
+
+  // -------- AI 配置 & 请求 --------
+  loadAIConfig: (): Promise<Record<string, string>> => ipcRenderer.invoke('ai:loadConfig'),
+  saveAIConfig: (config: Record<string, string>): Promise<boolean> =>
+    ipcRenderer.invoke('ai:saveConfig', config),
+
+  /** AI 请求代理：在主进程发起 HTTP 请求，绕过浏览器 CORS 限制 */
+  aiRequest: (payload: { url: string; apiKey: string; body: string }): Promise<{ ok: boolean; status: number; body: string }> =>
+    ipcRenderer.invoke('ai:request', payload),
+
   /** 托盘点击"切换小组件"时，主进程通知前端切换 UI（监听事件） */
   onWidgetEnter: (cb: () => void): void => { ipcRenderer.on('widget:enter', cb) },
   onWidgetExit:  (cb: () => void): void => { ipcRenderer.on('widget:exit',  cb) },

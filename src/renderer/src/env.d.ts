@@ -1,9 +1,5 @@
 /// <reference types="vite/client" />
 
-/**
- * 声明 window.electronAPI 的类型
- * 这样 TypeScript 就知道我们在 preload 中暴露的 API 有哪些方法
- */
 interface Window {
   electronAPI: {
     loadTasks: () => Promise<unknown[]>
@@ -14,9 +10,15 @@ interface Window {
     // 小组件模式
     enterWidget: () => void
     exitWidget: () => void
+    resizeWidget: (width: number, height: number) => void
     // 托盘通信
     updateTrayCount: (count: number) => void
     onWidgetEnter: (cb: () => void) => void
-    onWidgetExit:  (cb: () => void) => void
+    onWidgetExit: (cb: () => void) => void
+    // AI 配置 & 请求
+    loadAIConfig: () => Promise<Record<string, string>>
+    saveAIConfig: (config: Record<string, string>) => Promise<boolean>
+    /** AI 请求代理（绕过 CORS） */
+    aiRequest: (payload: { url: string; apiKey: string; body: string }) => Promise<{ ok: boolean; status: number; body: string }>
   }
 }
