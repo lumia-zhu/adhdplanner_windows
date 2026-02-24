@@ -187,6 +187,10 @@ export default function App() {
     const sid = `s-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
     sessionIdRef.current = sid
 
+    // 子任务导航：找到第一个未完成的子任务
+    const subtasks = task.subtasks ?? []
+    const activeSubtask = subtasks.find(s => !s.completed) ?? null
+
     // 创建 FocusSession
     const newSession: FocusSession = {
       sessionId: sid,
@@ -197,6 +201,9 @@ export default function App() {
       isFlowMode: false,
       phase: 'executing',
       microHistory: [],
+      // 子任务信息
+      currentSubtaskId: activeSubtask?.id,
+      currentSubtaskTitle: activeSubtask?.title,
     }
     setSession(newSession)
     setFocusTaskId(task.id)
@@ -263,6 +270,8 @@ export default function App() {
       phase: 'executing',
       currentMicroTask: micro,
       startTime: Date.now(),
+      isSubtaskTransition: false,  // 清除子任务过渡标记
+      allSubtasksDone: false,
     } : s)
   }
 
@@ -306,6 +315,63 @@ export default function App() {
       currentMicroTask: newMicro,
       startTime: Date.now(),
     } : s)
+  }
+
+  /**
+   * 当前子任务搞定 → 标记完成 → 自动切到下一个子任务
+   */
+  const handleSubtaskDone = () => {
+    if (!session || !session.currentSubtaskId) return
+
+    const completedSubId = session.currentSubtaskId
+    const completedSubTitle = session.currentSubtaskTitle || ''
+
+    // 📊 埋点：子任务完成
+    tracker.track('exec.subtask_completed', {
+      sessionId: sessionIdRef.current,
+      taskId: session.taskId,
+      taskTitle: session.taskTitle,
+      subtaskId: completedSubId,
+      subtaskTitle: completedSubTitle,
+    })
+
+    // 在 tasks 中标记子任务为已完成
+    let nextSubtask: { id: string; title: string } | null = null
+    setTasks(prev => prev.map(t => {
+      if (t.id !== session.taskId) return t
+      const updatedSubs = (t.subtasks ?? []).map(s =>
+        s.id === completedSubId ? { ...s, completed: true } : s
+      )
+      // 找下一个未完成的子任务
+      const next = updatedSubs.find(s => !s.completed)
+      if (next) nextSubtask = { id: next.id, title: next.title }
+      return { ...t, subtasks: updatedSubs }
+    }))
+
+    // 更新 session
+    if (nextSubtask) {
+      // 还有子任务 → 进入子任务过渡 relay
+      setSession(s => s ? {
+        ...s,
+        phase: 'relay',
+        currentSubtaskId: (nextSubtask as { id: string; title: string }).id,
+        currentSubtaskTitle: (nextSubtask as { id: string; title: string }).title,
+        isSubtaskTransition: true,
+        allSubtasksDone: false,
+        microHistory: [...s.microHistory, s.currentMicroTask],
+      } : s)
+    } else {
+      // 所有子任务完成 → 显示完成选项
+      setSession(s => s ? {
+        ...s,
+        phase: 'relay',
+        currentSubtaskId: undefined,
+        currentSubtaskTitle: undefined,
+        isSubtaskTransition: false,
+        allSubtasksDone: true,
+        microHistory: [...s.microHistory, s.currentMicroTask],
+      } : s)
+    }
   }
 
   /** 进入心流模式 */
@@ -430,6 +496,7 @@ export default function App() {
           onStuck={handleStuck}
           onStuckToB={handleStuckToB}
           onResume={handleResume}
+          onSubtaskDone={handleSubtaskDone}
         />
       </div>
     )

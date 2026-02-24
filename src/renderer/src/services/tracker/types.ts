@@ -60,6 +60,15 @@ export interface ExecMicroCompletedPayload {
   estimatedSeconds?: number // 如果有预估，一起记录以计算偏差
 }
 
+/** 子任务被标记为完成 */
+export interface ExecSubtaskCompletedPayload {
+  sessionId: string
+  taskId: string
+  taskTitle: string
+  subtaskId: string
+  subtaskTitle: string
+}
+
 /** 用户进入心流模式（点了「我有感觉了，直接做」） */
 export interface ExecFlowEnteredPayload {
   sessionId: string
@@ -169,10 +178,11 @@ export interface TrackEventMap {
   'plan.first_micro':       PlanFirstMicroPayload
 
   // 执行阶段
-  'exec.micro_started':     ExecMicroStartedPayload
-  'exec.micro_completed':   ExecMicroCompletedPayload
-  'exec.flow_entered':      ExecFlowEnteredPayload
-  'exec.flow_ended':        ExecFlowEndedPayload
+  'exec.micro_started':       ExecMicroStartedPayload
+  'exec.micro_completed':     ExecMicroCompletedPayload
+  'exec.subtask_completed':   ExecSubtaskCompletedPayload
+  'exec.flow_entered':        ExecFlowEnteredPayload
+  'exec.flow_ended':          ExecFlowEndedPayload
 
   // 卡顿急救
   'stuck.triggered':        StuckTriggeredPayload

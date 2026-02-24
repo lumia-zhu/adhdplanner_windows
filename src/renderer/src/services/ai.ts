@@ -142,11 +142,17 @@ function parseChips(content: string, maxCount: number): string[] {
 
 /**
  * 1. 生成微动作建议（开始任务 / 完成后接力）
+ *
+ * @param taskTitle     宏观任务标题
+ * @param lastStep      上一步完成的动作（可选，用于接力建议）
+ * @param config        AI 配置
+ * @param subtaskTitle  当前子任务标题（可选，让建议更精准）
  */
 export async function generateMicroActions(
   taskTitle: string,
   lastStep?: string,
   config?: AIConfig,
+  subtaskTitle?: string,
 ): Promise<{ chips: string[]; error?: string }> {
   const cfg = config ?? DEFAULT_AI_CONFIG
   if (!cfg.apiKey || !cfg.modelId) return { chips: [] }
@@ -155,9 +161,14 @@ export async function generateMicroActions(
     '你是一个专注力辅助AI。用户给你一个任务名称，你需要生成2个极其具体的、可以立即执行的微小物理动作建议。' +
     '每个建议不超过10个字，用JSON数组格式返回，如 ["打开空白文档","找导师的纪要"]。只返回JSON数组，不要其他任何内容。'
 
+  // 构建上下文：宏观任务 + 可选子任务
+  const taskContext = subtaskTitle
+    ? `大任务：${taskTitle}\n当前子任务：${subtaskTitle}`
+    : `任务：${taskTitle}`
+
   const userPrompt = lastStep
-    ? `任务：${taskTitle}\n上一步完成了：${lastStep}\n请给出紧接着的2个微动作建议。`
-    : `任务：${taskTitle}\n请给出开始这个任务时最先要做的2个微动作建议。`
+    ? `${taskContext}\n上一步完成了：${lastStep}\n请给出紧接着的2个微动作建议。`
+    : `${taskContext}\n请给出开始这个${subtaskTitle ? '子任务' : '任务'}时最先要做的2个微动作建议。`
 
   const { content, error } = await callLLM(systemPrompt, userPrompt, cfg)
   if (error) return { chips: [], error }

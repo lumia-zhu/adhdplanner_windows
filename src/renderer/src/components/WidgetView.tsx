@@ -40,6 +40,11 @@ export interface FocusSession {
   isFlowMode: boolean        // 用户已进入心流
   phase: 'executing' | 'relay' | 'stuck_a' | 'stuck_b'
   microHistory: string[]     // 已完成微任务列表
+  // ---- 子任务导航 ----
+  currentSubtaskId?: string       // 当前正在做的子任务 ID
+  currentSubtaskTitle?: string    // 当前正在做的子任务标题
+  isSubtaskTransition?: boolean   // true = 刚切到新子任务，relay 显示子任务入口提示
+  allSubtasksDone?: boolean       // true = 所有子任务完成，提供宏观任务完成选项
 }
 
 interface WidgetViewProps {
@@ -57,6 +62,7 @@ interface WidgetViewProps {
   onStuck: () => void                    // 进入卡住状态A
   onStuckToB: () => void                 // 状态A→B：提交了卡点原因
   onResume: (newMicro: string) => void   // 急救完成，用新微任务重启
+  onSubtaskDone: () => void              // 当前子任务搞定，切到下一个
 }
 
 // ===================== 主组件 =====================
@@ -65,7 +71,7 @@ export default function WidgetView({
   tasks, session, aiConfig, focusTaskId,
   onToggle, onExit,
   onMicroComplete, onNextMicro, onEnterFlow, onTaskDone,
-  onStuck, onStuckToB, onResume,
+  onStuck, onStuckToB, onResume, onSubtaskDone,
 }: WidgetViewProps) {
 
   // 如果没有 session → 走旧的普通小组件模式
@@ -85,6 +91,7 @@ export default function WidgetView({
       onStuck={onStuck}
       onStuckToB={onStuckToB}
       onResume={onResume}
+      onSubtaskDone={onSubtaskDone}
       onExit={onExit}
     />
   )
@@ -102,15 +109,19 @@ interface FocusDynamicBarProps {
   onStuck: () => void
   onStuckToB: () => void
   onResume: (newMicro: string) => void
+  onSubtaskDone: () => void
   onExit: () => void
 }
 
 function FocusDynamicBar({
   session, aiConfig,
   onMicroComplete, onNextMicro, onEnterFlow, onTaskDone,
-  onStuck, onStuckToB, onResume, onExit,
+  onStuck, onStuckToB, onResume, onSubtaskDone, onExit,
 }: FocusDynamicBarProps) {
-  const { phase, isFlowMode, currentMicroTask, taskTitle, startTime } = session
+  const {
+    phase, isFlowMode, currentMicroTask, taskTitle, startTime,
+    currentSubtaskId, currentSubtaskTitle, isSubtaskTransition, allSubtasksDone,
+  } = session
 
   // ---- 计时器（精确到秒）----
   const [elapsed, setElapsed] = useState(0)
@@ -145,12 +156,16 @@ function FocusDynamicBar({
   // ---- 窗口尺寸管理 ----
   useEffect(() => {
     if (phase === 'relay') {
-      window.electronAPI.resizeWidget(BAR_W, BAR_H_RELAY)
-      inputRef.current?.focus()
+      // 有子任务时稍高（多一行子任务指示+按钮），全部完成时矮一些
+      const h = allSubtasksDone ? 180 : currentSubtaskId ? BAR_H_RELAY + 36 : BAR_H_RELAY
+      window.electronAPI.resizeWidget(BAR_W, h)
+      if (!allSubtasksDone) inputRef.current?.focus()
       // 请求 AI 接力建议
-      if (aiConfig.apiKey && aiConfig.modelId) {
+      if (aiConfig.apiKey && aiConfig.modelId && !allSubtasksDone) {
         setLoadingChips(true)
-        generateMicroActions(taskTitle, currentMicroTask, aiConfig)
+        // 子任务过渡时不传 lastStep（让AI基于新子任务生成建议）
+        const lastStep = isSubtaskTransition ? undefined : currentMicroTask
+        generateMicroActions(taskTitle, lastStep, aiConfig, currentSubtaskTitle)
           .then(({ chips: c }) => setChips(c))
           .finally(() => setLoadingChips(false))
       }
@@ -179,7 +194,7 @@ function FocusDynamicBar({
       setPivotData(null)
       setPivotInput('')
     }
-  }, [phase])
+  }, [phase, currentSubtaskId, allSubtasksDone])
 
   // relay 继续
   const handleContinue = () => {
@@ -545,6 +560,65 @@ function FocusDynamicBar({
   }
 
   // ============ 接力状态（展开面板）============
+
+  // ---- 所有子任务完成特殊界面 ----
+  if (allSubtasksDone) {
+    return (
+      <div className="drag-region w-full h-full flex flex-col bg-white/95 backdrop-blur-sm
+                      border border-gray-200/60 rounded-2xl
+                      shadow-[0_4px_24px_rgba(0,0,0,0.08)] select-none overflow-hidden">
+
+        <div className="flex items-center px-4 py-2.5 gap-2.5 border-b border-gray-100/80">
+          <div className="no-drag w-6 h-6 rounded-full bg-gradient-to-br from-emerald-500 to-emerald-600
+                          flex items-center justify-center flex-shrink-0 shadow-sm">
+            <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+            </svg>
+          </div>
+          <span className="no-drag text-xs text-emerald-600 font-medium flex-1 truncate">
+            所有子任务都搞定了！
+          </span>
+          <button
+            onClick={onExit}
+            className="no-drag w-6 h-6 rounded-lg flex items-center justify-center
+                       text-gray-300 hover:text-gray-500 hover:bg-gray-100
+                       transition-all flex-shrink-0"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        <div className="no-drag flex-1 px-4 py-4 flex flex-col items-center justify-center gap-4">
+          <p className="text-sm text-gray-600 font-medium text-center">
+            🎉 「{taskTitle}」的子任务全部完成！<br />
+            <span className="text-gray-400 text-xs">整个任务也搞定了吗？</span>
+          </p>
+          <div className="flex gap-3">
+            <button
+              onClick={onTaskDone}
+              className="px-5 py-2.5 rounded-xl bg-emerald-500 text-white text-sm font-semibold
+                         hover:bg-emerald-600 active:scale-95 shadow-md shadow-emerald-200/50
+                         transition-all"
+            >
+              ✓ 完成整个任务
+            </button>
+            <button
+              onClick={onEnterFlow}
+              className="px-4 py-2.5 rounded-xl bg-violet-50 text-violet-600 text-sm font-medium
+                         border border-violet-200 hover:bg-violet-100 active:scale-95
+                         transition-all"
+            >
+              🚀 继续做
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // ---- 常规接力面板 ----
   return (
     <div className="drag-region w-full h-full flex flex-col bg-white/95 backdrop-blur-sm
                     border border-gray-200/60 rounded-2xl
@@ -559,7 +633,9 @@ function FocusDynamicBar({
           </svg>
         </div>
         <span className="no-drag text-xs text-emerald-600 font-medium flex-1 truncate">
-          漂亮！「{currentMicroTask}」已完成
+          {isSubtaskTransition
+            ? `进入下一个子任务`
+            : `漂亮！「${currentMicroTask}」已完成`}
         </span>
         <span className="no-drag text-xs text-gray-500 font-mono flex-shrink-0
                          bg-gray-100/80 px-2 py-0.5 rounded-md">{timeStr}</span>
@@ -577,8 +653,15 @@ function FocusDynamicBar({
 
       {/* 接力输入区域 */}
       <div className="no-drag flex-1 px-4 py-3.5 flex flex-col gap-3">
+        {/* 提示语：根据是否有子任务+是否刚切换子任务变化 */}
         <p className="text-xs text-gray-500 font-medium leading-relaxed">
-          趁热打铁，紧接着的<span className="text-emerald-600 font-bold">一个动作</span>是？
+          {isSubtaskTransition && currentSubtaskTitle ? (
+            <>下一步是「<span className="text-emerald-600 font-bold">{currentSubtaskTitle}</span>」，从哪个<span className="text-emerald-600 font-bold">具体动作</span>开始？</>
+          ) : currentSubtaskTitle ? (
+            <>还在做「<span className="text-indigo-500 font-bold">{currentSubtaskTitle}</span>」，紧接着的<span className="text-emerald-600 font-bold">一个动作</span>是？</>
+          ) : (
+            <>趁热打铁，紧接着的<span className="text-emerald-600 font-bold">一个动作</span>是？</>
+          )}
         </p>
 
         {/* 输入框 + 继续按钮 */}
@@ -628,11 +711,20 @@ function FocusDynamicBar({
           ))}
         </div>
 
-        {/* 路径 B：进入心流 */}
+        {/* 底部：子任务完成 + 心流 */}
         <div className="flex items-center justify-between pt-2 border-t border-gray-100/80">
-          <span className="text-[11px] text-gray-400">
-            已完成 {session.microHistory.length} 步
-          </span>
+          {currentSubtaskId ? (
+            <button
+              onClick={onSubtaskDone}
+              className="text-[11px] text-indigo-500 font-medium hover:text-indigo-600 transition-colors"
+            >
+              ✓ 「{currentSubtaskTitle}」搞定了 →
+            </button>
+          ) : (
+            <span className="text-[11px] text-gray-400">
+              已完成 {session.microHistory.length} 步
+            </span>
+          )}
           <button
             onClick={onEnterFlow}
             className="flex items-center gap-1 px-3.5 py-1.5 rounded-full

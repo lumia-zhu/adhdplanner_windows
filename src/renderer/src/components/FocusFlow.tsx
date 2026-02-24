@@ -29,19 +29,23 @@ export default function FocusFlow({ task, aiConfig, onStart, onCancel }: FocusFl
   const inputRef = useRef<HTMLInputElement>(null)
   const sourceRef = useRef<'self' | 'ai_chip'>('self')
 
+  // ---- 子任务导航：找到第一个未完成的子任务 ----
+  const subtasks = task.subtasks ?? []
+  const activeSubtask = subtasks.find(s => !s.completed) ?? null
+
   // 入场动画状态：mounted 后延迟一帧触发 CSS transition
   const [visible, setVisible] = useState(false)
   useEffect(() => {
     requestAnimationFrame(() => setVisible(true))
   }, [])
 
-  // 自动请求 AI 建议 + 延迟聚焦
+  // 自动请求 AI 建议 + 延迟聚焦（传入子任务上下文让建议更精准）
   useEffect(() => {
     const timer = setTimeout(() => inputRef.current?.focus(), 350)
     if (!aiConfig.apiKey || !aiConfig.modelId) return () => clearTimeout(timer)
     setLoadingChips(true)
     setChipError(null)
-    generateMicroActions(task.title, undefined, aiConfig)
+    generateMicroActions(task.title, undefined, aiConfig, activeSubtask?.title)
       .then(({ chips: newChips, error }) => {
         setChips(newChips)
         if (error) setChipError(error)
@@ -96,19 +100,21 @@ export default function FocusFlow({ task, aiConfig, onStart, onCancel }: FocusFl
           {task.note && (
             <p className="text-sm text-gray-400 mt-1">{task.note}</p>
           )}
-          {/* 子任务概览 */}
-          {task.subtasks && task.subtasks.length > 0 && (
+          {/* 子任务概览：高亮当前要做的子任务 */}
+          {subtasks.length > 0 && (
             <div className="mt-2 flex flex-wrap gap-1.5">
-              {task.subtasks.map(sub => (
+              {subtasks.map(sub => (
                 <span
                   key={sub.id}
-                  className={`text-xs px-2 py-0.5 rounded-full ${
+                  className={`text-xs px-2 py-0.5 rounded-full transition-all ${
                     sub.completed
                       ? 'bg-emerald-50 text-emerald-400 line-through'
-                      : 'bg-gray-100 text-gray-500'
+                      : sub.id === activeSubtask?.id
+                        ? 'bg-indigo-100 text-indigo-600 font-medium ring-1 ring-indigo-300'
+                        : 'bg-gray-100 text-gray-500'
                   }`}
                 >
-                  {sub.title}
+                  {sub.id === activeSubtask?.id && '▸ '}{sub.title}
                 </span>
               ))}
             </div>
@@ -121,9 +127,18 @@ export default function FocusFlow({ task, aiConfig, onStart, onCancel }: FocusFl
         {/* 微脚手架区域 */}
         <div className="px-6 py-5">
           <label className="block text-sm text-gray-600 font-medium mb-3 leading-relaxed">
-            手放在键盘上，你现在的
-            <span className="text-emerald-600 font-bold">第一个极其具体的物理动作</span>
-            是什么？
+            {activeSubtask ? (
+              <>
+                下一步是「<span className="text-indigo-500 font-bold">{activeSubtask.title}</span>」，
+                你打算从哪个<span className="text-emerald-600 font-bold">具体动作</span>开始？
+              </>
+            ) : (
+              <>
+                手放在键盘上，你现在的
+                <span className="text-emerald-600 font-bold">第一个极其具体的物理动作</span>
+                是什么？
+              </>
+            )}
           </label>
 
           {/* 输入框 */}
