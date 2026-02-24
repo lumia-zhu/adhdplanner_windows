@@ -111,12 +111,6 @@ export default function App() {
 
   // ===================== 小组件 / 专注模式 =====================
 
-  /** 普通进入小组件（标题栏按钮） */
-  const handleEnterWidget = () => {
-    window.electronAPI.enterWidget()
-    setIsWidgetMode(true)
-  }
-
   /** 退出小组件 */
   const handleExitWidget = () => {
     // 📊 埋点：如果有正在进行的会话，记录放弃/结束
@@ -520,7 +514,6 @@ export default function App() {
     <div className="h-screen flex flex-col bg-white overflow-hidden">
       <TitleBar
         taskCount={pendingTasks.length}
-        onEnterWidget={handleEnterWidget}
         onOpenAISettings={() => setShowAISettings(true)}
         onOpenReflection={() => setShowReflection(true)}
       />

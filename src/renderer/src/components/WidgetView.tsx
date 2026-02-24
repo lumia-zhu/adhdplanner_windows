@@ -26,7 +26,7 @@ import { triggerEffect } from '../effects'
 
 const BAR_W = 380
 const BAR_H_THIN = 48
-const BAR_H_RELAY = 232
+const BAR_H_RELAY = 220
 const BAR_H_STUCK = 304
 
 // ===================== 类型 =====================
@@ -156,8 +156,8 @@ function FocusDynamicBar({
   // ---- 窗口尺寸管理 ----
   useEffect(() => {
     if (phase === 'relay') {
-      // 有子任务时稍高（多一行子任务指示+按钮），全部完成时矮一些
-      const h = allSubtasksDone ? 180 : currentSubtaskId ? BAR_H_RELAY + 36 : BAR_H_RELAY
+      // 全部完成时矮一些，其余统一高度
+      const h = allSubtasksDone ? 180 : BAR_H_RELAY
       window.electronAPI.resizeWidget(BAR_W, h)
       if (!allSubtasksDone) inputRef.current?.focus()
       // 请求 AI 接力建议
@@ -652,7 +652,7 @@ function FocusDynamicBar({
       </div>
 
       {/* 接力输入区域 */}
-      <div className="no-drag flex-1 px-4 py-3.5 flex flex-col gap-3">
+      <div className="no-drag px-4 py-3 flex flex-col gap-2.5">
         {/* 提示语：根据是否有子任务+是否刚切换子任务变化 */}
         <p className="text-xs text-gray-500 font-medium leading-relaxed">
           {isSubtaskTransition && currentSubtaskTitle ? (
@@ -711,28 +711,38 @@ function FocusDynamicBar({
           ))}
         </div>
 
-        {/* 底部：子任务完成 + 心流 */}
+        {/* 底部：子任务完成 / 完成任务 / 心流 */}
         <div className="flex items-center justify-between pt-2 border-t border-gray-100/80">
-          {currentSubtaskId ? (
+          <div className="flex items-center gap-2">
+            {currentSubtaskId ? (
+              <button
+                onClick={onSubtaskDone}
+                className="text-[11px] text-indigo-500 font-medium hover:text-indigo-600 transition-colors"
+              >
+                ✓ 「{currentSubtaskTitle}」搞定了 →
+              </button>
+            ) : (
+              <span className="text-[11px] text-gray-400">
+                已完成 {session.microHistory.length} 步
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
             <button
-              onClick={onSubtaskDone}
-              className="text-[11px] text-indigo-500 font-medium hover:text-indigo-600 transition-colors"
+              onClick={onEnterFlow}
+              className="flex items-center gap-1 px-3.5 py-1.5 rounded-full
+                         bg-violet-50 text-violet-600 text-[11px] font-semibold border border-violet-200
+                         hover:bg-violet-100 hover:scale-105 active:scale-95 transition-all"
             >
-              ✓ 「{currentSubtaskTitle}」搞定了 →
+              🚀 我有感觉了，直接做
             </button>
-          ) : (
-            <span className="text-[11px] text-gray-400">
-              已完成 {session.microHistory.length} 步
-            </span>
-          )}
-          <button
-            onClick={onEnterFlow}
-            className="flex items-center gap-1 px-3.5 py-1.5 rounded-full
-                       bg-violet-50 text-violet-600 text-[11px] font-semibold border border-violet-200
-                       hover:bg-violet-100 hover:scale-105 active:scale-95 transition-all"
-          >
-            🚀 我有感觉了，直接做
-          </button>
+            <button
+              onClick={onTaskDone}
+              className="text-[11px] text-gray-400 hover:text-emerald-600 transition-colors"
+            >
+              ✓ 任务完成
+            </button>
+          </div>
         </div>
       </div>
     </div>

@@ -6,12 +6,11 @@
 
 interface TitleBarProps {
   taskCount: number         // 未完成的任务数量，显示在标题旁边
-  onEnterWidget: () => void // 切换到小组件模式的回调
   onOpenAISettings?: () => void // 打开 AI 设置面板
   onOpenReflection?: () => void // 打开每日反思页面
 }
 
-export default function TitleBar({ taskCount, onEnterWidget, onOpenAISettings, onOpenReflection }: TitleBarProps) {
+export default function TitleBar({ taskCount, onOpenAISettings, onOpenReflection }: TitleBarProps) {
   return (
     // drag-region 类让这块区域可以被鼠标拖动来移动窗口
     <div className="drag-region flex items-center justify-between px-4 py-3 bg-white border-b border-gray-100 select-none">
@@ -63,19 +62,6 @@ export default function TitleBar({ taskCount, onEnterWidget, onOpenAISettings, o
             </svg>
           </button>
         )}
-
-        {/* 切换小组件模式按钮 */}
-        <button
-          onClick={onEnterWidget}
-          className="w-7 h-7 rounded-md hover:bg-indigo-50 flex items-center justify-center text-gray-400 hover:text-indigo-500 transition-colors"
-          title="切换为小组件置顶模式"
-        >
-          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-              d="M5 15H3a2 2 0 01-2-2V3a2 2 0 012-2h10a2 2 0 012 2v2M9 21h10a2 2 0 002-2V11a2 2 0 00-2-2H9a2 2 0 00-2 2v10a2 2 0 002 2z"
-            />
-          </svg>
-        </button>
 
         {/* 分割线 */}
         <div className="w-px h-4 bg-gray-200 mx-0.5" />
