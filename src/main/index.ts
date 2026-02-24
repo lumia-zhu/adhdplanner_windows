@@ -79,7 +79,7 @@ function loadTrackerEvents(date: string): unknown[] {
 const MAIN_WIDTH  = 480
 const MAIN_HEIGHT = 680
 const WIDGET_WIDTH  = 380
-const WIDGET_HEIGHT = 44
+const WIDGET_HEIGHT = 48
 
 // ===================== 全局状态 =====================
 

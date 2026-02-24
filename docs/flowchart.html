@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ADHD Planner - 交互流程图</title>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+                   "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      background: #f8f9fb;
+      color: #1a1a2e;
+      line-height: 1.7;
+    }
+
+    /* ===== Header ===== */
+    .hero {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: #fff;
+      text-align: center;
+      padding: 56px 24px 48px;
+    }
+    .hero h1 { font-size: 2rem; font-weight: 700; letter-spacing: .5px; }
+    .hero p  { margin-top: 10px; font-size: 1.05rem; opacity: .88; }
+    .hero .badges {
+      margin-top: 20px;
+      display: flex; justify-content: center; gap: 12px; flex-wrap: wrap;
+    }
+    .hero .badge {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 6px 16px; border-radius: 20px;
+      font-size: .82rem; font-weight: 600;
+      backdrop-filter: blur(4px);
+    }
+    .badge-plan   { background: rgba(255,255,255,.22); }
+    .badge-exec   { background: rgba(255,255,255,.22); }
+    .badge-reflect { background: rgba(255,255,255,.22); }
+
+    /* ===== Container ===== */
+    .container { max-width: 1060px; margin: 0 auto; padding: 0 20px 80px; }
+
+    /* ===== Section ===== */
+    .section {
+      margin-top: 48px;
+      background: #fff;
+      border-radius: 16px;
+      box-shadow: 0 2px 16px rgba(0,0,0,.06);
+      overflow: hidden;
+    }
+    .section-header {
+      padding: 24px 32px 18px;
+      border-bottom: 1px solid #f0f0f5;
+      display: flex; align-items: center; gap: 12px;
+    }
+    .section-icon {
+      width: 40px; height: 40px; border-radius: 12px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.3rem; flex-shrink: 0;
+    }
+    .section-icon.plan    { background: #e8f5e9; }
+    .section-icon.exec    { background: #e3f2fd; }
+    .section-icon.reflect { background: #fff8e1; }
+    .section-icon.data    { background: #fce4ec; }
+    .section-icon.overview{ background: #ede7f6; }
+
+    .section-header h2 { font-size: 1.15rem; font-weight: 700; }
+    .section-header .desc { font-size: .82rem; color: #888; margin-top: 2px; }
+
+    .section-body { padding: 28px 24px 32px; overflow-x: auto; }
+
+    /* Mermaid 居中 */
+    .mermaid { display: flex; justify-content: center; }
+    .mermaid svg { max-width: 100%; height: auto; }
+
+    /* ===== Key Points ===== */
+    .keypoints {
+      margin-top: 20px; padding: 18px 22px;
+      background: #fafbfd; border-radius: 12px;
+      border: 1px solid #eef0f5;
+    }
+    .keypoints h4 {
+      font-size: .85rem; font-weight: 700; color: #555;
+      margin-bottom: 10px;
+    }
+    .keypoints ul { padding-left: 18px; }
+    .keypoints li {
+      font-size: .84rem; color: #555; margin-bottom: 6px; line-height: 1.6;
+    }
+    .keypoints li strong { color: #333; }
+
+    /* ===== Summary Banner ===== */
+    .summary-banner {
+      margin-top: 48px;
+      background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);
+      border-radius: 16px;
+      padding: 32px 36px;
+      text-align: center;
+      color: #1a3a2a;
+    }
+    .summary-banner h3 {
+      font-size: 1.1rem; font-weight: 700; margin-bottom: 10px;
+    }
+    .summary-banner p {
+      font-size: .95rem; line-height: 1.7; max-width: 680px; margin: 0 auto;
+    }
+
+    /* ===== Responsive ===== */
+    @media (max-width: 640px) {
+      .hero { padding: 40px 16px 36px; }
+      .hero h1 { font-size: 1.5rem; }
+      .section-header { padding: 18px 20px 14px; }
+      .section-body { padding: 20px 12px 24px; }
+      .container { padding: 0 10px 60px; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ==================== Hero ==================== -->
+<div class="hero">
+  <h1>ADHD Planner 交互流程图</h1>
+  <p>计划 → 执行 → 反思，形成每日正向闭环</p>
+  <div class="badges">
+    <span class="badge badge-plan">🎯 计划阶段</span>
+    <span class="badge badge-exec">⚡ 执行阶段</span>
+    <span class="badge badge-reflect">💡 反思阶段</span>
+  </div>
+</div>
+
+<div class="container">
+
+  <!-- ==================== 0. 总览 ==================== -->
+  <div class="section">
+    <div class="section-header">
+      <div class="section-icon overview">🔄</div>
+      <div>
+        <h2>总览：三阶段闭环</h2>
+        <div class="desc">用户每天经历「计划 → 执行 → 反思」的完整循环</div>
+      </div>
+    </div>
+    <div class="section-body">
+      <pre class="mermaid">
+flowchart LR
+    START([打开应用]) --> MAIN["主界面<br/>基于 Notes 的任务编辑器"]
+    MAIN -->|"写下任务，选择开始"| PLAN["<b>计划阶段</b><br/>拆解第一步微动作<br/><i>如：打开文档，写下第一句话</i>"]
+    PLAN -->|"确认微动作，进入执行"| EXEC["<b>执行阶段</b><br/>置顶任务常驻栏<br/>逐步拆解下一步 + 卡顿建议<br/><i>如：接下来查 3 篇参考文献<br/>→ 卡住时 AI 建议先写熟悉的段落</i>"]
+    EXEC -->|"任务完成，回到主界面"| MAIN
+    MAIN -->|"点击反思"| REFLECT["<b>反思阶段</b><br/>任务完成率 + 任务时间轴<br/>AI 结合今日任务数据引导回顾：<br/><i>做得好的 → 卡住的原因<br/>→ 明天如何改进 → 生成总结</i>"]
+    REFLECT -->|"反思完成"| MAIN
+
+    style PLAN fill:#E8F5E9,stroke:#4CAF50,stroke-width:2px,color:#1b5e20
+    style EXEC fill:#E3F2FD,stroke:#2196F3,stroke-width:2px,color:#0d47a1
+    style REFLECT fill:#FFF8E1,stroke:#FFC107,stroke-width:2px,color:#f57f17
+    style MAIN fill:#f3e5f5,stroke:#9c27b0,stroke-width:2px,color:#4a148c
+      </pre>
+    </div>
+  </div>
+
+  <!-- ==================== 1. 计划阶段 ==================== -->
+  <div class="section">
+    <div class="section-header">
+      <div class="section-icon plan">🎯</div>
+      <div>
+        <h2>阶段一：计划（Planning）</h2>
+        <div class="desc">用户像写笔记一样列任务，AI 帮你拆出第一个极小的行动步骤</div>
+      </div>
+    </div>
+    <div class="section-body">
+      <pre class="mermaid">
+flowchart TD
+    M["📝 主界面"] --> INPUT["输入任务标题 + 按 Enter"]
+    INPUT --> TASK["✅ 创建新任务行"]
+    TASK -->|"按 Tab"| SUB["↳ 缩进为子任务"]
+    TASK -->|"继续 Enter"| INPUT
+    TASK --> OPS["其他操作：<br/>• 点击圆点切换优先级<br/>• 拖拽调整顺序<br/>• 双击编辑文字"]
+
+    M --> START_BTN["点击「▶ 开启任务」<br/>或任务行的播放按钮"]
+    START_BTN --> FOCUS["🎯 FocusFlow 弹窗<br/>元认知拦截层"]
+
+    FOCUS --> Q["❓ 提问：<br/>你现在的第一个<br/>极其具体的物理动作是？"]
+    Q --> AI["🤖 AI 自动生成<br/>2 个微动作建议"]
+
+    AI -->|"点击 AI 建议"| OK["✅ 确认微任务"]
+    Q -->|"自己输入 + Enter"| OK
+
+    OK --> GO(("🚀 进入执行阶段"))
+
+    style FOCUS fill:#E8F5E9,stroke:#4CAF50,stroke-width:2px
+    style GO fill:#C8E6C9,stroke:#388E3C,stroke-width:2px
+    style AI fill:#f1f8e9,stroke:#8bc34a
+      </pre>
+    </div>
+    <div class="keypoints">
+      <h4>💡 关键设计点</h4>
+      <ul>
+        <li><strong>元认知拦截</strong>：强制把模糊大任务拆成一个极小第一步，降低启动阻力</li>
+        <li><strong>AI 微动作建议</strong>：自动生成 2 个具体可执行的小动作，点一下就能开始</li>
+        <li><strong>记事本体验</strong>：像写笔记一样列任务，Tab 缩进即子任务，零学习成本</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- ==================== 2. 执行阶段 ==================== -->
+  <div class="section">
+    <div class="section-header">
+      <div class="section-icon exec">⚡</div>
+      <div>
+        <h2>阶段二：执行（Execution）</h2>
+        <div class="desc">窗口缩为置顶小条，一步步接力推进，卡住有 AI 急救</div>
+      </div>
+    </div>
+    <div class="section-body">
+      <pre class="mermaid">
+flowchart TD
+    ENTER(("开始执行")) --> BAR["🎯 置顶小条 Dynamic Bar<br/>显示：微任务名 + 计时器<br/>按钮：✓完成 | 🆘卡住了 | ✕退出"]
+
+    BAR -->|"点击 ✓ 完成"| RELAY["🔄 接力面板<br/>提问：紧接着的一个动作是？<br/>AI 生成下一步建议"]
+    BAR -->|"点击 🆘"| STUCK_A["🆘 急救面板 A<br/>卡住太正常了！<br/>AI 预测卡点原因"]
+    BAR -->|"点击 ✕"| EXIT["退出回到主界面"]
+
+    RELAY -->|"输入/选择下一步"| BAR
+    RELAY -->|"🚀 我有感觉了，直接做"| FLOW["🚀 心流模式<br/>只显示宏观任务名 + 计时"]
+
+    FLOW -->|"✓ 完成"| DONE["🎉 任务完成！<br/>自动标记 + 庆祝特效"]
+    DONE --> EXIT
+
+    STUCK_A -->|"选择/输入卡点原因"| STUCK_B["💙 急救面板 B<br/>AI 同理心安抚<br/>+ 提供绕路方案"]
+    STUCK_A -->|"没事，我继续做"| BAR
+
+    STUCK_B -->|"选择新的微动作"| BAR
+    STUCK_B -->|"自己输入替代方案"| BAR
+    STUCK_B -->|"继续原来的"| BAR
+
+    style BAR fill:#E3F2FD,stroke:#2196F3,stroke-width:2px
+    style RELAY fill:#e8f5e9,stroke:#66bb6a
+    style FLOW fill:#EDE7F6,stroke:#7C4DFF,stroke-width:2px
+    style STUCK_A fill:#FFF3E0,stroke:#FF9800,stroke-width:2px
+    style STUCK_B fill:#E3F2FD,stroke:#42A5F5,stroke-width:2px
+    style DONE fill:#C8E6C9,stroke:#388E3C,stroke-width:2px
+    style ENTER fill:#bbdefb,stroke:#1976d2
+      </pre>
+    </div>
+    <div class="keypoints">
+      <h4>💡 关键设计点</h4>
+      <ul>
+        <li><strong>置顶薄条</strong>：窗口缩为细长条始终浮在最上方，不遮挡工作区域</li>
+        <li><strong>微任务接力</strong>：完成一步后趁热打铁输入下一步，形成正向动量</li>
+        <li><strong>AI 急救机制</strong>：卡住时不催促，而是帮你分析原因（面板A）→ 给同理心 + 换条路（面板B）</li>
+        <li><strong>心流入口</strong>：连续完成几步进入状态后，一键切换心流模式不再打断</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- ==================== 3. 反思阶段 ==================== -->
+  <div class="section">
+    <div class="section-header">
+      <div class="section-icon reflect">💡</div>
+      <div>
+        <h2>阶段三：反思（Reflection）</h2>
+        <div class="desc">左看今日数据，右跟 AI 轻松聊天，3 问 + 1 总结完成复盘</div>
+      </div>
+    </div>
+    <div class="section-body">
+      <pre class="mermaid">
+flowchart TD
+    ENTRY["点击标题栏 💡 开启每日反思"] --> LOAD["📦 加载今日行为数据"]
+    LOAD --> VIEW["📊 反思主界面 — 双列布局"]
+
+    VIEW --> LEFT["⬅ 左侧：数据可视化"]
+    VIEW --> RIGHT["➡ 右侧：AI 对话窗"]
+
+    LEFT --> L1["🍩 圆环图<br/>任务完成率 (如 75%)"]
+    LEFT --> L2["📈 快捷统计<br/>微步完成数 · 心流时长<br/>总专注分钟 · 卡顿次数"]
+    LEFT --> L3["📅 一日时间轴<br/>✅ 已完成 · 🔥 心流<br/>🆘 卡顿 · ❌ 放弃"]
+
+    RIGHT --> S1["Step 1 ✨ 寻亮点<br/>AI结合完成率提问：<br/>今天哪里做得好？"]
+    S1 -->|"用户回答"| S2["Step 2 🔍 找改进<br/>AI结合时间轴提问：<br/>哪里卡壳了？"]
+    S2 -->|"用户回答"| S3["Step 3 🎯 定策略<br/>AI提问：<br/>明天准备怎么改进？"]
+    S3 -->|"用户回答"| S4["Step 4 📋 生成总结"]
+
+    S4 --> CARD["🏆 今日结算卡片<br/><br/>• 今日MVP操作 — 鼓励亮点<br/>• 遭遇的拦路虎 — 客观描述<br/>• AI新装备 — 实用效率技巧<br/>• 状态补给 — 无条件鼓励"]
+
+    CARD --> DONE_R["✅ 反思完成！"]
+
+    style VIEW fill:#FFF8E1,stroke:#FFC107,stroke-width:2px
+    style CARD fill:#FFFDE7,stroke:#FFD54F,stroke-width:2px
+    style S4 fill:#fff9c4,stroke:#fbc02d
+    style LEFT fill:#f5f5f5,stroke:#bdbdbd
+    style RIGHT fill:#f5f5f5,stroke:#bdbdbd
+      </pre>
+    </div>
+    <div class="keypoints">
+      <h4>💡 关键设计点</h4>
+      <ul>
+        <li><strong>3 问 + 1 总结</strong>：固定流程，不多不少，3 分钟就能完成复盘</li>
+        <li><strong>数据驱动对话</strong>：AI 不泛泛而谈，而是结合你今天的真实操作数据来提问</li>
+        <li><strong>像领奖励不像写检讨</strong>：总结用游戏化语言包装，无条件鼓励 + 补充新效率技巧</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- ==================== 4. 数据流 ==================== -->
+  <div class="section">
+    <div class="section-header">
+      <div class="section-icon data">🧩</div>
+      <div>
+        <h2>数据流：三阶段如何串联</h2>
+        <div class="desc">执行阶段的每一步都被记录为事件，反思阶段读取这些事件生成分析</div>
+      </div>
+    </div>
+    <div class="section-body">
+      <pre class="mermaid">
+flowchart LR
+    subgraph P ["🎯 计划阶段"]
+        direction TB
+        A1["写下任务"] --> A2["选择焦点任务"] --> A3["确认第一步微动作"]
+    end
+
+    subgraph E ["⚡ 执行阶段"]
+        direction TB
+        B1["微任务执行 + 计时"] --> B2["完成 / 卡住 / 接力 / 心流"]
+        B2 --> B3["📝 所有行为<br/>记录为事件"]
+    end
+
+    subgraph R ["💡 反思阶段"]
+        direction TB
+        C1["读取今日事件流"] --> C2["生成数据摘要"]
+        C2 --> C3["AI 基于数据<br/>引导 3+1 对话"]
+        C3 --> C4["输出今日<br/>结算卡片"]
+    end
+
+    P --> E --> R
+
+    style P fill:#E8F5E9,stroke:#4CAF50,stroke-width:2px
+    style E fill:#E3F2FD,stroke:#2196F3,stroke-width:2px
+    style R fill:#FFF8E1,stroke:#FFC107,stroke-width:2px
+      </pre>
+    </div>
+  </div>
+
+  <!-- ==================== Summary ==================== -->
+  <div class="summary-banner">
+    <h3>📌 一句话总结</h3>
+    <p>
+      <strong>计划</strong>时把大任务拆成第一个小动作 →
+      <strong>执行</strong>时一步步接力推进（卡住有 AI 急救）→
+      <strong>反思</strong>时看数据、聊天、领奖励，形成每日正向闭环 🔁
+    </p>
+  </div>
+
+</div>
+
+<script>
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'base',
+    themeVariables: {
+      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif',
+      fontSize: '13px',
+      primaryColor: '#e8eaf6',
+      primaryBorderColor: '#7986cb',
+      primaryTextColor: '#1a1a2e',
+      lineColor: '#90a4ae',
+      secondaryColor: '#f3e5f5',
+      tertiaryColor: '#fff8e1',
+    },
+    flowchart: {
+      htmlLabels: true,
+      curve: 'basis',
+      padding: 16,
+      nodeSpacing: 30,
+      rankSpacing: 40,
+    },
+  });
+</script>
+
+</body>
+</html>

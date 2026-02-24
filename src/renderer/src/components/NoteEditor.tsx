@@ -68,6 +68,8 @@ export default function NoteEditor({ tasks, setTasks, onFocusTask }: NoteEditorP
   const [newLineIndented, setNewLineIndented] = useState(false)
   // 下次渲染后需要聚焦的行 ID
   const [pendingFocusId, setPendingFocusId] = useState<string | null>(null)
+  // 底部输入框是否聚焦（用于显示/隐藏快捷键提示）
+  const [newLineFocused, setNewLineFocused] = useState(false)
 
   // 存储每一行 <input> 的 ref，键是行 ID
   const inputRefs = useRef<Map<string, HTMLInputElement>>(new Map())
@@ -132,34 +134,6 @@ export default function NoteEditor({ tasks, setTasks, onFocusTask }: NoteEditorP
       const allDone = subs.length > 0 && subs.every(s => s.completed)
       return { ...t, subtasks: subs, completed: allDone ? true : t.completed }
     }))
-  }, [setTasks])
-
-  /** 在指定任务后面插入一个空任务，返回新行 ID */
-  const insertTaskAfter = useCallback((afterTaskIndex: number): string => {
-    const id = uid('t')
-    setTasks(prev => {
-      const next = [...prev]
-      next.splice(afterTaskIndex + 1, 0, {
-        id, title: '', note: '', priority: 'medium', completed: false, createdAt: Date.now(),
-      })
-      return next
-    })
-    return id
-  }, [setTasks])
-
-  /** 在指定子任务后面插入一个空子任务，返回新行 ID */
-  const insertSubtaskAfter = useCallback((taskIndex: number, afterSubIndex: number): string => {
-    const id = uid('s')
-    setTasks(prev => {
-      const next = [...prev]
-      const t = { ...next[taskIndex] }
-      const subs = [...(t.subtasks ?? [])]
-      subs.splice(afterSubIndex + 1, 0, { id, title: '', completed: false })
-      t.subtasks = subs
-      next[taskIndex] = t
-      return next
-    })
-    return id
   }, [setTasks])
 
   /** 在列表末尾添加新任务 */
@@ -276,21 +250,15 @@ export default function NoteEditor({ tasks, setTasks, onFocusTask }: NoteEditorP
     const input = e.currentTarget as HTMLInputElement
     const lineIdx = lines.findIndex(l => l.id === line.id)
 
-    // ----- Enter：新建行 -----
+    // ----- Enter：跳到底部输入框（不创建空任务） -----
     if (e.key === 'Enter') {
       e.preventDefault()
-      // 空子任务按 Enter → "升级"为新的独立任务（模拟大纲编辑器行为）
       if (line.type === 'subtask' && input.value === '') {
+        // 空子任务按 Enter → 删除空子任务，跳到底部输入
         deleteSubtaskRaw(line.taskIndex, line.subtaskIndex!)
-        const newId = insertTaskAfter(line.taskIndex)
-        setPendingFocusId(newId)
-      } else if (line.type === 'task') {
-        const newId = insertTaskAfter(line.taskIndex)
-        setPendingFocusId(newId)
-      } else {
-        const newId = insertSubtaskAfter(line.taskIndex, line.subtaskIndex!)
-        setPendingFocusId(newId)
       }
+      // 所有情况都跳到底部新行输入框
+      setPendingFocusId('__new_line__')
       return
     }
 
@@ -337,7 +305,7 @@ export default function NoteEditor({ tasks, setTasks, onFocusTask }: NoteEditorP
       else setPendingFocusId('__new_line__')
       return
     }
-  }, [lines, tasks, insertTaskAfter, insertSubtaskAfter, deleteSubtaskRaw,
+  }, [lines, tasks, deleteSubtaskRaw,
       convertToSubtask, convertToTask, deleteLine])
 
   /** 底部新行输入框键盘事件 */
@@ -354,6 +322,9 @@ export default function NoteEditor({ tasks, setTasks, onFocusTask }: NoteEditorP
         }
         setNewLineText('')
         // 保持当前缩进状态，方便连续添加子任务
+      } else if (newLineIndented) {
+        // 空行 + 子任务模式 → 取消缩进，变为新任务模式（类似"连按两次 Enter"）
+        setNewLineIndented(false)
       }
     }
     if (e.key === 'Tab' && !e.shiftKey) {
@@ -445,33 +416,54 @@ export default function NoteEditor({ tasks, setTasks, onFocusTask }: NoteEditorP
               />
             ))}
 
-            {/* ===== 底部新行输入 ===== */}
-            <div className={`flex items-center gap-2 py-[5px] px-1 transition-all ${
+            {/* ===== 底部新行输入（聚焦模式时隐藏） ===== */}
+            <div className={`transition-all ${
               newLineIndented ? 'ml-[54px]' : 'ml-[26px]'
             }`}>
-              {/* 虚线空心圆（缩进模式时变小，表示子任务） */}
-              <div className={`border-dashed flex-shrink-0 transition-all ${
-                newLineIndented
-                  ? 'w-[14px] h-[14px] rounded-[3px] border-[1.5px] border-gray-300/60'
-                  : 'w-[18px] h-[18px] rounded-full border-2 border-gray-200'
-              }`} />
-              <input
-                ref={newLineRef}
-                type="text"
-                value={newLineText}
-                onChange={(e) => setNewLineText(e.target.value)}
-                onKeyDown={handleNewLineKeyDown}
-                placeholder={
-                  tasks.length === 0
-                    ? '输入第一个任务，按 Enter 添加...'
+              <div className="flex items-center gap-2 py-[5px] px-1">
+                {/* 虚线空心圆（缩进模式时变小，表示子任务） */}
+                <div className={`border-dashed flex-shrink-0 transition-all ${
+                  newLineIndented
+                    ? 'w-[14px] h-[14px] rounded-[3px] border-[1.5px] border-gray-300/60'
+                    : 'w-[18px] h-[18px] rounded-full border-2 border-gray-200'
+                }`} />
+                <input
+                  ref={newLineRef}
+                  type="text"
+                  value={newLineText}
+                  onChange={(e) => setNewLineText(e.target.value)}
+                  onKeyDown={handleNewLineKeyDown}
+                  onFocus={() => setNewLineFocused(true)}
+                  onBlur={() => setNewLineFocused(false)}
+                  placeholder={
+                    tasks.length === 0
+                      ? '输入第一个任务…'
+                      : newLineIndented
+                        ? '子任务…'
+                        : '新任务…'
+                  }
+                  className={`flex-1 bg-transparent outline-none placeholder-gray-300/70 ${
+                    newLineIndented
+                      ? 'text-[13px] text-gray-600'
+                      : 'text-[15px] font-medium text-gray-800'
+                  }`}
+                />
+              </div>
+              {/* 快捷键提示：仅在聚焦且输入为空时显示 */}
+              <div className={`overflow-hidden transition-all duration-200 ${
+                newLineFocused && !newLineText
+                  ? 'max-h-6 opacity-100'
+                  : 'max-h-0 opacity-0'
+              }`}>
+                <p className="text-[11px] text-gray-300 pl-7 pb-1">
+                  {tasks.length === 0
+                    ? 'Enter 添加'
                     : newLineIndented
-                      ? '子任务… Enter 添加 · Shift+Tab 取消缩进'
-                      : '新任务… Enter 添加 · Tab 变子任务'
-                }
-                className={`flex-1 bg-transparent outline-none text-gray-400 placeholder-gray-300/70 ${
-                  newLineIndented ? 'text-[13px]' : 'text-[15px]'
-                }`}
-              />
+                      ? 'Enter 添加 · 再按 Enter 退出子任务 · Shift+Tab 取消缩进'
+                      : 'Enter 添加 · Tab 变子任务'
+                  }
+                </p>
+              </div>
             </div>
 
             {/* 底部留白 */}
@@ -541,13 +533,13 @@ function TaskBlock({
         onFocus={!task.completed ? () => onFocusTask(task.id) : undefined}
         onDelete={() => onDeleteLine(taskLine)}
       />
-      {/* 备注（有内容时显示） */}
+      {/* 备注 */}
       {task.note && (
         <div className="ml-[52px] -mt-1 mb-0.5 pb-1">
           <span className="text-[11px] text-gray-400 italic leading-tight">{task.note}</span>
         </div>
       )}
-      {/* 子任务区域（带左侧引导线） */}
+      {/* 子任务区域 */}
       {hasSubtasks && (
         <div className="ml-[38px] pl-3.5 border-l-[1.5px] border-gray-200/80 mb-1">
           {subtaskLines.map(sl => (
@@ -605,7 +597,7 @@ function LineRow({
 
   return (
     <div className={`flex items-center gap-2 group rounded-md px-1 -mx-1 transition-colors ${
-      isSub ? 'py-[3px]' : 'py-[5px]'
+      isSub ? 'py-1.5' : 'py-2.5'
     }`}>
 
       {/* ---- 拖拽把手（仅父任务，hover 时显示） ---- */}
@@ -680,11 +672,11 @@ function LineRow({
       {onFocus && (
         <button
           onClick={onFocus}
-          className="opacity-0 group-hover:opacity-100 w-6 h-6 rounded-md flex items-center justify-center
-                     text-gray-300 hover:text-emerald-500 hover:bg-emerald-50 transition-all flex-shrink-0"
+          className="opacity-0 group-hover:opacity-100 w-8 h-8 rounded-lg flex items-center justify-center
+                     text-emerald-400 hover:text-emerald-600 hover:bg-emerald-100 transition-all flex-shrink-0"
           title="专注此任务"
         >
-          <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor">
+          <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
             <path d="M8 5v14l11-7z" />
           </svg>
         </button>
@@ -720,11 +712,11 @@ function LineRow({
               setShowDeleteConfirm(true)
             }
           }}
-          className="opacity-0 group-hover:opacity-100 w-6 h-6 rounded-md flex items-center justify-center
-                     text-gray-300 hover:text-red-400 hover:bg-red-50 transition-all flex-shrink-0"
+          className="opacity-0 group-hover:opacity-100 w-8 h-8 rounded-lg flex items-center justify-center
+                     text-gray-400 hover:text-red-500 hover:bg-red-50 transition-all flex-shrink-0"
           title="删除"
         >
-          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
           </svg>
         </button>

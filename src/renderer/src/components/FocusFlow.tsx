@@ -2,11 +2,11 @@
  * FocusFlow —— 阶段1：元认知拦截覆盖层
  *
  * 用户点击某个任务时触发：
- *   1. 全屏半透明遮罩，其他内容淡化
- *   2. 选中任务居中放大显示
- *   3. 下方出现输入框："你现在的第一个极其具体的物理动作是什么？"
+ *   1. 背景柔和模糊淡入，营造聚焦感
+ *   2. 卡片从下方平滑滑入
+ *   3. 输入框自动聚焦
  *   4. AI 自动生成 2 个可点击的微动作筹码
- *   5. 用户输入或点击筹码后按 Enter / 点击【开始】→ 进入执行阶段
+ *   5. 用户确认后进入执行阶段
  */
 
 import { useState, useEffect, useRef } from 'react'
@@ -17,8 +17,8 @@ import { generateMicroActions } from '../services/ai'
 interface FocusFlowProps {
   task: Task
   aiConfig: AIConfig
-  onStart: (microTask: string, source: 'self' | 'ai_chip') => void   // 用户确认微任务 → 进入执行
-  onCancel: () => void                    // 取消
+  onStart: (microTask: string, source: 'self' | 'ai_chip') => void
+  onCancel: () => void
 }
 
 export default function FocusFlow({ task, aiConfig, onStart, onCancel }: FocusFlowProps) {
@@ -27,13 +27,18 @@ export default function FocusFlow({ task, aiConfig, onStart, onCancel }: FocusFl
   const [loadingChips, setLoadingChips] = useState(false)
   const [chipError, setChipError] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
-  /** 追踪用户的微动作来源：自己打字 or 点了 AI 筹码 */
   const sourceRef = useRef<'self' | 'ai_chip'>('self')
 
-  // 自动请求 AI 建议
+  // 入场动画状态：mounted 后延迟一帧触发 CSS transition
+  const [visible, setVisible] = useState(false)
   useEffect(() => {
-    inputRef.current?.focus()
-    if (!aiConfig.apiKey || !aiConfig.modelId) return
+    requestAnimationFrame(() => setVisible(true))
+  }, [])
+
+  // 自动请求 AI 建议 + 延迟聚焦
+  useEffect(() => {
+    const timer = setTimeout(() => inputRef.current?.focus(), 350)
+    if (!aiConfig.apiKey || !aiConfig.modelId) return () => clearTimeout(timer)
     setLoadingChips(true)
     setChipError(null)
     generateMicroActions(task.title, undefined, aiConfig)
@@ -42,7 +47,21 @@ export default function FocusFlow({ task, aiConfig, onStart, onCancel }: FocusFl
         if (error) setChipError(error)
       })
       .finally(() => setLoadingChips(false))
+    return () => clearTimeout(timer)
   }, [task.id])
+
+  // 退出动画：先淡出再回调
+  const handleClose = () => {
+    setVisible(false)
+    setTimeout(onCancel, 300)
+  }
+
+  // Esc 键关闭
+  useEffect(() => {
+    const handleEsc = (e: KeyboardEvent) => { if (e.key === 'Escape') handleClose() }
+    window.addEventListener('keydown', handleEsc)
+    return () => window.removeEventListener('keydown', handleEsc)
+  }, [])
 
   const handleStart = () => {
     const text = microTask.trim()
@@ -51,13 +70,23 @@ export default function FocusFlow({ task, aiConfig, onStart, onCancel }: FocusFl
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
-      {/* 半透明遮罩 */}
-      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onCancel} />
+      {/* 遮罩：柔和渐入 */}
+      <div
+        className={`absolute inset-0 bg-black/30 backdrop-blur-[6px] transition-all duration-300 ease-out ${
+          visible ? 'opacity-100' : 'opacity-0'
+        }`}
+        onClick={handleClose}
+      />
 
-      {/* 主内容卡片 */}
-      <div className="relative z-10 w-[400px] bg-white rounded-2xl shadow-2xl overflow-hidden
-                      animate-in fade-in zoom-in-95 duration-200">
-
+      {/* 主内容卡片：从下方滑入 + 淡入 */}
+      <div
+        className={`relative z-10 w-[400px] bg-white rounded-2xl shadow-2xl overflow-hidden
+                    transition-all duration-300 ease-out ${
+          visible
+            ? 'opacity-100 translate-y-0 scale-100'
+            : 'opacity-0 translate-y-8 scale-[0.97]'
+        }`}
+      >
         {/* 顶部：选中的任务 */}
         <div className="px-6 pt-6 pb-4">
           <p className="text-xs text-emerald-500 font-semibold uppercase tracking-wider mb-2">
@@ -104,7 +133,7 @@ export default function FocusFlow({ task, aiConfig, onStart, onCancel }: FocusFl
               type="text"
               value={microTask}
               onChange={(e) => { setMicroTask(e.target.value); sourceRef.current = 'self' }}
-              onKeyDown={(e) => { if (e.key === 'Enter') handleStart(); if (e.key === 'Escape') onCancel() }}
+              onKeyDown={(e) => { if (e.key === 'Enter') handleStart() }}
               placeholder="例如：打开空白文档…"
               maxLength={50}
               className="flex-1 px-4 py-2.5 text-sm rounded-xl border-2 border-gray-200
@@ -156,7 +185,7 @@ export default function FocusFlow({ task, aiConfig, onStart, onCancel }: FocusFl
         {/* 底部取消 */}
         <div className="px-6 pb-4 flex justify-end">
           <button
-            onClick={onCancel}
+            onClick={handleClose}
             className="text-xs text-gray-400 hover:text-gray-600 transition-colors"
           >
             取消 (Esc)

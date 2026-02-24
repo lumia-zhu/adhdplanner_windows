@@ -1,1 +1,12 @@
-feat: support inline edit for task title
+feat: 全链路行为追踪 + 每日反思模块
+
+- tracker: 事件溯源埋点架构(types/tracker/summary)
+- tracker: 主进程IPC持久化(按日期JSON文件)
+- tracker: App/FocusFlow/WidgetView全流程埋点
+- FocusSession新增sessionId关联事件
+- 每日反思: DonutChart圆环图+DayTimeline时间轴
+- 每日反思: ReflectionChat AI引导对话(3问+1总结)
+- 每日反思: ReflectionView双列布局主页面
+- AI反思prompt优化: 自然语气,减少emoji
+- 修复: 反思对话初始化重复发送2条消息
+- TitleBar新增反思入口按钮
