@@ -15,6 +15,9 @@ interface Window {
     updateTrayCount: (count: number) => void
     onWidgetEnter: (cb: () => void) => void
     onWidgetExit: (cb: () => void) => void
+    // 用户个人资料
+    loadProfile: () => Promise<Record<string, unknown>>
+    saveProfile: (profile: Record<string, unknown>) => Promise<boolean>
     // AI 配置 & 请求
     loadAIConfig: () => Promise<Record<string, string>>
     saveAIConfig: (config: Record<string, string>) => Promise<boolean>

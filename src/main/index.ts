@@ -6,6 +6,7 @@ import fs from 'fs'
 
 const getDataPath = (): string => join(app.getPath('userData'), 'tasks.json')
 const getAIConfigPath = (): string => join(app.getPath('userData'), 'ai-config.json')
+const getProfilePath = (): string => join(app.getPath('userData'), 'profile.json')
 
 function loadAIConfig(): Record<string, string> {
   try {
@@ -35,6 +36,23 @@ function saveTasks(tasks: unknown[]): boolean {
     fs.writeFileSync(getDataPath(), JSON.stringify(tasks, null, 2), 'utf-8')
     return true
   } catch (e) { console.error('[saveTasks]', e); return false }
+}
+
+// ===================== 用户个人资料存储 =====================
+
+function loadProfile(): Record<string, unknown> {
+  try {
+    const p = getProfilePath()
+    if (fs.existsSync(p)) return JSON.parse(fs.readFileSync(p, 'utf-8'))
+  } catch (e) { console.error('[loadProfile]', e) }
+  return {}
+}
+
+function saveProfile(profile: Record<string, unknown>): boolean {
+  try {
+    fs.writeFileSync(getProfilePath(), JSON.stringify(profile, null, 2), 'utf-8')
+    return true
+  } catch (e) { console.error('[saveProfile]', e); return false }
 }
 
 // ===================== 行为追踪数据存储 =====================
@@ -346,6 +364,10 @@ function setupIPC(): void {
     mainWindow.setMaximumSize(width, height)
     mainWindow.setSize(width, height)
   })
+
+  // -------- 用户个人资料 --------
+  ipcMain.handle('profile:load', () => loadProfile())
+  ipcMain.handle('profile:save', (_, profile: Record<string, unknown>) => saveProfile(profile))
 
   // -------- AI 配置 --------
   ipcMain.handle('ai:loadConfig', () => loadAIConfig())

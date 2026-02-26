@@ -37,6 +37,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   resizeWidget: (width: number, height: number): void =>
     ipcRenderer.send('window:resizeWidget', width, height),
 
+  // -------- 用户个人资料 --------
+  loadProfile: (): Promise<Record<string, unknown>> => ipcRenderer.invoke('profile:load'),
+  saveProfile: (profile: Record<string, unknown>): Promise<boolean> =>
+    ipcRenderer.invoke('profile:save', profile),
+
   // -------- AI 配置 & 请求 --------
   loadAIConfig: (): Promise<Record<string, string>> => ipcRenderer.invoke('ai:loadConfig'),
   saveAIConfig: (config: Record<string, string>): Promise<boolean> =>

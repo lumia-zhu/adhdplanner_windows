@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import type { Task } from './types'
+import type { Task, UserProfile } from './types'
+import { EMPTY_PROFILE } from './types'
 import type { AIConfig } from './services/ai'
 import { DEFAULT_AI_CONFIG } from './services/ai'
 import type { FocusSession } from './components/WidgetView'
@@ -9,6 +10,7 @@ import NoteEditor from './components/NoteEditor'
 import WidgetView from './components/WidgetView'
 import FocusFlow from './components/FocusFlow'
 import AISettings from './components/AISettings'
+import ProfileSettings from './components/ProfileSettings'
 import ReflectionView from './components/ReflectionView'
 
 /**
@@ -36,6 +38,10 @@ export default function App() {
   const [aiConfig, setAIConfig] = useState<AIConfig>({ ...DEFAULT_AI_CONFIG })
   const [showAISettings, setShowAISettings] = useState(false)
 
+  // -------- 用户个人资料 --------
+  const [userProfile, setUserProfile] = useState<UserProfile>({ ...EMPTY_PROFILE })
+  const [showProfile, setShowProfile] = useState(false)
+
   // -------- 每日反思 --------
   const [showReflection, setShowReflection] = useState(false)
 
@@ -52,9 +58,10 @@ export default function App() {
   useEffect(() => {
     const loadData = async () => {
       try {
-        const [savedTasks, savedConfig] = await Promise.all([
+        const [savedTasks, savedConfig, savedProfile] = await Promise.all([
           window.electronAPI.loadTasks(),
           window.electronAPI.loadAIConfig(),
+          window.electronAPI.loadProfile(),
         ])
         setTasks(savedTasks as Task[])
         if (savedConfig && savedConfig.apiKey) {
@@ -62,6 +69,16 @@ export default function App() {
             apiUrl: savedConfig.apiUrl || DEFAULT_AI_CONFIG.apiUrl,
             apiKey: savedConfig.apiKey || '',
             modelId: savedConfig.modelId || '',
+          })
+        }
+        // 加载个人资料
+        if (savedProfile && typeof savedProfile === 'object') {
+          setUserProfile({
+            major: String(savedProfile.major || ''),
+            grade: String(savedProfile.grade || ''),
+            challenges: Array.isArray(savedProfile.challenges) ? savedProfile.challenges.map(String) : [],
+            workplaces: Array.isArray(savedProfile.workplaces) ? savedProfile.workplaces.map(String) : [],
+            reflectionTime: savedProfile.reflectionTime ? String(savedProfile.reflectionTime) : null,
           })
         }
       } catch (e) {
@@ -108,6 +125,19 @@ export default function App() {
       console.error('保存AI配置失败:', e)
     }
   }
+
+  // -------- 个人资料保存 --------
+  const handleSaveProfile = async (p: UserProfile) => {
+    setUserProfile(p)
+    try {
+      await window.electronAPI.saveProfile(p as unknown as Record<string, unknown>)
+    } catch (e) {
+      console.error('保存个人资料失败:', e)
+    }
+  }
+
+  /** 判断用户是否已填写过资料（至少填了专业或年级） */
+  const hasProfile = !!(userProfile.major || userProfile.grade)
 
   // ===================== 小组件 / 专注模式 =====================
 
@@ -514,8 +544,10 @@ export default function App() {
     <div className="h-screen flex flex-col bg-white overflow-hidden">
       <TitleBar
         taskCount={pendingTasks.length}
+        onOpenProfile={() => setShowProfile(true)}
         onOpenAISettings={() => setShowAISettings(true)}
         onOpenReflection={() => setShowReflection(true)}
+        hasProfile={hasProfile}
       />
 
       {/* 核心编辑区域 */}
@@ -593,6 +625,14 @@ export default function App() {
         config={aiConfig}
         onSave={handleSaveAIConfig}
         onClose={() => setShowAISettings(false)}
+      />
+
+      {/* 个人资料设置面板 */}
+      <ProfileSettings
+        visible={showProfile}
+        profile={userProfile}
+        onSave={handleSaveProfile}
+        onClose={() => setShowProfile(false)}
       />
     </div>
   )

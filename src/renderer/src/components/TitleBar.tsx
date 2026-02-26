@@ -6,11 +6,13 @@
 
 interface TitleBarProps {
   taskCount: number         // 未完成的任务数量，显示在标题旁边
+  onOpenProfile?: () => void    // 打开个人资料设置
   onOpenAISettings?: () => void // 打开 AI 设置面板
   onOpenReflection?: () => void // 打开每日反思页面
+  hasProfile?: boolean          // 是否已填写个人资料（用于显示小绿点）
 }
 
-export default function TitleBar({ taskCount, onOpenAISettings, onOpenReflection }: TitleBarProps) {
+export default function TitleBar({ taskCount, onOpenProfile, onOpenAISettings, onOpenReflection, hasProfile }: TitleBarProps) {
   return (
     // drag-region 类让这块区域可以被鼠标拖动来移动窗口
     <div className="drag-region flex items-center justify-between px-4 py-3 bg-white border-b border-gray-100 select-none">
@@ -33,6 +35,25 @@ export default function TitleBar({ taskCount, onOpenAISettings, onOpenReflection
 
       {/* 右侧：窗口控制按钮 */}
       <div className="no-drag flex items-center gap-1">
+        {/* 个人资料按钮 */}
+        {onOpenProfile && (
+          <button
+            onClick={onOpenProfile}
+            className="relative w-7 h-7 rounded-md hover:bg-indigo-50 flex items-center justify-center text-gray-400 hover:text-indigo-500 transition-colors"
+            title="个人资料"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
+              />
+            </svg>
+            {/* 已填写资料时显示小绿点 */}
+            {hasProfile && (
+              <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-emerald-400 ring-1 ring-white" />
+            )}
+          </button>
+        )}
+
         {/* 每日反思按钮 */}
         {onOpenReflection && (
           <button

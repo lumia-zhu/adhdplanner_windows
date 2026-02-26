@@ -23,6 +23,27 @@ export interface Task {
   subtasks?: Subtask[]    // 子任务列表（可选，旧数据没有此字段时当空数组处理）
 }
 
+/**
+ * 用户个人资料
+ * 用于 AI 提供个性化建议，保存在本地 profile.json 中
+ */
+export interface UserProfile {
+  major: string            // 专业方向
+  grade: string            // 年级（如 "大三"、"硕一"、"博二"）
+  challenges: string[]     // 我的挑战标签（如 ["拖延", "容易分心"]）
+  workplaces: string[]     // 常用工作场所（如 ["图书馆", "宿舍"]）
+  reflectionTime: string | null  // 每日反思提醒时间（如 "21:30"，null 表示不提醒）
+}
+
+/** 空白的用户资料（初始默认值） */
+export const EMPTY_PROFILE: UserProfile = {
+  major: '',
+  grade: '',
+  challenges: [],
+  workplaces: [],
+  reflectionTime: null,
+}
+
 /** 优先级显示配置 */
 export const PRIORITY_CONFIG = {
   high: {
