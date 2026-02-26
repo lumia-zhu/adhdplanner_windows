@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow, ipcMain, Tray, Menu, nativeImage, net } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, Tray, Menu, nativeImage, net, Notification } from 'electron'
 import { join } from 'path'
 import fs from 'fs'
 
@@ -106,6 +106,81 @@ let tray: Tray | null = null
 let isWidgetMode = false
 let pendingCount = 0   // 当前待办任务数（用于更新托盘提示）
 let forceQuit = false  // 标记是否真正退出（区分"关闭"和"退出"）
+
+// ===================== 每日反思提醒 =====================
+
+let cachedReflectionTime: string | null = null  // 缓存的提醒时间（如 "21:30"）
+let lastNotifiedDate: string | null = null      // 上次提醒的日期（防止同一天重复提醒）
+let reflectionTimer: ReturnType<typeof setInterval> | null = null  // 定时器引用
+
+/** 获取当前日期字符串，如 "2026-02-26" */
+function getTodayStr(): string {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+/** 获取当前时间字符串，如 "21:30" */
+function getNowHHMM(): string {
+  const d = new Date()
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+}
+
+/**
+ * 显示主窗口并通知前端打开反思页面
+ * 如果在小组件模式会先退出小组件
+ */
+function showReflectionView(): void {
+  if (!mainWindow) return
+  // 如果在小组件模式，先退出
+  if (isWidgetMode) {
+    exitWidget()
+    mainWindow.webContents.send('widget:exit')
+  }
+  // 显示并聚焦窗口
+  mainWindow.show()
+  mainWindow.focus()
+  updateTrayMenu()
+  // 通知前端打开反思页面
+  mainWindow.webContents.send('navigate:reflection')
+}
+
+/** 每分钟检查一次是否到了反思提醒时间 */
+function checkReflectionTime(): void {
+  if (!cachedReflectionTime) return
+  const today = getTodayStr()
+  const now = getNowHHMM()
+  // 今天已经提醒过了，跳过
+  if (lastNotifiedDate === today) return
+  // 时间匹配！
+  if (now === cachedReflectionTime) {
+    lastNotifiedDate = today
+    // 发送系统通知
+    const notification = new Notification({
+      title: '🌙 该反思了',
+      body: '今天辛苦了，花几分钟回顾一下吧',
+      silent: false,
+    })
+    // 用户点击通知 → 打开反思页面
+    notification.on('click', () => showReflectionView())
+    notification.show()
+  }
+}
+
+/** 启动反思提醒定时器（每 30 秒检查一次） */
+function startReflectionTimer(): void {
+  // 先清理旧定时器
+  if (reflectionTimer) clearInterval(reflectionTimer)
+  // 从 profile 读取提醒时间
+  const profile = loadProfile()
+  cachedReflectionTime = profile.reflectionTime ? String(profile.reflectionTime) : null
+  if (!cachedReflectionTime) {
+    reflectionTimer = null
+    return
+  }
+  // 立即检查一次，然后每 30 秒检查
+  checkReflectionTime()
+  reflectionTimer = setInterval(checkReflectionTime, 30_000)
+}
 
 // ===================== 小组件位置记忆 =====================
 
@@ -367,7 +442,12 @@ function setupIPC(): void {
 
   // -------- 用户个人资料 --------
   ipcMain.handle('profile:load', () => loadProfile())
-  ipcMain.handle('profile:save', (_, profile: Record<string, unknown>) => saveProfile(profile))
+  ipcMain.handle('profile:save', (_, profile: Record<string, unknown>) => {
+    const result = saveProfile(profile)
+    // 保存后同步更新反思提醒定时器（用户可能改了提醒时间）
+    startReflectionTimer()
+    return result
+  })
 
   // -------- AI 配置 --------
   ipcMain.handle('ai:loadConfig', () => loadAIConfig())
@@ -410,6 +490,8 @@ app.whenReady().then(() => {
   setupIPC()
   createMainWindow()
   createTray()
+  // 启动每日反思提醒定时器
+  startReflectionTimer()
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createMainWindow()

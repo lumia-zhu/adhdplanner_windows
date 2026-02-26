@@ -55,6 +55,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onWidgetEnter: (cb: () => void): void => { ipcRenderer.on('widget:enter', cb) },
   onWidgetExit:  (cb: () => void): void => { ipcRenderer.on('widget:exit',  cb) },
 
+  /** 主进程通知前端打开每日反思页面（由定时提醒触发） */
+  onNavigateReflection: (cb: () => void): void => { ipcRenderer.on('navigate:reflection', cb) },
+
   // -------- 行为追踪 --------
   /** 追加事件到指定日期的日志文件 */
   appendTrackerEvents: (date: string, events: unknown[]): Promise<boolean> =>

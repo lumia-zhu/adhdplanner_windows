@@ -15,6 +15,8 @@ interface Window {
     updateTrayCount: (count: number) => void
     onWidgetEnter: (cb: () => void) => void
     onWidgetExit: (cb: () => void) => void
+    /** 主进程通知打开每日反思页面 */
+    onNavigateReflection: (cb: () => void) => void
     // 用户个人资料
     loadProfile: () => Promise<Record<string, unknown>>
     saveProfile: (profile: Record<string, unknown>) => Promise<boolean>

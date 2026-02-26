@@ -99,6 +99,13 @@ export default function App() {
     })
   }, [])
 
+  // -------- 监听主进程发来的"打开反思页"通知（由定时提醒触发） --------
+  useEffect(() => {
+    window.electronAPI.onNavigateReflection(() => {
+      setShowReflection(true)
+    })
+  }, [])
+
   // -------- 数据自动保存 + 托盘数量同步 --------
   const saveTasks = useCallback(async (newTasks: Task[]) => {
     try {
