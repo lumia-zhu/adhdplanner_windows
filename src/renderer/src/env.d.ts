@@ -11,6 +11,8 @@ interface Window {
     enterWidget: () => void
     exitWidget: () => void
     resizeWidget: (width: number, height: number) => void
+    /** 动态调整主窗口大小（反思侧边栏展开/收起） */
+    resizeMainWindow: (width: number, height: number) => void
     // 托盘通信
     updateTrayCount: (count: number) => void
     onWidgetEnter: (cb: () => void) => void

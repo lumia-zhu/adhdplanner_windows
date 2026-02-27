@@ -440,6 +440,15 @@ function setupIPC(): void {
     mainWindow.setSize(width, height)
   })
 
+  // -------- 主窗口动态调整大小（反思侧边栏展开/收起） --------
+  ipcMain.on('window:resizeMain', (_, width: number, height: number) => {
+    if (!mainWindow || isWidgetMode) return
+    const [, curH] = mainWindow.getSize()
+    // 左边缘不动，向右侧扩展/收缩
+    mainWindow.setMinimumSize(Math.min(width, MAIN_WIDTH), MAIN_HEIGHT)
+    mainWindow.setSize(width, height || curH)
+  })
+
   // -------- 用户个人资料 --------
   ipcMain.handle('profile:load', () => loadProfile())
   ipcMain.handle('profile:save', (_, profile: Record<string, unknown>) => {

@@ -37,6 +37,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   resizeWidget: (width: number, height: number): void =>
     ipcRenderer.send('window:resizeWidget', width, height),
 
+  /** 动态调整主窗口大小（反思侧边栏展开/收起时用） */
+  resizeMainWindow: (width: number, height: number): void =>
+    ipcRenderer.send('window:resizeMain', width, height),
+
   // -------- 用户个人资料 --------
   loadProfile: (): Promise<Record<string, unknown>> => ipcRenderer.invoke('profile:load'),
   saveProfile: (profile: Record<string, unknown>): Promise<boolean> =>
