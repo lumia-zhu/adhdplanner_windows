@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import type { Task, UserProfile } from './types'
+import type { Task, UserProfile, PausedSession } from './types'
 import { EMPTY_PROFILE } from './types'
 import type { AIConfig } from './services/ai'
 import { DEFAULT_AI_CONFIG } from './services/ai'
@@ -471,6 +471,101 @@ export default function App() {
     setSession(null)
   }
 
+  // ===================== 暂停 & 切换 =====================
+
+  /**
+   * 暂停当前任务——保存 session 快照到 task.pausedSession，然后退出小组件
+   * 用户可以之后通过主界面"▶ 继续"恢复
+   */
+  const handlePause = () => {
+    if (!session) return
+
+    const elapsed = Math.floor((Date.now() - session.startTime) / 1000)
+
+    // 构造暂停快照
+    const snapshot: PausedSession = {
+      sessionId: session.sessionId,
+      currentMicroTask: session.currentMicroTask,
+      microHistory: [...session.microHistory],
+      currentSubtaskId: session.currentSubtaskId,
+      currentSubtaskTitle: session.currentSubtaskTitle,
+      pausedAt: Date.now(),
+      elapsedBeforePause: elapsed,
+    }
+
+    // 📊 埋点：暂停事件
+    tracker.track('session.paused', {
+      sessionId: sessionIdRef.current,
+      taskId: session.taskId,
+      taskTitle: session.taskTitle,
+      microAction: session.currentMicroTask,
+      elapsedSeconds: elapsed,
+      completedMicroSteps: session.microHistory.length,
+    })
+
+    // 写入 task.pausedSession
+    setTasks(prev => prev.map(t =>
+      t.id === session.taskId ? { ...t, pausedSession: snapshot } : t,
+    ))
+
+    // 退出小组件
+    window.electronAPI.exitWidget()
+    setIsWidgetMode(false)
+    setFocusTaskId(null)
+    setSession(null)
+  }
+
+  /**
+   * 恢复暂停的任务——读取 task.pausedSession → 重建 FocusSession → 进入小组件
+   */
+  const handleResumePaused = (taskId: string) => {
+    const task = tasks.find(t => t.id === taskId)
+    if (!task || !task.pausedSession) return
+
+    const snap = task.pausedSession
+
+    // 生成新会话 ID（延续旧的 sessionId 前缀 + resume 后缀）
+    const sid = `${snap.sessionId}-r${Date.now().toString(36).slice(-4)}`
+    sessionIdRef.current = sid
+
+    // 重建 FocusSession
+    const restored: FocusSession = {
+      sessionId: sid,
+      taskId: task.id,
+      taskTitle: task.title,
+      currentMicroTask: snap.currentMicroTask,
+      startTime: Date.now(),   // 重新开始计时
+      isFlowMode: false,
+      phase: 'executing',
+      microHistory: [...snap.microHistory],
+      currentSubtaskId: snap.currentSubtaskId,
+      currentSubtaskTitle: snap.currentSubtaskTitle,
+    }
+
+    // 📊 埋点：恢复事件
+    tracker.track('session.resumed', {
+      sessionId: sid,
+      originalSessionId: snap.sessionId,
+      taskId: task.id,
+      taskTitle: task.title,
+      microAction: snap.currentMicroTask,
+      pausedDurationSeconds: Math.floor((Date.now() - snap.pausedAt) / 1000),
+      completedMicroSteps: snap.microHistory.length,
+    })
+
+    // 清除暂停状态
+    setTasks(prev => prev.map(t =>
+      t.id === taskId ? { ...t, pausedSession: null } : t,
+    ))
+
+    setSession(restored)
+    setFocusTaskId(task.id)
+
+    // 进入小组件模式
+    window.electronAPI.enterWidget()
+    setIsWidgetMode(true)
+  }
+
   /** 小组件模式下的任务勾选（旧版小组件用） */
   const handleWidgetToggle = (id: string) => {
     setTasks(prev => prev.map(t => {
@@ -528,6 +623,7 @@ export default function App() {
           onStuckToB={handleStuckToB}
           onResume={handleResume}
           onSubtaskDone={handleSubtaskDone}
+          onPause={handlePause}
         />
       </div>
     )
@@ -558,7 +654,7 @@ export default function App() {
       />
 
       {/* 核心编辑区域 */}
-      <NoteEditor tasks={tasks} setTasks={setTasks} onFocusTask={handleFocusTask} />
+      <NoteEditor tasks={tasks} setTasks={setTasks} onFocusTask={handleFocusTask} onResumePaused={handleResumePaused} />
 
       {/* 底部区域 */}
       <div className="flex-shrink-0 select-none">

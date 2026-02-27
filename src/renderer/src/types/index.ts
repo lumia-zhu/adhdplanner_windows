@@ -21,6 +21,19 @@ export interface Task {
   completed: boolean      // 是否已完成
   createdAt: number       // 创建时间戳（毫秒）
   subtasks?: Subtask[]    // 子任务列表（可选，旧数据没有此字段时当空数组处理）
+  /** 暂停的专注会话快照（用户切换到其他任务时保存，恢复时读取） */
+  pausedSession?: PausedSession | null
+}
+
+/** 暂停的专注会话快照 */
+export interface PausedSession {
+  sessionId: string
+  currentMicroTask: string
+  microHistory: string[]       // 已完成的微步骤列表
+  currentSubtaskId?: string
+  currentSubtaskTitle?: string
+  pausedAt: number             // 暂停时间戳（ms）
+  elapsedBeforePause: number   // 暂停前已累计的秒数
 }
 
 /**

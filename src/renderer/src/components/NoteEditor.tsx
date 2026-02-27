@@ -32,6 +32,7 @@ interface NoteEditorProps {
   tasks: Task[]
   setTasks: React.Dispatch<React.SetStateAction<Task[]>>
   onFocusTask: (id: string) => void
+  onResumePaused: (taskId: string) => void
 }
 
 /** 扁平化的"行"，用于键盘导航和聚焦管理 */
@@ -61,7 +62,7 @@ const uid = (prefix = 't') => `${prefix}-${Date.now()}-${Math.random().toString(
 
 // ===================== 主组件 =====================
 
-export default function NoteEditor({ tasks, setTasks, onFocusTask }: NoteEditorProps) {
+export default function NoteEditor({ tasks, setTasks, onFocusTask, onResumePaused }: NoteEditorProps) {
   // 底部"新行"输入框文本
   const [newLineText, setNewLineText] = useState('')
   // 新行是否处于"子任务缩进"模式（先按 Tab 再打字）
@@ -413,6 +414,7 @@ export default function NoteEditor({ tasks, setTasks, onFocusTask }: NoteEditorP
                   if (focusId) setPendingFocusId(focusId)
                   else setPendingFocusId('__new_line__')
                 }}
+                onResumePaused={onResumePaused}
               />
             ))}
 
@@ -488,11 +490,12 @@ interface TaskBlockProps {
   onCyclePriority: () => void
   onFocusTask: (id: string) => void
   onDeleteLine: (line: FlatLine) => void
+  onResumePaused: (taskId: string) => void
 }
 
 function TaskBlock({
   task, taskIndex, lines, inputRefs,
-  onTextChange, onKeyDown, onToggle, onCyclePriority, onFocusTask, onDeleteLine,
+  onTextChange, onKeyDown, onToggle, onCyclePriority, onFocusTask, onDeleteLine, onResumePaused,
 }: TaskBlockProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: task.id })
   const style = { transform: CSS.Transform.toString(transform), transition }
@@ -537,6 +540,27 @@ function TaskBlock({
       {task.note && (
         <div className="ml-[52px] -mt-1 mb-0.5 pb-1">
           <span className="text-[11px] text-gray-400 italic leading-tight">{task.note}</span>
+        </div>
+      )}
+      {/* 暂停态指示器 */}
+      {task.pausedSession && !task.completed && (
+        <div className="ml-[52px] mb-1.5 flex items-center gap-2">
+          <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-blue-50/80 border border-blue-100">
+            <span className="text-[11px] text-blue-400">⏸</span>
+            <span className="text-[11px] text-blue-500">
+              已暂停 · {task.pausedSession.microHistory.length} 步
+              {task.pausedSession.currentSubtaskTitle && (
+                <> · {task.pausedSession.currentSubtaskTitle}</>
+              )}
+            </span>
+            <button
+              onClick={() => onResumePaused(task.id)}
+              className="ml-1 px-2 py-0.5 rounded-md bg-blue-500 text-white text-[10px] font-semibold
+                         hover:bg-blue-600 active:scale-95 transition-all"
+            >
+              ▶ 继续
+            </button>
+          </div>
         </div>
       )}
       {/* 子任务区域 */}
