@@ -25,7 +25,7 @@ import { triggerEffect } from '../effects'
 // ===================== 常量 =====================
 
 const BAR_W = 380
-const BAR_H_THIN = 58
+const BAR_H_THIN = 66
 const BAR_H_RELAY = 240
 const BAR_H_STUCK = 340
 
@@ -278,9 +278,9 @@ function FocusDynamicBar({
                       border border-gray-200/60 rounded-2xl shadow-[0_4px_24px_rgba(0,0,0,0.08)]
                       px-3.5 py-1 select-none overflow-hidden">
 
-        {/* 上行：状态指示器 + 完整任务名 + 退出 */}
+        {/* 上行：图标 + 任务名（居中）+ 计时（靠右）+ 退出 —— 整行可拖拽，仅按钮 no-drag */}
         <div className="flex items-center gap-2">
-          <div className="no-drag flex-shrink-0">
+          <div className="flex-shrink-0">
             {isFlowMode ? (
               <div className="w-5 h-5 rounded-md bg-gradient-to-br from-violet-500 to-violet-600
                               flex items-center justify-center">
@@ -293,9 +293,12 @@ function FocusDynamicBar({
               </div>
             )}
           </div>
-          <span className="no-drag flex-1 min-w-0 text-[13px] text-gray-700 font-medium truncate">
+          <span className="flex-1 min-w-0 text-[15px] text-gray-800 font-semibold truncate text-center">
             {displayTask}
           </span>
+          {/* 计时器胶囊（右侧） */}
+          <span className="text-[11px] text-gray-400 font-mono flex-shrink-0
+                           bg-gray-100/80 px-1.5 py-0.5 rounded-md">{timeStr}</span>
           <button
             onClick={onExit}
             className="no-drag w-5 h-5 rounded-md flex items-center justify-center
@@ -309,15 +312,9 @@ function FocusDynamicBar({
           </button>
         </div>
 
-        {/* 下行：计时 + 按钮 */}
-        <div className="flex items-center gap-2 mt-0.5">
-          {/* 计时器胶囊 */}
-          <span className="no-drag text-[11px] text-gray-400 font-mono flex-shrink-0
-                           bg-gray-100/80 px-1.5 py-0.5 rounded-md">{timeStr}</span>
-
-          <div className="flex-1" />
-
-          {/* 完成按钮 — 微任务完成时播放轻量动画，最终任务完成时才播庆祝特效 */}
+        {/* 下行：按钮组（居中，等宽）—— 行本身可拖拽，仅按钮 no-drag */}
+        <div className="flex items-center justify-center gap-6 mt-1">
+          {/* 完成按钮 — 柔和绿 */}
           <button
             onClick={(e) => {
               if (isFlowMode) {
@@ -328,26 +325,27 @@ function FocusDynamicBar({
               }
             }}
             disabled={showMicroDone}
-            className={`no-drag flex items-center gap-1 px-3 py-1 rounded-lg
-                       text-xs font-semibold transition-all flex-shrink-0
+            className={`no-drag w-[96px] flex items-center justify-center gap-1.5 py-1.5 rounded-xl
+                       text-xs font-semibold transition-all
                        ${showMicroDone
-                         ? 'bg-emerald-400 text-white scale-110 shadow-md shadow-emerald-300/60'
-                         : 'bg-emerald-500 text-white shadow-sm shadow-emerald-200/50 hover:bg-emerald-600 active:scale-95'
+                         ? 'bg-teal-400 text-white scale-110 shadow-md shadow-teal-200/60'
+                         : 'bg-teal-500 text-white shadow-sm shadow-teal-200/50 hover:bg-teal-600 active:scale-95'
                        }`}
           >
             {showMicroDone ? '✅' : '✓ 完成'}
           </button>
 
-          {/* 卡住了按钮（非心流模式才显示） */}
+          {/* 卡住了按钮（非心流模式才显示，柔和琥珀色，等宽） */}
           {!isFlowMode && (
             <button
               onClick={onStuck}
-              className="no-drag flex items-center justify-center w-6 h-6 rounded-lg
-                         text-gray-400 hover:text-orange-500 hover:bg-orange-50
-                         active:scale-95 transition-all flex-shrink-0"
+              className="no-drag w-[96px] flex items-center justify-center gap-1.5 py-1.5 rounded-xl
+                         text-xs font-semibold
+                         bg-amber-500 text-white shadow-sm shadow-amber-200/50
+                         hover:bg-amber-600 active:scale-95 transition-all"
               title="卡住了？让AI帮你换条路"
             >
-              <span className="text-xs">🆘</span>
+              🆘 卡住了
             </button>
           )}
         </div>
