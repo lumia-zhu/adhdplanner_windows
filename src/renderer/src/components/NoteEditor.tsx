@@ -692,15 +692,18 @@ function LineRow({
         }`}
       />
 
-      {/* ---- 专注按钮（hover 时显示） ---- */}
+      {/* ---- 专注按钮（常驻显示，醒目入口） ---- */}
       {onFocus && (
         <button
           onClick={onFocus}
-          className="opacity-0 group-hover:opacity-100 w-8 h-8 rounded-lg flex items-center justify-center
-                     text-emerald-400 hover:text-emerald-600 hover:bg-emerald-100 transition-all flex-shrink-0"
+          className="w-7 h-7 rounded-lg flex items-center justify-center
+                     bg-emerald-50 text-emerald-500 border border-emerald-200
+                     hover:bg-emerald-500 hover:text-white hover:border-emerald-500
+                     hover:shadow-sm hover:shadow-emerald-200/50
+                     active:scale-90 transition-all flex-shrink-0"
           title="专注此任务"
         >
-          <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+          <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor">
             <path d="M8 5v14l11-7z" />
           </svg>
         </button>

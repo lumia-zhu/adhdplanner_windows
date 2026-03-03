@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ADHD Planner · 用户交互流程图</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Noto Sans SC', sans-serif;
+      background: #f5f5f5;
+      display: flex; flex-direction: column; align-items: center;
+      padding: 24px 16px 48px;
+    }
+    .figure-wrap {
+      background: white; border-radius: 14px;
+      box-shadow: 0 1px 8px rgba(0,0,0,0.06);
+      padding: 24px 16px 14px; max-width: 1100px; width: 100%;
+    }
+    .fig-title { font-size: 15px; font-weight: 700; color: #1e293b; text-align: center; }
+    .fig-caption { font-size: 11.5px; color: #94a3b8; text-align: center; margin: 4px 0 14px; }
+    svg { width: 100%; height: auto; display: block; }
+    .legend-bar {
+      display: flex; justify-content: center; flex-wrap: wrap; gap: 12px 18px;
+      margin-top: 12px; padding-top: 10px; border-top: 1px solid #f0f0f0;
+    }
+    .legend-item { display: flex; align-items: center; gap: 5px; font-size: 11px; color: #64748b; }
+    .legend-swatch { width: 14px; height: 14px; border-radius: 4px; border: 1.5px solid; }
+  </style>
+</head>
+<body>
+  <div class="figure-wrap">
+    <div class="fig-title">Fig. 1 &ensp; ADHD Planner 用户交互流程</div>
+    <div class="fig-caption">三阶段闭环：计划 → 执行 → 反思 &ensp;｜&ensp;仅展示用户感知的界面与操作</div>
+
+    <svg viewBox="0 0 1040 820" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <marker id="ag" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 1L10 5L0 9z" fill="#34d399"/></marker>
+        <marker id="ab" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 1L10 5L0 9z" fill="#60a5fa"/></marker>
+        <marker id="ao" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 1L10 5L0 9z" fill="#fb923c"/></marker>
+        <marker id="av" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 1L10 5L0 9z" fill="#a78bfa"/></marker>
+        <marker id="ay" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 1L10 5L0 9z" fill="#f59e0b"/></marker>
+        <marker id="agr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 1L10 5L0 9z" fill="#9ca3af"/></marker>
+      </defs>
+
+      <!-- ================================================================ -->
+      <!--              计划阶段 (PLAN)  y: 36 — 200                          -->
+      <!-- ================================================================ -->
+
+      <text x="490" y="22" text-anchor="middle" font-size="10" fill="#94a3b8" letter-spacing="5">PLAN 计划</text>
+
+      <!-- N1: 主界面 -->
+      <rect x="355" y="36" width="270" height="52" rx="12" fill="white" stroke="#34d399" stroke-width="2"/>
+      <text x="490" y="58" text-anchor="middle" font-size="13.5" font-weight="700" fill="#1e293b">📝 主界面 · 任务编辑器</text>
+      <text x="490" y="77" text-anchor="middle" font-size="9.5" fill="#94a3b8">写任务 · Tab子任务 · 拖拽排序 · 优先级 · 恢复暂停</text>
+
+      <!-- A1: 主界面 → 元认知弹窗 -->
+      <path d="M490,88 L490,130" stroke="#34d399" stroke-width="2" fill="none" marker-end="url(#ag)"/>
+      <text x="505" y="115" font-size="9.5" fill="#059669" font-weight="600">选择任务 ▶</text>
+
+      <!-- N2: 元认知弹窗 -->
+      <rect x="345" y="130" width="290" height="56" rx="12" fill="#ecfdf5" stroke="#34d399" stroke-width="2"/>
+      <text x="490" y="152" text-anchor="middle" font-size="13.5" font-weight="700" fill="#1e293b">🎯 元认知拦截弹窗</text>
+      <text x="490" y="172" text-anchor="middle" font-size="10" fill="#475569">你的第一个<tspan font-weight="700" fill="#059669">具体动作</tspan>是？ · 💡AI建议 / 自己输入</text>
+
+      <!-- A2: 元认知弹窗 → 执行区域 -->
+      <path d="M490,186 L490,228" stroke="#34d399" stroke-width="2" fill="none" marker-end="url(#ag)"/>
+      <text x="508" y="213" font-size="9.5" fill="#059669" font-weight="600">确认微动作</text>
+
+      <!-- ================================================================ -->
+      <!--            执行阶段 (EXECUTE)  y: 228 — 548                        -->
+      <!-- ================================================================ -->
+
+      <rect x="60" y="228" width="890" height="320" rx="16" fill="#eff6ff" stroke="#bfdbfe" stroke-width="1.5"/>
+      <text x="100" y="252" font-size="10.5" font-weight="700" fill="#3b82f6" letter-spacing="3">EXECUTE 执行</text>
+
+      <!-- N3: 执行中（中间） -->
+      <rect x="345" y="275" width="185" height="54" rx="11" fill="white" stroke="#3b82f6" stroke-width="2"/>
+      <text x="437" y="297" text-anchor="middle" font-size="13" font-weight="700" fill="#1e293b">⚡ 执行中</text>
+      <text x="437" y="316" text-anchor="middle" font-size="9.5" fill="#64748b">置顶薄条 · 微任务名 + ⏱计时</text>
+
+      <!-- N4: 接力面板（右侧） -->
+      <rect x="620" y="275" width="200" height="64" rx="11" fill="white" stroke="#3b82f6" stroke-width="2"/>
+      <text x="720" y="297" text-anchor="middle" font-size="13" font-weight="700" fill="#1e293b">🔄 接力面板</text>
+      <line x1="634" y1="306" x2="806" y2="306" stroke="#dbeafe" stroke-width="0.7"/>
+      <text x="720" y="322" text-anchor="middle" font-size="9.5" fill="#475569">下一步是？ · 💡AI建议</text>
+
+      <!-- N5: 急救面板（左侧） -->
+      <rect x="80" y="278" width="175" height="76" rx="11" fill="#fff7ed" stroke="#fb923c" stroke-width="1.8"/>
+      <text x="167" y="300" text-anchor="middle" font-size="12.5" font-weight="700" fill="#ea580c">🆘 急救面板</text>
+      <line x1="94" y1="308" x2="241" y2="308" stroke="#fed7aa" stroke-width="0.7"/>
+      <text x="167" y="323" text-anchor="middle" font-size="9.5" fill="#475569">卡点分析 · 同理心安抚</text>
+      <text x="167" y="340" text-anchor="middle" font-size="9.5" fill="#475569">🔘 AI绕路建议 / 倾诉</text>
+
+      <!-- ===== 横向箭头 ===== -->
+
+      <!-- A3: 执行 → 接力 (完成✓) 上方线 -->
+      <path d="M530,293 L620,293" stroke="#3b82f6" stroke-width="2" fill="none" marker-end="url(#ab)"/>
+      <rect x="550" y="279" width="50" height="16" rx="5" fill="#eff6ff"/>
+      <text x="575" y="291" text-anchor="middle" font-size="9" font-weight="600" fill="#2563eb">完成 ✓</text>
+
+      <!-- A4: 接力 → 执行 (继续) 下方弧线回路 -->
+      <path d="M648,339 C648,375 558,375 558,329"
+            stroke="#3b82f6" stroke-width="1.8" fill="none" marker-end="url(#ab)"/>
+      <rect x="576" y="368" width="40" height="15" rx="5" fill="#dbeafe"/>
+      <text x="596" y="379" text-anchor="middle" font-size="9" font-weight="600" fill="#2563eb">继续</text>
+
+      <!-- A5: 执行 → 急救 (卡住🆘) -->
+      <path d="M345,308 L255,308" stroke="#fb923c" stroke-width="2" fill="none" marker-end="url(#ao)"/>
+      <rect x="268" y="296" width="60" height="16" rx="5" fill="#fff7ed"/>
+      <text x="298" y="308" text-anchor="middle" font-size="9" font-weight="600" fill="#ea580c">卡住 🆘</text>
+
+      <!-- A6: 急救 → 执行 (绕路) 上方弧线 -->
+      <path d="M230,280 C280,258 340,258 380,275"
+            stroke="#fb923c" stroke-width="1.8" fill="none" marker-end="url(#ao)" stroke-dasharray="5,3"/>
+      <rect x="282" y="252" width="42" height="15" rx="5" fill="#fff7ed"/>
+      <text x="303" y="263" text-anchor="middle" font-size="9" font-weight="500" fill="#ea580c">绕路</text>
+
+      <!-- ===== 心流模式 ===== -->
+
+      <!-- N6: 心流模式 -->
+      <rect x="418" y="408" width="180" height="48" rx="11" fill="#f5f3ff" stroke="#a78bfa" stroke-width="2"/>
+      <text x="508" y="428" text-anchor="middle" font-size="13" font-weight="700" fill="#6d28d9">🚀 心流模式</text>
+      <text x="508" y="446" text-anchor="middle" font-size="9.5" fill="#64748b">宏观任务名 + 计时 · 深度工作</text>
+
+      <!-- A7: 接力 → 心流 -->
+      <path d="M720,339 C720,380 570,385 546,408"
+            stroke="#a78bfa" stroke-width="2" fill="none" marker-end="url(#av)"/>
+      <rect x="660" y="362" width="70" height="16" rx="5" fill="#f5f3ff"/>
+      <text x="695" y="374" text-anchor="middle" font-size="9" font-weight="600" fill="#7c3aed">进入心流 🚀</text>
+
+      <!-- ===== 任务完成 ===== -->
+
+      <!-- N7: 任务完成 -->
+      <rect x="430" y="482" width="155" height="44" rx="11" fill="#ecfdf5" stroke="#10b981" stroke-width="2.5"/>
+      <text x="507" y="502" text-anchor="middle" font-size="13" font-weight="700" fill="#059669">🎉 任务完成</text>
+      <text x="507" y="518" text-anchor="middle" font-size="9" fill="#64748b">庆祝特效 · 标记完成</text>
+
+      <!-- A8: 心流 → 完成 -->
+      <path d="M508,456 L508,482" stroke="#10b981" stroke-width="2" fill="none" marker-end="url(#ag)"/>
+      <text x="524" y="474" font-size="9" font-weight="600" fill="#059669">完成 ✓</text>
+
+      <!-- A_relay_complete: 接力 → 完成 (全部完成) 右侧弧线 -->
+      <path d="M820,310 C855,310 855,504 585,504"
+            stroke="#10b981" stroke-width="1.5" fill="none" marker-end="url(#ag)" stroke-dasharray="5,3"/>
+      <text x="846" y="404" font-size="9" fill="#059669" font-weight="500" transform="rotate(90,846,404)">全部完成 ✓</text>
+
+      <!-- ===== 暂停出口 ===== -->
+
+      <!-- 暂停节点 -->
+      <rect x="86" y="396" width="125" height="34" rx="9" fill="white" stroke="#9ca3af" stroke-width="1.5" stroke-dasharray="5,3"/>
+      <text x="148" y="417" text-anchor="middle" font-size="11" font-weight="600" fill="#6b7280">⏸ 暂停 · 存档</text>
+
+      <!-- A_relay_pause: 接力 → 暂停 -->
+      <path d="M620,330 C500,360 260,370 211,410"
+            stroke="#9ca3af" stroke-width="1.3" fill="none" marker-end="url(#agr)" stroke-dasharray="4,3"/>
+      <text x="428" y="362" font-size="8.5" fill="#9ca3af">⏸ 暂停</text>
+
+      <!-- A_stuck_pause: 急救 → 暂停 -->
+      <path d="M167,354 L167,396" stroke="#9ca3af" stroke-width="1.3" fill="none" marker-end="url(#agr)" stroke-dasharray="4,3"/>
+      <text x="180" y="380" font-size="8.5" fill="#9ca3af">⏸</text>
+
+      <!-- ================================================================ -->
+      <!--       左侧返回线：任务完成 / 暂停 → 主界面                          -->
+      <!-- ================================================================ -->
+
+      <!-- R1: 任务完成 → 左侧 → 上 → 主界面 (绿色实线) -->
+      <path d="M430,504 L32,504 L32,62 L355,62"
+            stroke="#34d399" stroke-width="2" fill="none" marker-end="url(#ag)"/>
+      <!-- 圆角转弯辅助 -->
+      <circle cx="32" cy="504" r="3" fill="#34d399"/>
+      <circle cx="32" cy="62" r="3" fill="#34d399"/>
+      <!-- 标签 -->
+      <rect x="8" y="278" width="18" height="58" rx="4" fill="#ecfdf5"/>
+      <text x="22" y="314" text-anchor="middle" font-size="9" font-weight="600" fill="#059669" transform="rotate(-90,22,314)">回到主界面</text>
+
+      <!-- R2: 暂停 → 左侧 → 上 → 主界面 (灰色虚线，紧贴R1内侧) -->
+      <path d="M86,420 L46,420 L46,72 L355,72"
+            stroke="#9ca3af" stroke-width="1.5" fill="none" marker-end="url(#agr)" stroke-dasharray="5,3"/>
+      <circle cx="46" cy="420" r="2.5" fill="#9ca3af"/>
+      <circle cx="46" cy="72" r="2.5" fill="#9ca3af"/>
+      <text x="52" y="182" font-size="8.5" fill="#9ca3af" font-weight="500">暂停→恢复</text>
+
+      <!-- ================================================================ -->
+      <!--            反思阶段 (REFLECT)  y: 598 — 720                        -->
+      <!-- ================================================================ -->
+
+      <rect x="60" y="598" width="890" height="120" rx="16" fill="#fffbeb" stroke="#fde68a" stroke-width="1.5"/>
+      <text x="100" y="622" font-size="10.5" font-weight="700" fill="#d97706" letter-spacing="3">REFLECT 反思</text>
+
+      <!-- N8: 数据可视化 -->
+      <rect x="80" y="638" width="200" height="56" rx="11" fill="white" stroke="#f59e0b" stroke-width="1.8"/>
+      <text x="180" y="660" text-anchor="middle" font-size="12.5" font-weight="700" fill="#1e293b">📊 数据可视化</text>
+      <text x="180" y="680" text-anchor="middle" font-size="9.5" fill="#64748b">完成率 · 统计 · 一日时间轴</text>
+
+      <!-- N9: AI 对话 -->
+      <rect x="390" y="638" width="200" height="56" rx="11" fill="white" stroke="#f59e0b" stroke-width="1.8"/>
+      <text x="490" y="660" text-anchor="middle" font-size="12.5" font-weight="700" fill="#1e293b">💬 AI 反思对话</text>
+      <text x="490" y="680" text-anchor="middle" font-size="9.5" fill="#64748b">寻亮点 → 找改进 → 定策略</text>
+
+      <!-- N10: 结算卡片 -->
+      <rect x="700" y="638" width="200" height="56" rx="11" fill="white" stroke="#f59e0b" stroke-width="1.8"/>
+      <text x="800" y="660" text-anchor="middle" font-size="12.5" font-weight="700" fill="#1e293b">📋 结算卡片</text>
+      <text x="800" y="680" text-anchor="middle" font-size="9.5" fill="#64748b">MVP · 拦路虎 · 新装备 · 鼓励</text>
+
+      <!-- A9: 数据 → AI对话 -->
+      <path d="M280,666 L390,666" stroke="#f59e0b" stroke-width="1.8" fill="none" marker-end="url(#ay)"/>
+      <rect x="305" y="652" width="56" height="16" rx="5" fill="#fffbeb"/>
+      <text x="333" y="664" text-anchor="middle" font-size="9" font-weight="600" fill="#b45309">点击 🤖</text>
+
+      <!-- A10: AI对话 → 结算卡片 -->
+      <path d="M590,666 L700,666" stroke="#f59e0b" stroke-width="1.8" fill="none" marker-end="url(#ay)"/>
+      <rect x="616" y="652" width="56" height="16" rx="5" fill="#fffbeb"/>
+      <text x="644" y="664" text-anchor="middle" font-size="9" font-weight="600" fill="#b45309">3问完成</text>
+
+      <!-- ================================================================ -->
+      <!--       右侧线路：主界面 → 反思入口（下行）/ 反思 → 主界面（上行）     -->
+      <!-- ================================================================ -->
+
+      <!-- E1: 主界面 → 反思 (进入，右侧下行，琥珀色实线) x=990 -->
+      <path d="M625,52 L990,52 L990,666 L900,666"
+            stroke="#f59e0b" stroke-width="2" fill="none" marker-end="url(#ay)"/>
+      <circle cx="990" cy="52" r="3" fill="#f59e0b"/>
+      <circle cx="990" cy="666" r="3" fill="#f59e0b"/>
+      <!-- 标签 -->
+      <rect x="972" y="330" width="18" height="80" rx="4" fill="#fffbeb"/>
+      <text x="986" y="378" text-anchor="middle" font-size="9" font-weight="600" fill="#b45309" transform="rotate(90,986,378)">点击💡 / 🔔通知</text>
+
+      <!-- E2: 结算卡片 → 主界面 (返回，右侧上行，绿色实线) x=975 -->
+      <path d="M900,680 L975,680 L975,66 L625,66"
+            stroke="#34d399" stroke-width="2" fill="none" marker-end="url(#ag)"/>
+      <circle cx="975" cy="680" r="3" fill="#34d399"/>
+      <circle cx="975" cy="66" r="3" fill="#34d399"/>
+      <rect x="957" y="440" width="18" height="58" rx="4" fill="#ecfdf5"/>
+      <text x="971" y="476" text-anchor="middle" font-size="9" font-weight="600" fill="#059669" transform="rotate(90,971,476)">关闭·回到主界面</text>
+
+      <!-- ================================================================ -->
+      <!--                  接力面板底部操作提示                                 -->
+      <!-- ================================================================ -->
+      <text x="720" y="349" text-anchor="middle" font-size="8" fill="#94a3b8">→下个子任务 ｜ ✓全部完成 ｜ ⏸切换任务</text>
+
+      <!-- ================================================================ -->
+      <!--                    底部说明                                         -->
+      <!-- ================================================================ -->
+      <text x="510" y="760" text-anchor="middle" font-size="10.5" fill="#94a3b8">
+        <tspan fill="#34d399" font-weight="600">——</tspan> 绿色实线：主路径与返回 &emsp;
+        <tspan fill="#3b82f6" font-weight="600">——</tspan> 蓝色：执行循环 &emsp;
+        <tspan fill="#f59e0b" font-weight="600">——</tspan> 琥珀色：反思路径 &emsp;
+        <tspan fill="#9ca3af" font-weight="600">- -</tspan> 灰色虚线：暂停/绕路
+      </text>
+      <text x="510" y="782" text-anchor="middle" font-size="10" fill="#b0b8c4">
+        所有路径最终回到主界面，形成每日闭环
+      </text>
+
+    </svg>
+
+    <!-- ========== 图例 ========== -->
+    <div class="legend-bar">
+      <div class="legend-item"><div class="legend-swatch" style="background:#ecfdf5; border-color:#34d399;"></div>计划</div>
+      <div class="legend-item"><div class="legend-swatch" style="background:#eff6ff; border-color:#60a5fa;"></div>执行</div>
+      <div class="legend-item"><div class="legend-swatch" style="background:#fff7ed; border-color:#fb923c;"></div>急救</div>
+      <div class="legend-item"><div class="legend-swatch" style="background:#f5f3ff; border-color:#a78bfa;"></div>心流</div>
+      <div class="legend-item"><div class="legend-swatch" style="background:#fffbeb; border-color:#f59e0b;"></div>反思</div>
+    </div>
+  </div>
+</body>
+</html>

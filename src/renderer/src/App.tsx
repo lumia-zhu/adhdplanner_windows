@@ -658,21 +658,22 @@ export default function App() {
 
       {/* 底部区域 */}
       <div className="flex-shrink-0 select-none">
-        {/* 开启任务按钮 */}
+        {/* 开启任务按钮（辅助入口，默认指向第一个待办） */}
         {pendingTasks.length > 0 && (
-          <div className="flex justify-center -mt-6 mb-2 relative z-10">
+          <div className="flex justify-center -mt-4 mb-2 relative z-10">
             <button
               onClick={() => handleFocusTask(pendingTasks[0].id)}
-              className="flex items-center gap-2.5 px-8 py-3 rounded-full
-                         bg-emerald-500 hover:bg-emerald-600 active:scale-95
-                         text-white text-base font-semibold
-                         shadow-lg shadow-emerald-200/70 hover:shadow-xl hover:shadow-emerald-300/70
+              className="flex items-center gap-2 px-5 py-2 rounded-full
+                         bg-white hover:bg-emerald-50 active:scale-95
+                         text-emerald-600 text-sm font-medium
+                         border border-emerald-200 hover:border-emerald-400
+                         shadow-sm hover:shadow-md hover:shadow-emerald-100/50
                          transition-all duration-200"
             >
-              <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
+              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
                 <path d="M8 5v14l11-7z" />
               </svg>
-              开启任务
+              开始第一个待办
             </button>
           </div>
         )}
