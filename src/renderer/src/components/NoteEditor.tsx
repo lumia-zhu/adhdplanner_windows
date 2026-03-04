@@ -33,6 +33,8 @@ interface NoteEditorProps {
   setTasks: React.Dispatch<React.SetStateAction<Task[]>>
   onFocusTask: (id: string) => void
   onResumePaused: (taskId: string) => void
+  /** hover ▶ 按钮时预加载 AI 建议（可选） */
+  onPrefetchTask?: (taskId: string) => void
 }
 
 /** 扁平化的"行"，用于键盘导航和聚焦管理 */
@@ -62,7 +64,7 @@ const uid = (prefix = 't') => `${prefix}-${Date.now()}-${Math.random().toString(
 
 // ===================== 主组件 =====================
 
-export default function NoteEditor({ tasks, setTasks, onFocusTask, onResumePaused }: NoteEditorProps) {
+export default function NoteEditor({ tasks, setTasks, onFocusTask, onResumePaused, onPrefetchTask }: NoteEditorProps) {
   // 底部"新行"输入框文本
   const [newLineText, setNewLineText] = useState('')
   // 新行是否处于"子任务缩进"模式（先按 Tab 再打字）
@@ -409,6 +411,7 @@ export default function NoteEditor({ tasks, setTasks, onFocusTask, onResumePause
                 onToggle={toggleLine}
                 onCyclePriority={() => cyclePriority(taskIndex)}
                 onFocusTask={onFocusTask}
+                onPrefetchTask={onPrefetchTask}
                 onDeleteLine={(line) => {
                   const focusId = deleteLine(line)
                   if (focusId) setPendingFocusId(focusId)
@@ -489,13 +492,14 @@ interface TaskBlockProps {
   onToggle: (line: FlatLine) => void
   onCyclePriority: () => void
   onFocusTask: (id: string) => void
+  onPrefetchTask?: (taskId: string) => void
   onDeleteLine: (line: FlatLine) => void
   onResumePaused: (taskId: string) => void
 }
 
 function TaskBlock({
   task, taskIndex, lines, inputRefs,
-  onTextChange, onKeyDown, onToggle, onCyclePriority, onFocusTask, onDeleteLine, onResumePaused,
+  onTextChange, onKeyDown, onToggle, onCyclePriority, onFocusTask, onPrefetchTask, onDeleteLine, onResumePaused,
 }: TaskBlockProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: task.id })
   const style = { transform: CSS.Transform.toString(transform), transition }
@@ -534,6 +538,7 @@ function TaskBlock({
         onToggle={onToggle}
         onCyclePriority={onCyclePriority}
         onFocus={!task.completed ? () => onFocusTask(task.id) : undefined}
+        onHoverFocus={!task.completed && onPrefetchTask ? () => onPrefetchTask(task.id) : undefined}
         onDelete={() => onDeleteLine(taskLine)}
       />
       {/* 备注 */}
@@ -597,12 +602,14 @@ interface LineRowProps {
   onToggle: (line: FlatLine) => void
   onCyclePriority?: () => void
   onFocus?: () => void
+  /** hover ▶ 按钮时预加载 AI 建议 */
+  onHoverFocus?: () => void
   onDelete: () => void
 }
 
 function LineRow({
   line, task, inputRefs, dragAttrs, dragListeners,
-  onTextChange, onKeyDown, onToggle, onCyclePriority, onFocus, onDelete,
+  onTextChange, onKeyDown, onToggle, onCyclePriority, onFocus, onHoverFocus, onDelete,
 }: LineRowProps) {
   const isSub = line.type === 'subtask'
   const sub = isSub ? (task.subtasks ?? [])[line.subtaskIndex!] : null
@@ -692,10 +699,11 @@ function LineRow({
         }`}
       />
 
-      {/* ---- 专注按钮（常驻显示，醒目入口） ---- */}
+      {/* ---- 专注按钮（常驻显示，醒目入口；hover 时预加载 AI 建议） ---- */}
       {onFocus && (
         <button
           onClick={onFocus}
+          onMouseEnter={onHoverFocus}
           className="w-7 h-7 rounded-lg flex items-center justify-center
                      bg-emerald-50 text-emerald-500 border border-emerald-200
                      hover:bg-emerald-500 hover:text-white hover:border-emerald-500

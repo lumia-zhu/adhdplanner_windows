@@ -170,7 +170,8 @@ export async function generateMicroActions(
     ? `${taskContext}\n上一步完成了：${lastStep}\n请给出紧接着的2个微动作建议。`
     : `${taskContext}\n请给出开始这个${subtaskTitle ? '子任务' : '任务'}时最先要做的2个微动作建议。`
 
-  const { content, error } = await callLLM(systemPrompt, userPrompt, cfg)
+  // max_tokens 60 即可（chips 只是 2 个短词的 JSON 数组，远不需要 120）
+  const { content, error } = await callLLM(systemPrompt, userPrompt, cfg, 60)
   if (error) return { chips: [], error }
 
   const chips = parseChips(content, 2)

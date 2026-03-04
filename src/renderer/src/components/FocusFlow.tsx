@@ -12,7 +12,7 @@
 import { useState, useEffect, useRef } from 'react'
 import type { Task } from '../types'
 import type { AIConfig } from '../services/ai'
-import { generateMicroActions } from '../services/ai'
+import { aiCache } from '../services/ai-cache'
 
 interface FocusFlowProps {
   task: Task
@@ -39,19 +39,22 @@ export default function FocusFlow({ task, aiConfig, onStart, onCancel }: FocusFl
     requestAnimationFrame(() => setVisible(true))
   }, [])
 
-  // 自动请求 AI 建议 + 延迟聚焦（传入子任务上下文让建议更精准）
+  // 自动获取 AI 建议（优先缓存 → 在途请求 → 新请求）+ 延迟聚焦
   useEffect(() => {
     const timer = setTimeout(() => inputRef.current?.focus(), 350)
     if (!aiConfig.apiKey || !aiConfig.modelId) return () => clearTimeout(timer)
     setLoadingChips(true)
     setChipError(null)
-    generateMicroActions(task.title, undefined, aiConfig, activeSubtask?.title)
-      .then(({ chips: newChips, error }) => {
+    let cancelled = false
+    aiCache.get(task.id, task.title, aiConfig, activeSubtask?.title)
+      .then(({ chips: newChips, error, fromCache }) => {
+        if (cancelled) return
         setChips(newChips)
         if (error) setChipError(error)
+        if (fromCache) console.log('[FocusFlow] AI 建议来自缓存，秒出 ✓')
       })
-      .finally(() => setLoadingChips(false))
-    return () => clearTimeout(timer)
+      .finally(() => { if (!cancelled) setLoadingChips(false) })
+    return () => { cancelled = true; clearTimeout(timer) }
   }, [task.id])
 
   // 退出动画：先淡出再回调

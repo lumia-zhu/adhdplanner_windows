@@ -17,8 +17,9 @@
 import { useState, useEffect, useRef } from 'react'
 import type { Task } from '../types'
 import type { AIConfig } from '../services/ai'
-import { generateMicroActions, generateStuckChips, generatePivotResponse } from '../services/ai'
+import { generateStuckChips, generatePivotResponse } from '../services/ai'
 import type { PivotResult } from '../services/ai'
+import { aiCache } from '../services/ai-cache'
 import { tracker } from '../services/tracker'
 import { triggerEffect } from '../effects'
 
@@ -122,7 +123,7 @@ function FocusDynamicBar({
   onStuck, onStuckToB, onResume, onSubtaskDone, onExit, onPause,
 }: FocusDynamicBarProps) {
   const {
-    phase, isFlowMode, currentMicroTask, taskTitle, startTime,
+    taskId, phase, isFlowMode, currentMicroTask, taskTitle, startTime,
     currentSubtaskId, currentSubtaskTitle, isSubtaskTransition, allSubtasksDone,
   } = session
 
@@ -163,13 +164,16 @@ function FocusDynamicBar({
       const h = allSubtasksDone ? 180 : BAR_H_RELAY
       window.electronAPI.resizeWidget(BAR_W, h)
       if (!allSubtasksDone) inputRef.current?.focus()
-      // 请求 AI 接力建议
+      // 请求 AI 接力建议（优先缓存，秒出）
       if (aiConfig.apiKey && aiConfig.modelId && !allSubtasksDone) {
         setLoadingChips(true)
         // 子任务过渡时不传 lastStep（让AI基于新子任务生成建议）
         const lastStep = isSubtaskTransition ? undefined : currentMicroTask
-        generateMicroActions(taskTitle, lastStep, aiConfig, currentSubtaskTitle)
-          .then(({ chips: c }) => setChips(c))
+        aiCache.get(taskId, taskTitle, aiConfig, currentSubtaskTitle, lastStep)
+          .then(({ chips: c, fromCache }) => {
+            setChips(c)
+            if (fromCache) console.log('[Widget relay] AI 建议来自缓存 ✓')
+          })
           .finally(() => setLoadingChips(false))
       }
     } else if (phase === 'stuck_a') {

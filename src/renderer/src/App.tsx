@@ -5,6 +5,7 @@ import type { AIConfig } from './services/ai'
 import { DEFAULT_AI_CONFIG } from './services/ai'
 import type { FocusSession } from './components/WidgetView'
 import { tracker } from './services/tracker'
+import { aiCache } from './services/ai-cache'
 import TitleBar from './components/TitleBar'
 import NoteEditor from './components/NoteEditor'
 import WidgetView from './components/WidgetView'
@@ -123,9 +124,10 @@ export default function App() {
     }
   }, [tasks, loading, saveTasks])
 
-  // -------- AI 配置保存 --------
+  // -------- AI 配置保存（同时清除旧缓存） --------
   const handleSaveAIConfig = async (cfg: AIConfig) => {
     setAIConfig(cfg)
+    aiCache.clearAll()   // 换了模型/Key，旧缓存失效
     try {
       await window.electronAPI.saveAIConfig(cfg as unknown as Record<string, string>)
     } catch (e) {
@@ -590,6 +592,23 @@ export default function App() {
   // 找到 FocusFlow 需要的任务
   const scaffoldTask = scaffoldTaskId ? tasks.find(t => t.id === scaffoldTaskId) : null
 
+  // -------- AI 建议预加载：任务列表就绪后自动预加载第一个待办 --------
+  useEffect(() => {
+    if (loading || isWidgetMode || !aiConfig.apiKey) return
+    const first = pendingTasks[0]
+    if (!first) return
+    const subtaskTitle = (first.subtasks ?? []).find(s => !s.completed)?.title
+    aiCache.prefetch(first.id, first.title, aiConfig, subtaskTitle)
+  }, [loading, isWidgetMode, tasks, aiConfig])
+
+  /** hover ▶ 按钮时预加载该任务的 AI 建议 */
+  const handlePrefetchTask = useCallback((taskId: string) => {
+    const task = tasks.find(t => t.id === taskId)
+    if (!task) return
+    const subtaskTitle = (task.subtasks ?? []).find(s => !s.completed)?.title
+    aiCache.prefetch(task.id, task.title, aiConfig, subtaskTitle)
+  }, [tasks, aiConfig])
+
   // -------- 加载中 --------
   if (loading) {
     return (
@@ -654,7 +673,7 @@ export default function App() {
       />
 
       {/* 核心编辑区域 */}
-      <NoteEditor tasks={tasks} setTasks={setTasks} onFocusTask={handleFocusTask} onResumePaused={handleResumePaused} />
+      <NoteEditor tasks={tasks} setTasks={setTasks} onFocusTask={handleFocusTask} onResumePaused={handleResumePaused} onPrefetchTask={handlePrefetchTask} />
 
       {/* 底部区域 */}
       <div className="flex-shrink-0 select-none">
