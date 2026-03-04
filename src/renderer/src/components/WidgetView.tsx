@@ -27,7 +27,7 @@ import { triggerEffect } from '../effects'
 
 const BAR_W = 380
 const BAR_H_THIN = 66
-const BAR_H_RELAY = 240
+const BAR_H_RELAY = 280
 const BAR_H_STUCK = 340
 
 // ===================== 类型 =====================
@@ -282,9 +282,10 @@ function FocusDynamicBar({
                       border border-gray-200/60 rounded-2xl shadow-[0_4px_24px_rgba(0,0,0,0.08)]
                       px-3.5 py-1 select-none overflow-hidden">
 
-        {/* 上行：图标 + 任务名（居中）+ 计时（靠右）+ 退出 —— 整行可拖拽，仅按钮 no-drag */}
-        <div className="flex items-center gap-2">
-          <div className="flex-shrink-0">
+        {/* 上行：三栏布局 — 左区（图标）| 中区（任务名）| 右区（计时+关闭），中区绝对居中 */}
+        <div className="flex items-center">
+          {/* 左区：图标 */}
+          <div className="w-[60px] flex items-center flex-shrink-0">
             {isFlowMode ? (
               <div className="w-5 h-5 rounded-md bg-gradient-to-br from-violet-500 to-violet-600
                               flex items-center justify-center">
@@ -297,61 +298,67 @@ function FocusDynamicBar({
               </div>
             )}
           </div>
+          {/* 中区：任务名 */}
           <span className="flex-1 min-w-0 text-[15px] text-gray-800 font-semibold truncate text-center">
             {displayTask}
           </span>
-          {/* 计时器胶囊（右侧） */}
-          <span className="text-[11px] text-gray-400 font-mono flex-shrink-0
-                           bg-gray-100/80 px-1.5 py-0.5 rounded-md">{timeStr}</span>
-          <button
-            onClick={onExit}
-            className="no-drag w-5 h-5 rounded-md flex items-center justify-center
-                       text-gray-300 hover:text-gray-500 hover:bg-gray-100
-                       transition-all flex-shrink-0"
-            title="退出专注"
-          >
-            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
+          {/* 右区：计时 + 关闭（宽度与左区平衡） */}
+          <div className="w-[60px] flex items-center justify-end gap-1 flex-shrink-0">
+            <span className="text-[11px] text-gray-400 font-mono
+                             bg-gray-100/80 px-1.5 py-0.5 rounded-md">{timeStr}</span>
+            <button
+              onClick={onExit}
+              className="no-drag w-5 h-5 rounded-md flex items-center justify-center
+                         text-gray-300 hover:text-gray-500 hover:bg-gray-100
+                         transition-all flex-shrink-0"
+              title="退出专注"
+            >
+              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
         </div>
 
-        {/* 下行：按钮组（居中，等宽）—— 行本身可拖拽，仅按钮 no-drag */}
-        <div className="flex items-center justify-center gap-6 mt-1">
-          {/* 完成按钮 — 柔和绿 */}
-          <button
-            onClick={(e) => {
-              if (isFlowMode) {
-                triggerEffect(e.currentTarget)
-                onTaskDone()
-              } else {
-                handleMicroDoneClick()
-              }
-            }}
-            disabled={showMicroDone}
-            className={`no-drag w-[96px] flex items-center justify-center gap-1.5 py-1.5 rounded-xl
-                       text-xs font-semibold transition-all
-                       ${showMicroDone
-                         ? 'bg-teal-400 text-white scale-110 shadow-md shadow-teal-200/60'
-                         : 'bg-teal-500 text-white shadow-sm shadow-teal-200/50 hover:bg-teal-600 active:scale-95'
-                       }`}
-          >
-            {showMicroDone ? '✅' : '✓ 完成'}
-          </button>
-
-          {/* 卡住了按钮（非心流模式才显示，柔和琥珀色，等宽） */}
-          {!isFlowMode && (
+        {/* 下行：三栏布局 — 左占位 | 完成按钮居中 | 卡住了右对齐，与上行对齐 */}
+        <div className="flex items-center mt-1">
+          {/* 左占位（与上行左区同宽） */}
+          <div className="w-[60px] flex-shrink-0" />
+          {/* 完成按钮 — 居中主角 */}
+          <div className="flex-1 flex justify-center">
             <button
-              onClick={onStuck}
-              className="no-drag w-[96px] flex items-center justify-center gap-1.5 py-1.5 rounded-xl
-                         text-xs font-semibold
-                         bg-amber-500 text-white shadow-sm shadow-amber-200/50
-                         hover:bg-amber-600 active:scale-95 transition-all"
-              title="卡住了？让AI帮你换条路"
+              onClick={(e) => {
+                if (isFlowMode) {
+                  triggerEffect(e.currentTarget)
+                  onTaskDone()
+                } else {
+                  handleMicroDoneClick()
+                }
+              }}
+              disabled={showMicroDone}
+              className={`no-drag px-6 py-1.5 rounded-xl
+                         text-xs font-semibold transition-all
+                         ${showMicroDone
+                           ? 'bg-teal-400 text-white scale-110 shadow-md shadow-teal-200/60'
+                           : 'bg-teal-500 text-white shadow-sm shadow-teal-200/50 hover:bg-teal-600 active:scale-95'
+                         }`}
             >
-              🆘 卡住了
+              {showMicroDone ? '✅' : '✓ 完成'}
             </button>
-          )}
+          </div>
+          {/* 卡住了 — 右对齐次级文字（与上行右区同宽，垂直对齐） */}
+          <div className="w-[60px] flex items-center justify-end flex-shrink-0">
+            {!isFlowMode && (
+              <button
+                onClick={onStuck}
+                className="no-drag text-[11px] text-amber-500
+                           hover:text-amber-600 active:scale-95 transition-all whitespace-nowrap"
+                title="卡住了？让AI帮你换条路"
+              >
+                卡住了?
+              </button>
+            )}
+          </div>
         </div>
       </div>
     )
