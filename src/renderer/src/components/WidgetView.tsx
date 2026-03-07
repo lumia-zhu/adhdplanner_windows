@@ -827,7 +827,7 @@ function FocusDynamicBar({
                          active:scale-95 transition-all"
               title="暂停当前任务，切换到其他任务"
             >
-              ⏸ 切换任务
+              ⏸ 暂停
             </button>
             {currentSubtaskId && (
               <button
