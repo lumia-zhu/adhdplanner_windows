@@ -157,6 +157,19 @@ function FocusDynamicBar({
   const [pivotInput, setPivotInput] = useState('')
   const pivotInputRef = useRef<HTMLInputElement>(null)
 
+  // ---- ★ 执行阶段：静默预加载 relay 接力建议 ----
+  // 用户正在做微任务时，后台提前请求 AI 建议
+  // 等用户点"✅ 完成"进入 relay 时，缓存已热好 → 0 等待
+  useEffect(() => {
+    if (phase === 'executing' && !isFlowMode && aiConfig.apiKey && aiConfig.modelId) {
+      aiCache.prefetch(taskId, taskTitle, aiConfig, currentSubtaskTitle, currentMicroTask)
+    }
+  }, [phase, taskId, currentMicroTask, currentSubtaskTitle])
+
+  // ---- 回退模板：AI 超过 2.5 秒没返回时显示通用建议 ----
+  const FALLBACK_CHIPS = ['继续往下做', '换个更简单的方式', '先做最熟悉的部分']
+  const fallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
   // ---- 窗口尺寸管理 ----
   useEffect(() => {
     if (phase === 'relay') {
@@ -167,10 +180,20 @@ function FocusDynamicBar({
       // 请求 AI 接力建议（优先缓存，秒出）
       if (aiConfig.apiKey && aiConfig.modelId && !allSubtasksDone) {
         setLoadingChips(true)
+
+        // ★ 超时回退：2.5 秒后若 AI 还没返回，先显示通用建议
+        fallbackTimerRef.current = setTimeout(() => {
+          setChips(prev => prev.length === 0 ? FALLBACK_CHIPS : prev)
+          setLoadingChips(false)
+          console.log('[Widget relay] AI 超时，显示回退模板')
+        }, 2500)
+
         // 子任务过渡时不传 lastStep（让AI基于新子任务生成建议）
         const lastStep = isSubtaskTransition ? undefined : currentMicroTask
         aiCache.get(taskId, taskTitle, aiConfig, currentSubtaskTitle, lastStep)
           .then(({ chips: c, fromCache }) => {
+            // AI 返回了 → 取消回退定时器，用真实结果
+            if (fallbackTimerRef.current) clearTimeout(fallbackTimerRef.current)
             setChips(c)
             if (fromCache) console.log('[Widget relay] AI 建议来自缓存 ✓')
           })
@@ -200,6 +223,8 @@ function FocusDynamicBar({
       setStuckInput('')
       setPivotData(null)
       setPivotInput('')
+      // 清理回退定时器
+      if (fallbackTimerRef.current) { clearTimeout(fallbackTimerRef.current); fallbackTimerRef.current = null }
     }
   }, [phase, currentSubtaskId, allSubtasksDone])
 
@@ -270,7 +295,7 @@ function FocusDynamicBar({
     setTimeout(() => {
       setShowMicroDone(false)
       onMicroComplete()
-    }, 500) // 500ms 闪动后跳转
+    }, 800) // 800ms 闪动后跳转（多 300ms 做预加载安全缓冲）
   }
 
   // ============ 执行状态 / 心流状态（薄条 58px，两行布局）============

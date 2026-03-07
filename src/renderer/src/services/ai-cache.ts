@@ -83,24 +83,27 @@ function cleanup(): void {
  * 预加载 AI 建议（静默执行，不阻塞 UI）
  *
  * 适用场景：
- *   - 任务列表渲染完成时，为第一个待办任务预加载
- *   - hover 到 ▶ 按钮时，为该任务预加载
+ *   - 任务列表渲染完成时，为第一个待办任务预加载（不传 lastStep）
+ *   - hover 到 ▶ 按钮时，为该任务预加载（不传 lastStep）
+ *   - ★ 执行阶段进入时，为 relay 接力预加载（传 lastStep = currentMicroTask）
  *
  * @param taskId        任务 ID
  * @param taskTitle     任务标题
  * @param config        AI 配置
  * @param subtaskTitle  当前子任务标题（可选）
+ * @param lastStep      用户正在做的微任务（可选，传了才能命中 relay 缓存）
  */
 function prefetch(
   taskId: string,
   taskTitle: string,
   config: AIConfig,
   subtaskTitle?: string,
+  lastStep?: string,
 ): void {
   // AI 没配置就不预加载
   if (!config.apiKey || !config.modelId) return
 
-  const key = buildKey(taskId, subtaskTitle)
+  const key = buildKey(taskId, subtaskTitle, lastStep)
 
   // 已有有效缓存 → 不重复请求
   const existing = cache.get(key)
@@ -109,10 +112,10 @@ function prefetch(
   // 已有在途请求 → 不重复请求
   if (inflight.has(key)) return
 
-  console.log('[AI Cache] 预加载:', taskTitle, subtaskTitle ?? '')
+  console.log('[AI Cache] 预加载:', taskTitle, subtaskTitle ?? '', lastStep ? `(lastStep: ${lastStep})` : '')
 
   // 发起请求并存入 inflight
-  const promise = generateMicroActions(taskTitle, undefined, config, subtaskTitle)
+  const promise = generateMicroActions(taskTitle, lastStep, config, subtaskTitle)
     .then(result => {
       // 写入缓存
       cache.set(key, {
