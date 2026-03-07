@@ -9,10 +9,13 @@
  *   5. 用户确认后进入执行阶段
  */
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import type { Task } from '../types'
 import type { AIConfig } from '../services/ai'
 import { aiCache } from '../services/ai-cache'
+
+// ★ 通用回退建议（AI 超时时兜底显示）
+const FALLBACK_CHIPS = ['打开相关文件', '先写一句话开头']
 
 interface FocusFlowProps {
   task: Task
@@ -40,21 +43,40 @@ export default function FocusFlow({ task, aiConfig, onStart, onCancel }: FocusFl
   }, [])
 
   // 自动获取 AI 建议（优先缓存 → 在途请求 → 新请求）+ 延迟聚焦
+  // ★ 增加 2.5 秒超时回退 + 骨架占位
+  const fallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
   useEffect(() => {
-    const timer = setTimeout(() => inputRef.current?.focus(), 350)
-    if (!aiConfig.apiKey || !aiConfig.modelId) return () => clearTimeout(timer)
+    const focusTimer = setTimeout(() => inputRef.current?.focus(), 350)
+    if (!aiConfig.apiKey || !aiConfig.modelId) return () => clearTimeout(focusTimer)
     setLoadingChips(true)
     setChipError(null)
     let cancelled = false
+
+    // ★ 2.5 秒后若 AI 还没返回，先显示通用回退建议
+    fallbackTimerRef.current = setTimeout(() => {
+      if (!cancelled) {
+        setChips(prev => prev.length === 0 ? FALLBACK_CHIPS : prev)
+        setLoadingChips(false)
+        console.log('[FocusFlow] AI 超时，显示回退模板')
+      }
+    }, 2500)
+
     aiCache.get(task.id, task.title, aiConfig, activeSubtask?.title)
       .then(({ chips: newChips, error, fromCache }) => {
         if (cancelled) return
+        // AI 返回了 → 取消回退定时器，用真实结果
+        if (fallbackTimerRef.current) clearTimeout(fallbackTimerRef.current)
         setChips(newChips)
         if (error) setChipError(error)
         if (fromCache) console.log('[FocusFlow] AI 建议来自缓存，秒出 ✓')
       })
       .finally(() => { if (!cancelled) setLoadingChips(false) })
-    return () => { cancelled = true; clearTimeout(timer) }
+    return () => {
+      cancelled = true
+      clearTimeout(focusTimer)
+      if (fallbackTimerRef.current) clearTimeout(fallbackTimerRef.current)
+    }
   }, [task.id])
 
   // 退出动画：先淡出再回调
@@ -173,11 +195,12 @@ export default function FocusFlow({ task, aiConfig, onStart, onCancel }: FocusFl
 
           {/* AI 建议筹码 */}
           <div className="mt-3 flex flex-wrap gap-2 min-h-[28px]">
+            {/* ★ 骨架芯片占位：闪烁的芯片形状，视觉锚点防注意力流失 */}
             {loadingChips && (
-              <span className="text-xs text-gray-400 flex items-center gap-1.5">
-                <span className="w-3 h-3 border-2 border-gray-300 border-t-emerald-400 rounded-full animate-spin" />
-                AI 正在思考…
-              </span>
+              <>
+                <span className="h-7 w-24 rounded-full bg-emerald-50 border border-emerald-100 animate-pulse" />
+                <span className="h-7 w-32 rounded-full bg-emerald-50 border border-emerald-100 animate-pulse" />
+              </>
             )}
             {!loadingChips && chips.map((chip, i) => (
               <button

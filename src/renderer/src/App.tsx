@@ -604,14 +604,32 @@ export default function App() {
   // 找到 FocusFlow 需要的任务
   const scaffoldTask = scaffoldTaskId ? tasks.find(t => t.id === scaffoldTaskId) : null
 
-  // -------- AI 建议预加载：任务列表就绪后自动预加载第一个待办 --------
+  // -------- AI 建议预加载 --------
+
+  // ★ 策略1：页面加载后预加载前 3 个待办任务（错开请求，避免同时打 API）
   useEffect(() => {
     if (loading || isWidgetMode || !aiConfig.apiKey) return
-    const first = pendingTasks[0]
-    if (!first) return
-    const subtaskTitle = (first.subtasks ?? []).find(s => !s.completed)?.title
-    aiCache.prefetch(first.id, first.title, aiConfig, subtaskTitle)
-  }, [loading, isWidgetMode, tasks, aiConfig])
+    const topTasks = pendingTasks.slice(0, 3)
+    topTasks.forEach((t, i) => {
+      const subtaskTitle = (t.subtasks ?? []).find(s => !s.completed)?.title
+      // 错开 0ms / 800ms / 1600ms，避免并发压力
+      setTimeout(() => aiCache.prefetch(t.id, t.title, aiConfig, subtaskTitle), i * 800)
+    })
+  }, [loading, isWidgetMode, aiConfig])  // 注意：不监听 tasks，只在加载完成时触发一次
+
+  // ★ 策略2：新任务创建时立即预加载（覆盖"写完就想干"场景）
+  const prevTaskCountRef = useRef(0)
+  useEffect(() => {
+    if (loading || isWidgetMode || !aiConfig.apiKey) return
+    const currentCount = pendingTasks.length
+    // 任务数量增加 → 说明新建了任务，预加载最后一个（刚创建的）
+    if (currentCount > prevTaskCountRef.current && currentCount > 0) {
+      const newest = pendingTasks[currentCount - 1]
+      const subtaskTitle = (newest.subtasks ?? []).find(s => !s.completed)?.title
+      aiCache.prefetch(newest.id, newest.title, aiConfig, subtaskTitle)
+    }
+    prevTaskCountRef.current = currentCount
+  }, [pendingTasks.length, aiConfig])
 
   /** hover ▶ 按钮时预加载该任务的 AI 建议 */
   const handlePrefetchTask = useCallback((taskId: string) => {

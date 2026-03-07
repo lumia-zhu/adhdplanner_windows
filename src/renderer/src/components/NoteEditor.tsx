@@ -518,6 +518,8 @@ function TaskBlock({
     <div
       ref={setNodeRef}
       style={style}
+      // ★ 整行 hover 预加载：鼠标进入任务行区域就触发，比只 hover ▶ 按钮更早
+      onMouseEnter={!task.completed && onPrefetchTask ? () => onPrefetchTask(task.id) : undefined}
       className={`rounded-lg mb-1 transition-all ${
         isDragging
           ? 'opacity-40 scale-[1.02]'
