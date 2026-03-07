@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow, ipcMain, Tray, Menu, nativeImage, net, Notification } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, Tray, Menu, nativeImage, net, Notification, powerMonitor } from 'electron'
 import { join } from 'path'
 import fs from 'fs'
 
@@ -425,6 +425,9 @@ function setupIPC(): void {
     updateTrayMenu()
   })
 
+  // 渲染进程启动时查询当前窗口模式（解决睡眠唤醒后状态不同步）
+  ipcMain.handle('window:getMode', () => ({ isWidgetMode }))
+
   ipcMain.on('window:minimize', () => mainWindow?.minimize())
   ipcMain.on('window:hide',     () => { mainWindow?.hide(); updateTrayMenu() })
   ipcMain.on('window:quit',     () => { forceQuit = true; app.quit() })
@@ -501,6 +504,21 @@ app.whenReady().then(() => {
   createTray()
   // 启动每日反思提醒定时器
   startReflectionTimer()
+
+  // ---- 系统唤醒后重新同步窗口状态 ----
+  powerMonitor.on('resume', () => {
+    if (!mainWindow) return
+    if (isWidgetMode) {
+      // 重新设置 widget 尺寸（防止 OS 唤醒后窗口大小异常）
+      mainWindow.setMinimumSize(WIDGET_WIDTH, WIDGET_HEIGHT)
+      mainWindow.setMaximumSize(WIDGET_WIDTH, WIDGET_HEIGHT)
+      mainWindow.setSize(WIDGET_WIDTH, WIDGET_HEIGHT)
+      mainWindow.setAlwaysOnTop(true, 'floating')
+      mainWindow.show()
+    }
+    // 通知渲染进程重新同步模式
+    mainWindow.webContents.send('window:modeSync', { isWidgetMode })
+  })
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createMainWindow()

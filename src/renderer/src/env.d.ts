@@ -15,8 +15,12 @@ interface Window {
     resizeMainWindow: (width: number, height: number) => void
     // 托盘通信
     updateTrayCount: (count: number) => void
+    /** 查询当前窗口模式（启动时同步状态） */
+    getWindowMode: () => Promise<{ isWidgetMode: boolean }>
     onWidgetEnter: (cb: () => void) => void
     onWidgetExit: (cb: () => void) => void
+    /** 系统唤醒后同步窗口模式 */
+    onModeSync: (cb: (data: { isWidgetMode: boolean }) => void) => void
     /** 主进程通知打开每日反思页面 */
     onNavigateReflection: (cb: () => void) => void
     // 用户个人资料

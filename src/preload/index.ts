@@ -55,9 +55,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
   aiRequest: (payload: { url: string; apiKey: string; body: string }): Promise<{ ok: boolean; status: number; body: string }> =>
     ipcRenderer.invoke('ai:request', payload),
 
+  /** 查询当前窗口模式（启动时同步状态，解决睡眠唤醒问题） */
+  getWindowMode: (): Promise<{ isWidgetMode: boolean }> => ipcRenderer.invoke('window:getMode'),
+
   /** 托盘点击"切换小组件"时，主进程通知前端切换 UI（监听事件） */
   onWidgetEnter: (cb: () => void): void => { ipcRenderer.on('widget:enter', cb) },
   onWidgetExit:  (cb: () => void): void => { ipcRenderer.on('widget:exit',  cb) },
+
+  /** 系统唤醒后，主进程通知前端重新同步窗口模式 */
+  onModeSync: (cb: (data: { isWidgetMode: boolean }) => void): void => {
+    ipcRenderer.on('window:modeSync', (_, data) => cb(data))
+  },
 
   /** 主进程通知前端打开每日反思页面（由定时提醒触发） */
   onNavigateReflection: (cb: () => void): void => { ipcRenderer.on('navigate:reflection', cb) },

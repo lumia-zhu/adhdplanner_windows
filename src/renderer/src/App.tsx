@@ -59,10 +59,11 @@ export default function App() {
   useEffect(() => {
     const loadData = async () => {
       try {
-        const [savedTasks, savedConfig, savedProfile] = await Promise.all([
+        const [savedTasks, savedConfig, savedProfile, windowMode] = await Promise.all([
           window.electronAPI.loadTasks(),
           window.electronAPI.loadAIConfig(),
           window.electronAPI.loadProfile(),
+          window.electronAPI.getWindowMode(),   // ★ 同步窗口模式（解决睡眠唤醒问题）
         ])
         setTasks(savedTasks as Task[])
         if (savedConfig && savedConfig.apiKey) {
@@ -82,6 +83,10 @@ export default function App() {
             reflectionTime: savedProfile.reflectionTime ? String(savedProfile.reflectionTime) : null,
           })
         }
+        // ★ 如果主进程说当前是 widget 模式，同步过来（页面重载/唤醒后恢复）
+        if (windowMode?.isWidgetMode) {
+          setIsWidgetMode(true)
+        }
       } catch (e) {
         console.error('加载数据失败:', e)
       } finally {
@@ -97,6 +102,13 @@ export default function App() {
     window.electronAPI.onWidgetExit(() => {
       setIsWidgetMode(false)
       setSession(null)
+    })
+    // ★ 系统唤醒后，主进程推送模式同步（确保 widget 不会变成压缩的主界面）
+    window.electronAPI.onModeSync((data) => {
+      setIsWidgetMode(data.isWidgetMode)
+      if (!data.isWidgetMode) {
+        setSession(null)
+      }
     })
   }, [])
 

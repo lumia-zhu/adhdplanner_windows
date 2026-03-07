@@ -1,0 +1,1267 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ADHD Planner · 数据字典 Data Dictionary</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Noto Sans SC', sans-serif;
+      background: #f8fafc;
+      color: #1e293b;
+      padding: 32px 24px 60px;
+    }
+
+    .page-header {
+      text-align: center;
+      margin-bottom: 40px;
+    }
+    .page-header h1 {
+      font-size: 24px;
+      font-weight: 800;
+      background: linear-gradient(135deg, #10b981, #3b82f6);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 6px;
+    }
+    .page-header p {
+      font-size: 13px;
+      color: #94a3b8;
+    }
+
+    /* ==================== 思维导图 ==================== */
+    .mindmap-section {
+      max-width: 1200px;
+      margin: 0 auto 48px;
+      background: white;
+      border-radius: 16px;
+      box-shadow: 0 1px 12px rgba(0,0,0,0.06);
+      padding: 28px 20px 20px;
+    }
+    .mindmap-section h2 {
+      font-size: 16px;
+      font-weight: 700;
+      text-align: center;
+      margin-bottom: 4px;
+    }
+    .mindmap-section .subtitle {
+      font-size: 11.5px;
+      color: #94a3b8;
+      text-align: center;
+      margin-bottom: 20px;
+    }
+    .mindmap-svg { width: 100%; height: auto; display: block; }
+
+    /* ==================== 表格区域 ==================== */
+    .table-section {
+      max-width: 1200px;
+      margin: 0 auto 40px;
+    }
+    .table-section h2 {
+      font-size: 18px;
+      font-weight: 700;
+      margin-bottom: 4px;
+    }
+    .table-section .subtitle {
+      font-size: 12px;
+      color: #94a3b8;
+      margin-bottom: 16px;
+    }
+
+    .phase-group {
+      background: white;
+      border-radius: 14px;
+      box-shadow: 0 1px 8px rgba(0,0,0,0.05);
+      margin-bottom: 24px;
+      overflow: hidden;
+    }
+    .phase-header {
+      padding: 14px 20px;
+      font-size: 14px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .phase-header .badge {
+      font-size: 10px;
+      padding: 2px 8px;
+      border-radius: 6px;
+      font-weight: 600;
+      color: white;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12.5px;
+    }
+    thead th {
+      background: #f8fafc;
+      padding: 10px 14px;
+      text-align: left;
+      font-weight: 600;
+      color: #64748b;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      border-bottom: 1px solid #e2e8f0;
+    }
+    tbody td {
+      padding: 12px 14px;
+      border-bottom: 1px solid #f1f5f9;
+      vertical-align: top;
+      line-height: 1.6;
+    }
+    tbody tr:last-child td { border-bottom: none; }
+    tbody tr:hover { background: #fafbfd; }
+
+    .event-name {
+      font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+      font-size: 11.5px;
+      font-weight: 600;
+      color: #1e293b;
+      white-space: nowrap;
+    }
+    .field-tag {
+      display: inline-block;
+      font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+      font-size: 10.5px;
+      background: #f1f5f9;
+      color: #475569;
+      padding: 1px 6px;
+      border-radius: 4px;
+      margin: 1px 2px;
+    }
+    .field-tag.key {
+      background: #ecfdf5;
+      color: #059669;
+    }
+    .example-block {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 8px 10px;
+      font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+      font-size: 10.5px;
+      color: #334155;
+      line-height: 1.65;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+    .viz-tag {
+      display: inline-block;
+      font-size: 10px;
+      padding: 2px 7px;
+      border-radius: 5px;
+      font-weight: 600;
+      margin: 2px 1px;
+    }
+
+    /* Phase colors */
+    .phase-plan   { border-left: 4px solid #10b981; }
+    .phase-plan .phase-header { color: #059669; }
+    .phase-plan .badge { background: #10b981; }
+
+    .phase-exec   { border-left: 4px solid #3b82f6; }
+    .phase-exec .phase-header { color: #2563eb; }
+    .phase-exec .badge { background: #3b82f6; }
+
+    .phase-stuck  { border-left: 4px solid #f97316; }
+    .phase-stuck .phase-header { color: #ea580c; }
+    .phase-stuck .badge { background: #f97316; }
+
+    .phase-abandon { border-left: 4px solid #ef4444; }
+    .phase-abandon .phase-header { color: #dc2626; }
+    .phase-abandon .badge { background: #ef4444; }
+
+    .phase-session { border-left: 4px solid #8b5cf6; }
+    .phase-session .phase-header { color: #7c3aed; }
+    .phase-session .badge { background: #8b5cf6; }
+
+    .phase-daily  { border-left: 4px solid #f59e0b; }
+    .phase-daily .phase-header { color: #d97706; }
+    .phase-daily .badge { background: #f59e0b; }
+
+    .viz-plan   { background: #ecfdf5; color: #059669; }
+    .viz-exec   { background: #eff6ff; color: #2563eb; }
+    .viz-stuck  { background: #fff7ed; color: #ea580c; }
+    .viz-flow   { background: #f5f3ff; color: #7c3aed; }
+    .viz-time   { background: #fefce8; color: #a16207; }
+    .viz-meta   { background: #fdf2f8; color: #be185d; }
+
+    /* Daily Summary section */
+    .summary-section {
+      max-width: 1200px;
+      margin: 0 auto 40px;
+    }
+    .summary-card {
+      background: white;
+      border-radius: 14px;
+      box-shadow: 0 1px 8px rgba(0,0,0,0.05);
+      border-left: 4px solid #8b5cf6;
+      overflow: hidden;
+    }
+    .summary-card .phase-header { color: #7c3aed; }
+    .summary-card .badge { background: #8b5cf6; }
+
+    .footer-note {
+      max-width: 1200px;
+      margin: 40px auto 0;
+      text-align: center;
+      font-size: 11.5px;
+      color: #94a3b8;
+      padding-top: 20px;
+      border-top: 1px solid #e2e8f0;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ==================== 页面标题 ==================== -->
+  <div class="page-header">
+    <h1>📊 ADHD Planner · 数据字典</h1>
+    <p>Data Dictionary — All tracked events, fields, examples &amp; visualizations</p>
+  </div>
+
+  <!-- ==================== 思维导图 ==================== -->
+  <div class="mindmap-section">
+    <h2>🧠 数据架构思维导图</h2>
+    <div class="subtitle">Data Architecture Mind Map — Event Sourcing Pattern</div>
+
+    <svg class="mindmap-svg" viewBox="0 0 1160 780" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <filter id="shadow" x="-4%" y="-4%" width="108%" height="108%">
+          <feDropShadow dx="0" dy="1" stdDeviation="2" flood-opacity="0.08"/>
+        </filter>
+      </defs>
+
+      <!-- ====== 中心节点 ====== -->
+      <rect x="440" y="340" width="280" height="80" rx="20" fill="white" stroke="#475569" stroke-width="2.5" filter="url(#shadow)"/>
+      <text x="580" y="370" text-anchor="middle" font-size="16" font-weight="800" fill="#1e293b">📡 TrackEvent</text>
+      <text x="580" y="392" text-anchor="middle" font-size="10.5" fill="#64748b">id · type · timestamp · date · payload</text>
+      <text x="580" y="408" text-anchor="middle" font-size="9.5" fill="#94a3b8">Event Sourcing — 每个动作记一条事件</text>
+
+      <!-- ====================================================================== -->
+      <!--                      1. 计划阶段 (左上)                                  -->
+      <!-- ====================================================================== -->
+
+      <!-- 分支线 -->
+      <path d="M440,360 C340,360 280,200 220,200" stroke="#10b981" stroke-width="2.5" fill="none"/>
+      <!-- 分类节点 -->
+      <rect x="30" y="170" width="190" height="56" rx="14" fill="#ecfdf5" stroke="#10b981" stroke-width="2" filter="url(#shadow)"/>
+      <text x="125" y="192" text-anchor="middle" font-size="13" font-weight="700" fill="#059669">📝 Planning 计划</text>
+      <text x="125" y="210" text-anchor="middle" font-size="9.5" fill="#64748b">3 events · 用户输入任务</text>
+
+      <!-- 子节点 -->
+      <rect x="10" y="66" width="175" height="36" rx="10" fill="white" stroke="#34d399" stroke-width="1.5"/>
+      <text x="97" y="88" text-anchor="middle" font-size="10.5" font-weight="600" fill="#1e293b">plan.brain_dump</text>
+      <path d="M97,102 L97,170" stroke="#34d399" stroke-width="1.2" fill="none"/>
+      <text x="105" y="138" font-size="8.5" fill="#6ee7b7">任务列表快照</text>
+
+      <rect x="10" y="22" width="175" height="36" rx="10" fill="white" stroke="#34d399" stroke-width="1.5"/>
+      <text x="97" y="44" text-anchor="middle" font-size="10.5" font-weight="600" fill="#1e293b">plan.focus_selected</text>
+      <path d="M185,40 C210,40 210,82 185,82" stroke="#34d399" stroke-width="1" fill="none"/>
+
+      <rect x="195" y="90" width="175" height="36" rx="10" fill="white" stroke="#34d399" stroke-width="1.5"/>
+      <text x="282" y="112" text-anchor="middle" font-size="10.5" font-weight="600" fill="#1e293b">plan.first_micro</text>
+      <path d="M282,126 L220,170" stroke="#34d399" stroke-width="1.2" fill="none"/>
+      <text x="262" y="145" font-size="8.5" fill="#6ee7b7">source: self|ai</text>
+
+      <!-- ====================================================================== -->
+      <!--                      2. 执行阶段 (右上)                                  -->
+      <!-- ====================================================================== -->
+
+      <path d="M720,360 C820,360 880,200 940,200" stroke="#3b82f6" stroke-width="2.5" fill="none"/>
+      <rect x="845" y="170" width="190" height="56" rx="14" fill="#eff6ff" stroke="#3b82f6" stroke-width="2" filter="url(#shadow)"/>
+      <text x="940" y="192" text-anchor="middle" font-size="13" font-weight="700" fill="#2563eb">⚡ Execution 执行</text>
+      <text x="940" y="210" text-anchor="middle" font-size="9.5" fill="#64748b">5 events · 微步骤全链路</text>
+
+      <rect x="830" y="24" width="200" height="32" rx="9" fill="white" stroke="#60a5fa" stroke-width="1.5"/>
+      <text x="930" y="44" text-anchor="middle" font-size="10.5" font-weight="600" fill="#1e293b">exec.micro_started</text>
+
+      <rect x="830" y="62" width="200" height="32" rx="9" fill="white" stroke="#60a5fa" stroke-width="1.5"/>
+      <text x="930" y="82" text-anchor="middle" font-size="10.5" font-weight="600" fill="#1e293b">exec.micro_completed</text>
+
+      <rect x="830" y="100" width="200" height="32" rx="9" fill="white" stroke="#60a5fa" stroke-width="1.5"/>
+      <text x="930" y="120" text-anchor="middle" font-size="10.5" font-weight="600" fill="#1e293b">exec.subtask_completed</text>
+
+      <path d="M930,56 L930,62 M930,94 L930,100 M930,132 L940,170" stroke="#60a5fa" stroke-width="1" fill="none"/>
+
+      <rect x="1040" y="62" width="110" height="32" rx="9" fill="#f5f3ff" stroke="#a78bfa" stroke-width="1.5"/>
+      <text x="1095" y="82" text-anchor="middle" font-size="10.5" font-weight="600" fill="#7c3aed">flow_entered</text>
+
+      <rect x="1040" y="100" width="110" height="32" rx="9" fill="#f5f3ff" stroke="#a78bfa" stroke-width="1.5"/>
+      <text x="1095" y="120" text-anchor="middle" font-size="10.5" font-weight="600" fill="#7c3aed">flow_ended</text>
+
+      <path d="M1030,82 L1040,82 M1030,120 L1040,120" stroke="#a78bfa" stroke-width="1" fill="none"/>
+      <path d="M1095,94 L1095,100" stroke="#a78bfa" stroke-width="1" fill="none"/>
+      <text x="1095" y="148" text-anchor="middle" font-size="8.5" fill="#a78bfa">🚀 心流模式</text>
+
+      <!-- ====================================================================== -->
+      <!--                      3. 卡顿急救 (左下)                                  -->
+      <!-- ====================================================================== -->
+
+      <path d="M440,400 C340,400 260,540 220,540" stroke="#f97316" stroke-width="2.5" fill="none"/>
+      <rect x="30" y="510" width="190" height="56" rx="14" fill="#fff7ed" stroke="#f97316" stroke-width="2" filter="url(#shadow)"/>
+      <text x="125" y="532" text-anchor="middle" font-size="13" font-weight="700" fill="#ea580c">🆘 Stuck 卡顿</text>
+      <text x="125" y="550" text-anchor="middle" font-size="9.5" fill="#64748b">4 events · 卡顿→原因→绕路</text>
+
+      <rect x="10" y="580" width="165" height="32" rx="9" fill="white" stroke="#fb923c" stroke-width="1.5"/>
+      <text x="92" y="600" text-anchor="middle" font-size="10.5" font-weight="600" fill="#1e293b">stuck.triggered</text>
+
+      <rect x="10" y="618" width="165" height="32" rx="9" fill="white" stroke="#fb923c" stroke-width="1.5"/>
+      <text x="92" y="638" text-anchor="middle" font-size="10.5" font-weight="600" fill="#1e293b">stuck.reason</text>
+
+      <rect x="185" y="580" width="165" height="32" rx="9" fill="white" stroke="#fb923c" stroke-width="1.5"/>
+      <text x="267" y="600" text-anchor="middle" font-size="10.5" font-weight="600" fill="#1e293b">stuck.pivot_offered</text>
+
+      <rect x="185" y="618" width="165" height="32" rx="9" fill="white" stroke="#fb923c" stroke-width="1.5"/>
+      <text x="267" y="638" text-anchor="middle" font-size="10.5" font-weight="600" fill="#1e293b">stuck.pivot_chosen</text>
+
+      <path d="M92,566 L92,580 M92,612 L92,618" stroke="#fb923c" stroke-width="1" fill="none"/>
+      <path d="M175,596 L185,596 M267,566 L267,580 M267,612 L267,618" stroke="#fb923c" stroke-width="1" fill="none"/>
+
+      <text x="175" y="668" font-size="8.5" fill="#fb923c">reason/pivotSource: ai_chip | self</text>
+
+      <!-- ====================================================================== -->
+      <!--                      4. 中断放弃 (正下方)                                 -->
+      <!-- ====================================================================== -->
+
+      <path d="M540,420 L540,480" stroke="#ef4444" stroke-width="2.5" fill="none"/>
+      <rect x="440" y="480" width="200" height="50" rx="14" fill="#fef2f2" stroke="#ef4444" stroke-width="2" filter="url(#shadow)"/>
+      <text x="540" y="500" text-anchor="middle" font-size="13" font-weight="700" fill="#dc2626">🚪 Abandon 中断</text>
+      <text x="540" y="516" text-anchor="middle" font-size="9.5" fill="#64748b">1 event · 用户直接退出</text>
+
+      <rect x="450" y="542" width="180" height="32" rx="9" fill="white" stroke="#f87171" stroke-width="1.5"/>
+      <text x="540" y="562" text-anchor="middle" font-size="10.5" font-weight="600" fill="#1e293b">abandon.exit</text>
+      <path d="M540,530 L540,542" stroke="#f87171" stroke-width="1" fill="none"/>
+      <text x="540" y="588" text-anchor="middle" font-size="8.5" fill="#f87171">phase · elapsedSeconds</text>
+
+      <!-- ====================================================================== -->
+      <!--                      5. 会话生命周期 (右下)                               -->
+      <!-- ====================================================================== -->
+
+      <path d="M720,400 C820,400 880,540 940,540" stroke="#8b5cf6" stroke-width="2.5" fill="none"/>
+      <rect x="845" y="510" width="200" height="56" rx="14" fill="#f5f3ff" stroke="#8b5cf6" stroke-width="2" filter="url(#shadow)"/>
+      <text x="945" y="532" text-anchor="middle" font-size="13" font-weight="700" fill="#7c3aed">🔄 Session 会话</text>
+      <text x="945" y="550" text-anchor="middle" font-size="9.5" fill="#64748b">3 events · 生命周期管理</text>
+
+      <rect x="835" y="580" width="180" height="32" rx="9" fill="white" stroke="#a78bfa" stroke-width="1.5"/>
+      <text x="925" y="600" text-anchor="middle" font-size="10.5" font-weight="600" fill="#1e293b">session.started</text>
+
+      <rect x="835" y="618" width="180" height="32" rx="9" fill="white" stroke="#a78bfa" stroke-width="1.5"/>
+      <text x="925" y="638" text-anchor="middle" font-size="10.5" font-weight="600" fill="#1e293b">session.ended</text>
+
+      <rect x="1025" y="580" width="125" height="32" rx="9" fill="white" stroke="#a78bfa" stroke-width="1.5"/>
+      <text x="1087" y="600" text-anchor="middle" font-size="10" font-weight="600" fill="#1e293b">macro_completed</text>
+
+      <path d="M925,566 L925,580 M925,612 L925,618" stroke="#a78bfa" stroke-width="1" fill="none"/>
+      <path d="M1015,596 L1025,596" stroke="#a78bfa" stroke-width="1" fill="none"/>
+      <text x="925" y="666" text-anchor="middle" font-size="8.5" fill="#a78bfa">endReason: task_done | exit | abandon</text>
+
+      <!-- ====================================================================== -->
+      <!--                      6. 每日快照 (最下方)                                 -->
+      <!-- ====================================================================== -->
+
+      <path d="M580,420 L580,690" stroke="#f59e0b" stroke-width="2.5" fill="none"/>
+      <rect x="440" y="690" width="280" height="56" rx="14" fill="#fffbeb" stroke="#f59e0b" stroke-width="2" filter="url(#shadow)"/>
+      <text x="580" y="712" text-anchor="middle" font-size="13" font-weight="700" fill="#d97706">📋 Daily Snapshot 每日快照</text>
+      <text x="580" y="730" text-anchor="middle" font-size="9.5" fill="#64748b">1 event + DailySummary 聚合</text>
+
+      <rect x="420" y="756" width="145" height="24" rx="7" fill="white" stroke="#fbbf24" stroke-width="1.2"/>
+      <text x="492" y="772" text-anchor="middle" font-size="9.5" font-weight="600" fill="#92400e">daily.leftovers</text>
+
+      <rect x="595" y="756" width="145" height="24" rx="7" fill="white" stroke="#fbbf24" stroke-width="1.2"/>
+      <text x="667" y="772" text-anchor="middle" font-size="9.5" font-weight="600" fill="#92400e">DailySummary</text>
+
+      <path d="M540,746 L492,756 M620,746 L667,756" stroke="#fbbf24" stroke-width="1" fill="none"/>
+
+      <!-- ====================================================================== -->
+      <!--                      可视化连线标注                                       -->
+      <!-- ====================================================================== -->
+
+      <!-- 右侧：可视化用途标注 -->
+      <rect x="10" y="430" width="165" height="56" rx="10" fill="#fdf2f8" stroke="#ec4899" stroke-width="1.5" stroke-dasharray="4,2"/>
+      <text x="92" y="450" text-anchor="middle" font-size="10" font-weight="700" fill="#be185d">📊 Feeds Visualizations</text>
+      <text x="92" y="466" text-anchor="middle" font-size="8.5" fill="#9d174d">时间校准 · 卡顿图谱 · 心流</text>
+      <text x="92" y="478" text-anchor="middle" font-size="8.5" fill="#9d174d">AI依赖度 · 进化线 · 漏斗</text>
+
+    </svg>
+  </div>
+
+  <!-- ==================== 表格区域标题 ==================== -->
+  <div class="table-section">
+    <h2>📋 完整事件清单 Full Event Reference</h2>
+    <div class="subtitle">16 events across 6 phases — with English explanations &amp; JSON examples</div>
+
+    <!-- ==================== 1. 计划阶段 ==================== -->
+    <div class="phase-group phase-plan">
+      <div class="phase-header">
+        📝 Phase 1: Planning 计划阶段
+        <span class="badge">3 EVENTS</span>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th style="width:18%">Event 事件名</th>
+            <th style="width:24%">Description 说明</th>
+            <th style="width:22%">Fields 字段</th>
+            <th style="width:24%">Example 示例</th>
+            <th style="width:12%">Feeds 可视化</th>
+          </tr>
+        </thead>
+        <tbody>
+          <!-- plan.brain_dump -->
+          <tr>
+            <td><span class="event-name">plan.brain_dump</span><br><br>
+              <b>Brain Dump</b><br>
+              <span style="color:#64748b; font-size:11px">
+                A snapshot of all tasks the user wrote down during their morning brain dump session.
+                <br>用户打开应用后"倾倒"的所有任务列表快照。
+              </span>
+            </td>
+            <td>
+              Captures the raw task pool when the user finishes entering tasks. This is the starting point of the daily planning funnel.
+              <br><br>
+              <span style="color:#64748b; font-size:11px">记录用户脑暴池中所有原始任务，是每日漏斗的起点。</span>
+            </td>
+            <td>
+              <span class="field-tag key">tasks[]</span> Array of {id, title}<br>
+              <span class="field-tag">taskCount</span> number — Total count of tasks
+            </td>
+            <td>
+              <div class="example-block">{
+  "tasks": [
+    {"id":"t1", "title":"写数学作业"},
+    {"id":"t2", "title":"背英语单词"},
+    {"id":"t3", "title":"整理书包"}
+  ],
+  "taskCount": 3
+}</div>
+            </td>
+            <td>
+              <span class="viz-tag viz-exec">🎯 漏斗</span>
+              <span class="viz-tag viz-time">🔄 进化线</span>
+            </td>
+          </tr>
+
+          <!-- plan.focus_selected -->
+          <tr>
+            <td><span class="event-name">plan.focus_selected</span><br><br>
+              <b>Focus Task Selected</b><br>
+              <span style="color:#64748b; font-size:11px">
+                The user chose which macro-task to focus on from the task list.
+                <br>用户从任务列表中选择了要聚焦执行的宏观任务。
+              </span>
+            </td>
+            <td>
+              Records which specific task the user decided to tackle. Measures the transition from "having a list" to "committing to one task".
+              <br><br>
+              <span style="color:#64748b; font-size:11px">记录用户决定专注哪个任务，衡量"列表→承诺"的转化。</span>
+            </td>
+            <td>
+              <span class="field-tag key">taskId</span> string<br>
+              <span class="field-tag key">taskTitle</span> string<br>
+              <span class="field-tag">taskNote</span> string? — Optional note
+            </td>
+            <td>
+              <div class="example-block">{
+  "taskId": "t1",
+  "taskTitle": "写数学作业",
+  "taskNote": "第三章练习题"
+}</div>
+            </td>
+            <td>
+              <span class="viz-tag viz-exec">🎯 漏斗</span>
+            </td>
+          </tr>
+
+          <!-- plan.first_micro -->
+          <tr>
+            <td><span class="event-name">plan.first_micro</span><br><br>
+              <b>First Micro-Action Confirmed</b><br>
+              <span style="color:#64748b; font-size:11px">
+                The user defined their very first concrete micro-action (ice-breaker step).
+                <br>用户确定了破冰第一步——第一个具体的微动作。
+              </span>
+            </td>
+            <td>
+              The metacognitive interception moment: user must articulate a concrete first step before starting. The <code>source</code> field tracks whether AI scaffolding was used.
+              <br><br>
+              <span style="color:#64748b; font-size:11px">元认知拦截点：用户必须说出具体第一步才能开始。source 字段记录是否依赖了AI。</span>
+            </td>
+            <td>
+              <span class="field-tag key">taskId</span> string<br>
+              <span class="field-tag key">taskTitle</span> string<br>
+              <span class="field-tag key">microAction</span> string<br>
+              <span class="field-tag key">source</span> "self" | "ai_chip"
+            </td>
+            <td>
+              <div class="example-block">{
+  "taskId": "t1",
+  "taskTitle": "写数学作业",
+  "microAction": "翻开课本第58页",
+  "source": "ai_chip"
+}</div>
+            </td>
+            <td>
+              <span class="viz-tag viz-meta">📉 AI依赖度</span>
+              <span class="viz-tag viz-exec">🎯 漏斗</span>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- ==================== 2. 执行阶段 ==================== -->
+    <div class="phase-group phase-exec">
+      <div class="phase-header">
+        ⚡ Phase 2: Execution 执行阶段
+        <span class="badge">5 EVENTS</span>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th style="width:18%">Event 事件名</th>
+            <th style="width:24%">Description 说明</th>
+            <th style="width:22%">Fields 字段</th>
+            <th style="width:24%">Example 示例</th>
+            <th style="width:12%">Feeds 可视化</th>
+          </tr>
+        </thead>
+        <tbody>
+          <!-- exec.micro_started -->
+          <tr>
+            <td><span class="event-name">exec.micro_started</span><br><br>
+              <b>Micro-Task Started</b><br>
+              <span style="color:#64748b; font-size:11px">
+                A micro-task begins execution. Timer starts counting.
+                <br>一个微任务开始执行，计时器启动。
+              </span>
+            </td>
+            <td>
+              Marks the exact moment the user starts working on a specific micro-action. <code>estimatedSeconds</code> captures time perception if user provided an estimate.
+              <br><br>
+              <span style="color:#64748b; font-size:11px">标记用户开始做某个微动作的精确时刻。estimatedSeconds 记录用户的时间预估。</span>
+            </td>
+            <td>
+              <span class="field-tag key">sessionId</span> string<br>
+              <span class="field-tag key">taskId</span> string<br>
+              <span class="field-tag">taskTitle</span> string<br>
+              <span class="field-tag key">microAction</span> string<br>
+              <span class="field-tag">estimatedSeconds</span> number?
+            </td>
+            <td>
+              <div class="example-block">{
+  "sessionId": "s_abc123",
+  "taskId": "t1",
+  "taskTitle": "写数学作业",
+  "microAction": "翻开课本第58页",
+  "estimatedSeconds": 60
+}</div>
+            </td>
+            <td>
+              <span class="viz-tag viz-time">⏱️ 时间校准</span>
+            </td>
+          </tr>
+
+          <!-- exec.micro_completed -->
+          <tr>
+            <td><span class="event-name">exec.micro_completed</span><br><br>
+              <b>Micro-Task Completed</b><br>
+              <span style="color:#64748b; font-size:11px">
+                A micro-task was finished successfully.
+                <br>一个微任务成功完成。
+              </span>
+            </td>
+            <td>
+              The core data point for time perception calibration. Compares <code>actualSeconds</code> vs <code>estimatedSeconds</code> to measure metacognitive accuracy.
+              <br><br>
+              <span style="color:#64748b; font-size:11px">时间感知校准的核心数据。对比实际耗时与预估耗时，衡量元认知准确度。</span>
+            </td>
+            <td>
+              <span class="field-tag key">sessionId</span> string<br>
+              <span class="field-tag key">taskId</span> string<br>
+              <span class="field-tag">taskTitle</span> string<br>
+              <span class="field-tag key">microAction</span> string<br>
+              <span class="field-tag key">actualSeconds</span> number<br>
+              <span class="field-tag">estimatedSeconds</span> number?
+            </td>
+            <td>
+              <div class="example-block">{
+  "sessionId": "s_abc123",
+  "taskId": "t1",
+  "taskTitle": "写数学作业",
+  "microAction": "翻开课本第58页",
+  "actualSeconds": 45,
+  "estimatedSeconds": 60
+}</div>
+            </td>
+            <td>
+              <span class="viz-tag viz-time">⏱️ 时间校准</span>
+              <span class="viz-tag viz-exec">🏗️ 拆解质量</span>
+              <span class="viz-tag viz-time">🔄 进化线</span>
+            </td>
+          </tr>
+
+          <!-- exec.subtask_completed -->
+          <tr>
+            <td><span class="event-name">exec.subtask_completed</span><br><br>
+              <b>Subtask Completed</b><br>
+              <span style="color:#64748b; font-size:11px">
+                A subtask (child of a macro-task) is marked as complete.
+                <br>宏观任务下的一个子任务被标记为完成。
+              </span>
+            </td>
+            <td>
+              Tracks sub-task level completion within a larger task. Helps measure progress granularity.
+              <br><br>
+              <span style="color:#64748b; font-size:11px">追踪大任务中子任务级别的完成情况，用于衡量进度粒度。</span>
+            </td>
+            <td>
+              <span class="field-tag key">sessionId</span> string<br>
+              <span class="field-tag key">taskId</span> string<br>
+              <span class="field-tag">taskTitle</span> string<br>
+              <span class="field-tag key">subtaskId</span> string<br>
+              <span class="field-tag key">subtaskTitle</span> string
+            </td>
+            <td>
+              <div class="example-block">{
+  "sessionId": "s_abc123",
+  "taskId": "t1",
+  "taskTitle": "写数学作业",
+  "subtaskId": "st1",
+  "subtaskTitle": "完成第三章填空题"
+}</div>
+            </td>
+            <td>
+              <span class="viz-tag viz-exec">🎯 漏斗</span>
+            </td>
+          </tr>
+
+          <!-- exec.flow_entered -->
+          <tr>
+            <td><span class="event-name">exec.flow_entered</span><br><br>
+              <b>Flow State Entered</b><br>
+              <span style="color:#64748b; font-size:11px">
+                User clicked "I'm in the zone, just let me work" — entered flow mode.
+                <br>用户点击"直接做"——进入心流模式。
+              </span>
+            </td>
+            <td>
+              Captures the transition into deep work mode. Records how many micro-steps were completed before flow, to discover the user's "warm-up recipe".
+              <br><br>
+              <span style="color:#64748b; font-size:11px">捕捉进入深度工作的转折点。记录心流前完成了几步，帮用户发现自己的"热身配方"。</span>
+            </td>
+            <td>
+              <span class="field-tag key">sessionId</span> string<br>
+              <span class="field-tag key">taskId</span> string<br>
+              <span class="field-tag">taskTitle</span> string<br>
+              <span class="field-tag key">lastMicroAction</span> string<br>
+              <span class="field-tag key">completedStepCount</span> number
+            </td>
+            <td>
+              <div class="example-block">{
+  "sessionId": "s_abc123",
+  "taskId": "t1",
+  "taskTitle": "写数学作业",
+  "lastMicroAction": "做第1题画图",
+  "completedStepCount": 3
+}</div>
+            </td>
+            <td>
+              <span class="viz-tag viz-flow">🌊 心流条件</span>
+            </td>
+          </tr>
+
+          <!-- exec.flow_ended -->
+          <tr>
+            <td><span class="event-name">exec.flow_ended</span><br><br>
+              <b>Flow State Ended</b><br>
+              <span style="color:#64748b; font-size:11px">
+                The flow mode session has ended.
+                <br>心流模式结束。
+              </span>
+            </td>
+            <td>
+              Records the duration of flow state and why it ended. Key metric for tracking deep work capacity over time.
+              <br><br>
+              <span style="color:#64748b; font-size:11px">记录心流持续时长和结束原因。追踪深度工作能力随时间变化的关键指标。</span>
+            </td>
+            <td>
+              <span class="field-tag key">sessionId</span> string<br>
+              <span class="field-tag key">taskId</span> string<br>
+              <span class="field-tag">taskTitle</span> string<br>
+              <span class="field-tag key">flowDurationSeconds</span> number<br>
+              <span class="field-tag key">endReason</span> "task_done" | "exit" | "stuck"
+            </td>
+            <td>
+              <div class="example-block">{
+  "sessionId": "s_abc123",
+  "taskId": "t1",
+  "taskTitle": "写数学作业",
+  "flowDurationSeconds": 1320,
+  "endReason": "task_done"
+}</div>
+            </td>
+            <td>
+              <span class="viz-tag viz-flow">🌊 心流条件</span>
+              <span class="viz-tag viz-time">🔄 进化线</span>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- ==================== 3. 卡顿急救 ==================== -->
+    <div class="phase-group phase-stuck">
+      <div class="phase-header">
+        🆘 Phase 3: Stuck &amp; Rescue 卡顿急救
+        <span class="badge">4 EVENTS</span>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th style="width:18%">Event 事件名</th>
+            <th style="width:24%">Description 说明</th>
+            <th style="width:22%">Fields 字段</th>
+            <th style="width:24%">Example 示例</th>
+            <th style="width:12%">Feeds 可视化</th>
+          </tr>
+        </thead>
+        <tbody>
+          <!-- stuck.triggered -->
+          <tr>
+            <td><span class="event-name">stuck.triggered</span><br><br>
+              <b>Stuck Triggered</b><br>
+              <span style="color:#64748b; font-size:11px">
+                User pressed the "I'm stuck" button.
+                <br>用户按下了"卡住了"按钮。
+              </span>
+            </td>
+            <td>
+              The moment the user recognizes they're stuck and asks for help. Records how long they've been struggling before seeking rescue.
+              <br><br>
+              <span style="color:#64748b; font-size:11px">用户意识到自己卡住并求助的时刻。记录求助前已挣扎了多久。</span>
+            </td>
+            <td>
+              <span class="field-tag key">sessionId</span> string<br>
+              <span class="field-tag key">taskId</span> string<br>
+              <span class="field-tag key">microAction</span> string<br>
+              <span class="field-tag key">elapsedSeconds</span> number
+            </td>
+            <td>
+              <div class="example-block">{
+  "sessionId": "s_abc123",
+  "taskId": "t1",
+  "microAction": "计算第3题公式",
+  "elapsedSeconds": 180
+}</div>
+            </td>
+            <td>
+              <span class="viz-tag viz-stuck">🧬 卡顿图谱</span>
+              <span class="viz-tag viz-time">🔄 进化线</span>
+            </td>
+          </tr>
+
+          <!-- stuck.reason -->
+          <tr>
+            <td><span class="event-name">stuck.reason</span><br><br>
+              <b>Stuck Reason Identified</b><br>
+              <span style="color:#64748b; font-size:11px">
+                User identified why they're stuck (via AI suggestion or self-input).
+                <br>用户确认了卡住的原因（AI建议或自行输入）。
+              </span>
+            </td>
+            <td>
+              Records the user's articulation of their block. <code>reasonSource</code> indicates if AI helped them name the reason (metacognitive scaffolding).
+              <br><br>
+              <span style="color:#64748b; font-size:11px">记录用户对卡点的描述。reasonSource 表示AI是否帮他们命名了原因（元认知脚手架）。</span>
+            </td>
+            <td>
+              <span class="field-tag key">sessionId</span> string<br>
+              <span class="field-tag key">taskId</span> string<br>
+              <span class="field-tag">microAction</span> string<br>
+              <span class="field-tag key">reason</span> string<br>
+              <span class="field-tag key">reasonSource</span> "ai_chip" | "self"
+            </td>
+            <td>
+              <div class="example-block">{
+  "sessionId": "s_abc123",
+  "taskId": "t1",
+  "microAction": "计算第3题公式",
+  "reason": "不知道怎么下手",
+  "reasonSource": "ai_chip"
+}</div>
+            </td>
+            <td>
+              <span class="viz-tag viz-stuck">🧬 卡顿图谱</span>
+              <span class="viz-tag viz-meta">📉 AI依赖度</span>
+            </td>
+          </tr>
+
+          <!-- stuck.pivot_offered -->
+          <tr>
+            <td><span class="event-name">stuck.pivot_offered</span><br><br>
+              <b>Pivot Suggestions Offered</b><br>
+              <span style="color:#64748b; font-size:11px">
+                AI generated alternative approaches (detour paths) for the user.
+                <br>AI 生成了绕路建议供用户选择。
+              </span>
+            </td>
+            <td>
+              Records the AI's empathetic response and the alternative micro-actions it suggested. Important for evaluating AI scaffold quality.
+              <br><br>
+              <span style="color:#64748b; font-size:11px">记录AI的同理心回应和建议的替代方案。用于评估AI脚手架质量。</span>
+            </td>
+            <td>
+              <span class="field-tag key">sessionId</span> string<br>
+              <span class="field-tag key">taskId</span> string<br>
+              <span class="field-tag key">empathy</span> string<br>
+              <span class="field-tag key">pivotSuggestions</span> string[]
+            </td>
+            <td>
+              <div class="example-block">{
+  "sessionId": "s_abc123",
+  "taskId": "t1",
+  "empathy": "公式确实容易卡住，换个角度试试？",
+  "pivotSuggestions": [
+    "先把已知条件列出来",
+    "回看例题找灵感",
+    "跳过先做第4题"
+  ]
+}</div>
+            </td>
+            <td>
+              <span class="viz-tag viz-stuck">🧬 卡顿图谱</span>
+            </td>
+          </tr>
+
+          <!-- stuck.pivot_chosen -->
+          <tr>
+            <td><span class="event-name">stuck.pivot_chosen</span><br><br>
+              <b>Pivot Path Chosen</b><br>
+              <span style="color:#64748b; font-size:11px">
+                User chose which detour path to take.
+                <br>用户选择了具体的绕路方案。
+              </span>
+            </td>
+            <td>
+              Records the user's strategy decision. <code>pivotSource</code> distinguishes between AI-suggested, self-typed, or resuming the original path.
+              <br><br>
+              <span style="color:#64748b; font-size:11px">记录用户的策略决策。pivotSource 区分AI建议、自己输入还是回到原路继续。</span>
+            </td>
+            <td>
+              <span class="field-tag key">sessionId</span> string<br>
+              <span class="field-tag key">taskId</span> string<br>
+              <span class="field-tag key">chosenPivot</span> string<br>
+              <span class="field-tag key">pivotSource</span> "ai_chip" | "self" | "resume_original"
+            </td>
+            <td>
+              <div class="example-block">{
+  "sessionId": "s_abc123",
+  "taskId": "t1",
+  "chosenPivot": "先把已知条件列出来",
+  "pivotSource": "ai_chip"
+}</div>
+            </td>
+            <td>
+              <span class="viz-tag viz-stuck">🧬 卡顿图谱</span>
+              <span class="viz-tag viz-meta">📉 AI依赖度</span>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- ==================== 4. 中断放弃 ==================== -->
+    <div class="phase-group phase-abandon">
+      <div class="phase-header">
+        🚪 Phase 4: Abandonment 中断放弃
+        <span class="badge">1 EVENT</span>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th style="width:18%">Event 事件名</th>
+            <th style="width:24%">Description 说明</th>
+            <th style="width:22%">Fields 字段</th>
+            <th style="width:24%">Example 示例</th>
+            <th style="width:12%">Feeds 可视化</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="event-name">abandon.exit</span><br><br>
+              <b>Session Abandoned</b><br>
+              <span style="color:#64748b; font-size:11px">
+                User exited without completing or going through the stuck rescue flow.
+                <br>用户直接退出，未走完成或急救流程。
+              </span>
+            </td>
+            <td>
+              Records when the user quits mid-task. <code>phase</code> tells us at which stage they gave up (executing, relay, stuck). Important for identifying dropout patterns.
+              <br><br>
+              <span style="color:#64748b; font-size:11px">记录用户中途退出。phase 字段说明在哪个阶段放弃（执行中、接力、卡顿）。用于识别退出模式。</span>
+            </td>
+            <td>
+              <span class="field-tag key">sessionId</span> string<br>
+              <span class="field-tag key">taskId</span> string<br>
+              <span class="field-tag">taskTitle</span> string<br>
+              <span class="field-tag key">microAction</span> string<br>
+              <span class="field-tag key">elapsedSeconds</span> number<br>
+              <span class="field-tag key">phase</span> string
+            </td>
+            <td>
+              <div class="example-block">{
+  "sessionId": "s_abc123",
+  "taskId": "t1",
+  "taskTitle": "写数学作业",
+  "microAction": "计算第3题公式",
+  "elapsedSeconds": 420,
+  "phase": "executing"
+}</div>
+            </td>
+            <td>
+              <span class="viz-tag viz-exec">🎯 漏斗</span>
+              <span class="viz-tag viz-time">🔄 进化线</span>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- ==================== 5. 会话生命周期 ==================== -->
+    <div class="phase-group phase-session">
+      <div class="phase-header">
+        🔄 Phase 5: Session Lifecycle 会话生命周期
+        <span class="badge">3 EVENTS</span>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th style="width:18%">Event 事件名</th>
+            <th style="width:24%">Description 说明</th>
+            <th style="width:22%">Fields 字段</th>
+            <th style="width:24%">Example 示例</th>
+            <th style="width:12%">Feeds 可视化</th>
+          </tr>
+        </thead>
+        <tbody>
+          <!-- session.started -->
+          <tr>
+            <td><span class="event-name">session.started</span><br><br>
+              <b>Focus Session Started</b><br>
+              <span style="color:#64748b; font-size:11px">
+                A new focus session has begun.
+                <br>一个新的专注会话开始了。
+              </span>
+            </td>
+            <td>
+              Marks the beginning of a dedicated focus session. Generates a unique <code>sessionId</code> used to link all subsequent events.
+              <br><br>
+              <span style="color:#64748b; font-size:11px">标记专注会话的开始。生成的 sessionId 将串联后续所有事件。</span>
+            </td>
+            <td>
+              <span class="field-tag key">sessionId</span> string<br>
+              <span class="field-tag key">taskId</span> string<br>
+              <span class="field-tag key">taskTitle</span> string
+            </td>
+            <td>
+              <div class="example-block">{
+  "sessionId": "s_abc123",
+  "taskId": "t1",
+  "taskTitle": "写数学作业"
+}</div>
+            </td>
+            <td>
+              <span class="viz-tag viz-exec">🎯 漏斗</span>
+            </td>
+          </tr>
+
+          <!-- session.ended -->
+          <tr>
+            <td><span class="event-name">session.ended</span><br><br>
+              <b>Focus Session Ended</b><br>
+              <span style="color:#64748b; font-size:11px">
+                A focus session has concluded.
+                <br>一个专注会话结束了。
+              </span>
+            </td>
+            <td>
+              Summary event for the entire session. Aggregates total duration and completed steps. <code>endReason</code> reveals whether the user finished, exited, or abandoned.
+              <br><br>
+              <span style="color:#64748b; font-size:11px">整个会话的汇总事件。聚合总时长和完成步数。endReason 揭示用户是完成、退出还是放弃。</span>
+            </td>
+            <td>
+              <span class="field-tag key">sessionId</span> string<br>
+              <span class="field-tag key">taskId</span> string<br>
+              <span class="field-tag">taskTitle</span> string<br>
+              <span class="field-tag key">totalDurationSeconds</span> number<br>
+              <span class="field-tag key">completedMicroSteps</span> number<br>
+              <span class="field-tag key">endReason</span> "task_done" | "exit" | "abandon"
+            </td>
+            <td>
+              <div class="example-block">{
+  "sessionId": "s_abc123",
+  "taskId": "t1",
+  "taskTitle": "写数学作业",
+  "totalDurationSeconds": 2400,
+  "completedMicroSteps": 5,
+  "endReason": "task_done"
+}</div>
+            </td>
+            <td>
+              <span class="viz-tag viz-time">🔄 进化线</span>
+              <span class="viz-tag viz-exec">🎯 漏斗</span>
+            </td>
+          </tr>
+
+          <!-- session.macro_completed -->
+          <tr>
+            <td><span class="event-name">session.macro_completed</span><br><br>
+              <b>Macro-Task Completed</b><br>
+              <span style="color:#64748b; font-size:11px">
+                A top-level macro-task has been fully completed.
+                <br>一个顶级宏观任务被完全完成。
+              </span>
+            </td>
+            <td>
+              Records when a major task is done. <code>completedVia</code> reveals the path: finished in flow mode, manually marked, or all subtasks done.
+              <br><br>
+              <span style="color:#64748b; font-size:11px">记录大任务完成。completedVia 揭示完成路径：心流中完成、手动标记、或子任务全部完成。</span>
+            </td>
+            <td>
+              <span class="field-tag key">taskId</span> string<br>
+              <span class="field-tag key">taskTitle</span> string<br>
+              <span class="field-tag key">completedVia</span> "flow" | "manual" | "subtasks_all_done"
+            </td>
+            <td>
+              <div class="example-block">{
+  "taskId": "t1",
+  "taskTitle": "写数学作业",
+  "completedVia": "flow"
+}</div>
+            </td>
+            <td>
+              <span class="viz-tag viz-exec">🎯 漏斗</span>
+              <span class="viz-tag viz-time">🔄 进化线</span>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- ==================== 6. 每日快照 ==================== -->
+    <div class="phase-group phase-daily">
+      <div class="phase-header">
+        📋 Phase 6: Daily Snapshot 每日快照
+        <span class="badge">1 EVENT</span>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th style="width:18%">Event 事件名</th>
+            <th style="width:24%">Description 说明</th>
+            <th style="width:22%">Fields 字段</th>
+            <th style="width:24%">Example 示例</th>
+            <th style="width:12%">Feeds 可视化</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="event-name">daily.leftovers</span><br><br>
+              <b>Daily Leftover Tasks</b><br>
+              <span style="color:#64748b; font-size:11px">
+                End-of-day snapshot of tasks that were NOT executed today.
+                <br>一天结束时未被执行的遗留任务快照。
+              </span>
+            </td>
+            <td>
+              Captures the "unfinished business" at end of day. Comparing brain_dump count vs leftover count reveals daily completion funnel efficiency.
+              <br><br>
+              <span style="color:#64748b; font-size:11px">捕捉一天结束时的"未完成项"。对比脑暴数量和遗留数量，可以看出每日完成漏斗的效率。</span>
+            </td>
+            <td>
+              <span class="field-tag key">leftoverTasks[]</span> {id, title, priority}<br>
+              <span class="field-tag key">totalCount</span> number
+            </td>
+            <td>
+              <div class="example-block">{
+  "leftoverTasks": [
+    {"id":"t2", "title":"背英语单词", "priority":"medium"},
+    {"id":"t3", "title":"整理书包", "priority":"low"}
+  ],
+  "totalCount": 2
+}</div>
+            </td>
+            <td>
+              <span class="viz-tag viz-exec">🎯 漏斗</span>
+              <span class="viz-tag viz-time">🔄 进化线</span>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ==================== DailySummary 聚合结构 ==================== -->
+  <div class="summary-section">
+    <div class="summary-card">
+      <div class="phase-header">
+        🧮 Aggregated Structure: DailySummary 每日汇总（喂给 LLM 做反思对话）
+        <span class="badge" style="background:#8b5cf6">AGGREGATED</span>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th style="width:16%">Section 模块</th>
+            <th style="width:30%">Description 说明</th>
+            <th style="width:28%">Fields 字段</th>
+            <th style="width:26%">Example 示例</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><b>planning</b><br><span style="color:#64748b; font-size:10px">Planning summary<br>计划阶段摘要</span></td>
+            <td>
+              Aggregated from <code>plan.*</code> events. Contains the brain dump list, chosen focus task, first micro-action, and whether AI was used.
+              <br><span style="font-size:11px; color:#64748b">从 plan.* 事件聚合。包含脑暴列表、聚焦任务、第一步、是否用了AI。</span>
+            </td>
+            <td>
+              <span class="field-tag">brainDumpTasks</span> string[]<br>
+              <span class="field-tag">focusTaskTitle</span> string?<br>
+              <span class="field-tag">firstMicroAction</span> string?<br>
+              <span class="field-tag key">scaffoldSource</span> "self" | "ai_chip"
+            </td>
+            <td>
+              <div class="example-block">{
+  "brainDumpTasks": ["写数学作业","背单词","整理书包"],
+  "focusTaskTitle": "写数学作业",
+  "firstMicroAction": "翻开课本第58页",
+  "scaffoldSource": "ai_chip"
+}</div>
+            </td>
+          </tr>
+          <tr>
+            <td><b>microStepTrail[]</b><br><span style="color:#64748b; font-size:10px">Micro-step trail<br>微步轨迹</span></td>
+            <td>
+              Ordered log of every micro-action attempted. Includes timing data and final status (completed / stuck / abandoned).
+              <br><span style="font-size:11px; color:#64748b">按顺序记录每个微动作的执行情况：耗时、预估偏差、最终状态。</span>
+            </td>
+            <td>
+              <span class="field-tag">microAction</span> string<br>
+              <span class="field-tag key">actualSeconds</span> number<br>
+              <span class="field-tag">estimatedSeconds</span> number?<br>
+              <span class="field-tag key">timeDeltaSeconds</span> number?<br>
+              <span class="field-tag key">status</span> "completed" | "stuck" | "abandoned"
+            </td>
+            <td>
+              <div class="example-block">[
+  {"microAction":"翻开第58页",
+   "actualSeconds":45,
+   "estimatedSeconds":60,
+   "timeDeltaSeconds":-15,
+   "status":"completed"},
+  {"microAction":"做第1题画图",
+   "actualSeconds":300,
+   "status":"stuck"}
+]</div>
+            </td>
+          </tr>
+          <tr>
+            <td><b>flowEvents[]</b><br><span style="color:#64748b; font-size:10px">Flow events<br>心流记录</span></td>
+            <td>
+              Each time the user entered flow state: when, how long, and what they were doing right before it.
+              <br><span style="font-size:11px; color:#64748b">每次进入心流的时间、持续时长、触发前最后一步。</span>
+            </td>
+            <td>
+              <span class="field-tag">taskTitle</span> string<br>
+              <span class="field-tag">triggeredAt</span> ISO string<br>
+              <span class="field-tag key">durationSeconds</span> number<br>
+              <span class="field-tag">lastMicroBeforeFlow</span> string
+            </td>
+            <td>
+              <div class="example-block">[{
+  "taskTitle":"写数学作业",
+  "triggeredAt":"2026-03-06T10:15:00Z",
+  "durationSeconds":1320,
+  "lastMicroBeforeFlow":"做第1题画图"
+}]</div>
+            </td>
+          </tr>
+          <tr>
+            <td><b>stuckEvents[]</b><br><span style="color:#64748b; font-size:10px">Stuck events<br>卡顿记录</span></td>
+            <td>
+              Full stuck-rescue chain: what was stuck, why, how the user pivoted, and whether the rescue succeeded.
+              <br><span style="font-size:11px; color:#64748b">完整的卡顿-急救链：卡在哪、为什么、怎么绕、成功了吗。</span>
+            </td>
+            <td>
+              <span class="field-tag">microAction</span> string<br>
+              <span class="field-tag key">reason</span> string<br>
+              <span class="field-tag key">reasonSource</span> "ai" | "self"<br>
+              <span class="field-tag key">pivotChosen</span> string<br>
+              <span class="field-tag key">pivotSource</span> string<br>
+              <span class="field-tag">rescueSucceeded</span> bool?
+            </td>
+            <td>
+              <div class="example-block">[{
+  "microAction":"计算第3题",
+  "reason":"不知道怎么下手",
+  "reasonSource":"ai_chip",
+  "pivotChosen":"先列已知条件",
+  "pivotSource":"ai_chip",
+  "rescueSucceeded": true
+}]</div>
+            </td>
+          </tr>
+          <tr>
+            <td><b>stats</b><br><span style="color:#64748b; font-size:10px">Statistics overview<br>统计概览</span></td>
+            <td>
+              High-level numbers for the day: total steps, completion rate, stuck count, flow minutes, focus minutes, and average time estimation error.
+              <br><span style="font-size:11px; color:#64748b">当日的高层统计：总步数、完成率、卡顿次数、心流分钟、专注分钟、平均时间偏差。</span>
+            </td>
+            <td>
+              <span class="field-tag key">totalMicroSteps</span> number<br>
+              <span class="field-tag key">completedMicroSteps</span> number<br>
+              <span class="field-tag key">totalStuckCount</span> number<br>
+              <span class="field-tag key">totalFlowMinutes</span> number<br>
+              <span class="field-tag key">totalFocusMinutes</span> number<br>
+              <span class="field-tag">averageTimeDeltaSeconds</span> number?
+            </td>
+            <td>
+              <div class="example-block">{
+  "totalMicroSteps": 8,
+  "completedMicroSteps": 6,
+  "totalStuckCount": 2,
+  "totalFlowMinutes": 22,
+  "totalFocusMinutes": 45,
+  "averageTimeDeltaSeconds": -30
+}</div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ==================== 底部说明 ==================== -->
+  <div class="footer-note">
+    <p>
+      📡 Storage: Event Sourcing pattern — each action → one JSON event, partitioned by date (<code>tracker-YYYY-MM-DD.json</code>)
+      <br>
+      🧮 DailySummary is aggregated from raw events via <code>summary.ts</code> and fed to the LLM for nightly reflection conversations
+      <br><br>
+      <span style="color:#10b981">■</span> Planning &nbsp;
+      <span style="color:#3b82f6">■</span> Execution &nbsp;
+      <span style="color:#f97316">■</span> Stuck &nbsp;
+      <span style="color:#ef4444">■</span> Abandon &nbsp;
+      <span style="color:#8b5cf6">■</span> Session &nbsp;
+      <span style="color:#f59e0b">■</span> Daily
+    </p>
+  </div>
+
+</body>
+</html>

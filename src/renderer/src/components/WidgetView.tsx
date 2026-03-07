@@ -320,10 +320,19 @@ function FocusDynamicBar({
           </div>
         </div>
 
-        {/* 下行：三栏布局 — 左占位 | 完成按钮居中 | 卡住了右对齐，与上行对齐 */}
+        {/* 下行：三栏布局 — 左区（暂停）| 完成按钮居中 | 卡住了右对齐，与上行对齐 */}
         <div className="flex items-center mt-1">
-          {/* 左占位（与上行左区同宽） */}
-          <div className="w-[60px] flex-shrink-0" />
+          {/* 左区：暂停文字按钮（与上行左区同宽） */}
+          <div className="w-[60px] flex items-center flex-shrink-0">
+            <button
+              onClick={onPause}
+              className="no-drag text-[11px] text-gray-400
+                         hover:text-blue-500 active:scale-95 transition-all whitespace-nowrap"
+              title="暂停，去处理别的事"
+            >
+              暂停
+            </button>
+          </div>
           {/* 完成按钮 — 居中主角 */}
           <div className="flex-1 flex justify-center">
             <button
@@ -396,19 +405,6 @@ function FocusDynamicBar({
 
         {/* 急救内容 */}
         <div className="no-drag flex-1 px-4 py-3.5 flex flex-col gap-3 overflow-y-auto">
-
-          {/* 快速逃逸：不是卡住，而是要处理别的事 */}
-          <button
-            onClick={onPause}
-            className="flex items-center gap-1.5 text-[11px] text-gray-400 hover:text-blue-500
-                       transition-colors self-start group/pause"
-          >
-            <span className="opacity-70 group-hover/pause:opacity-100 transition-opacity">⏸</span>
-            不是卡住？只是要处理别的事
-            <span className="opacity-0 group-hover/pause:opacity-100 text-blue-400 transition-opacity">→ 暂停</span>
-          </button>
-
-          <div className="border-t border-gray-100/80" />
 
           {/* LLM 提示语 */}
           <p className="text-xs text-gray-600 leading-relaxed">
