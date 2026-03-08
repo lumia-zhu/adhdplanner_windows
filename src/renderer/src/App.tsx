@@ -727,11 +727,16 @@ export default function App() {
           </div>
         )}
 
-        {/* 状态栏 */}
+        {/* 状态栏：鼓励性语言 */}
         {tasks.length > 0 && (
           <div className="px-5 py-1.5 flex items-center justify-between">
             <span className="text-xs text-gray-400">
-              {tasks.length} 个任务 · {pendingTasks.length} 待完成
+              {completedTasks.length === 0
+                ? `今天还有 ${pendingTasks.length} 件事等你`
+                : completedTasks.length === tasks.length
+                  ? '全部搞定！今天太棒了 🎉'
+                  : `已搞定 ${completedTasks.length} 件，还剩 ${pendingTasks.length} 件 💪`
+              }
             </span>
             <div className="flex items-center gap-3">
               {completedTasks.length > 0 && (

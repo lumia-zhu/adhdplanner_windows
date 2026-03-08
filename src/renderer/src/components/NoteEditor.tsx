@@ -62,6 +62,27 @@ function flattenTasks(tasks: Task[]): FlatLine[] {
 /** 生成唯一 ID */
 const uid = (prefix = 't') => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
 
+// ===================== 日期 & 问候语 =====================
+
+/** 获取当天日期的友好显示，如 "3月8日 · 周日" */
+function getDateLabel(): string {
+  const now = new Date()
+  const month = now.getMonth() + 1
+  const day = now.getDate()
+  const weekNames = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
+  return `${month}月${day}日 · ${weekNames[now.getDay()]}`
+}
+
+/** 根据当前时段返回一句温暖的问候语 */
+function getGreeting(): string {
+  const hour = new Date().getHours()
+  if (hour >= 6 && hour < 11) return '☀️ 早上好，今天想从哪件事开始？'
+  if (hour >= 11 && hour < 14) return '🌤️ 中午好，继续加油'
+  if (hour >= 14 && hour < 18) return '🌇 下午好，还有几件事可以搞定'
+  if (hour >= 18 && hour < 22) return '🌙 晚上好，今天辛苦了'
+  return '🌜 夜深了，早点休息吧'
+}
+
 // ===================== 主组件 =====================
 
 export default function NoteEditor({ tasks, setTasks, onFocusTask, onResumePaused, onPrefetchTask }: NoteEditorProps) {
@@ -362,15 +383,22 @@ export default function NoteEditor({ tasks, setTasks, onFocusTask, onResumePause
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
   )
-  const taskIds = tasks.map(t => t.id)
+  // 把任务分为 未完成 / 已完成 两组（拖拽只发生在未完成任务之间）
+  const pendingTasks = tasks.filter(t => !t.completed)
+  const completedTasks = tasks.filter(t => t.completed)
+  const pendingIds = pendingTasks.map(t => t.id)
 
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event
     if (!over || active.id === over.id) return
     setTasks(prev => {
-      const oldIdx = prev.findIndex(t => t.id === active.id)
-      const newIdx = prev.findIndex(t => t.id === over.id)
-      return arrayMove(prev, oldIdx, newIdx)
+      // 只在 pending 组内部排序
+      const pending = prev.filter(t => !t.completed)
+      const completed = prev.filter(t => t.completed)
+      const oldIdx = pending.findIndex(t => t.id === active.id)
+      const newIdx = pending.findIndex(t => t.id === over.id)
+      if (oldIdx === -1 || newIdx === -1) return prev
+      return [...arrayMove(pending, oldIdx, newIdx), ...completed]
     })
   }
 
@@ -383,9 +411,15 @@ export default function NoteEditor({ tasks, setTasks, onFocusTask, onResumePause
       modifiers={[restrictToVerticalAxis, restrictToWindowEdges]}
       onDragEnd={handleDragEnd}
     >
-      <SortableContext items={taskIds} strategy={verticalListSortingStrategy}>
+      <SortableContext items={pendingIds} strategy={verticalListSortingStrategy}>
         <div className="flex-1 overflow-y-auto">
           <div className="px-5 py-3">
+            {/* 日期行 + 时段问候语 */}
+            <div className="text-center select-none pt-2 pb-5">
+              <p className="text-[13.5px] text-gray-500/80 font-semibold tracking-wide">{getDateLabel()}</p>
+              <p className="text-[11px] text-gray-300 mt-1">{getGreeting()}</p>
+            </div>
+
             {/* 空状态提示 */}
             {tasks.length === 0 && !newLineText && (
               <div className="flex flex-col items-center justify-center py-16 select-none">
@@ -398,31 +432,34 @@ export default function NoteEditor({ tasks, setTasks, onFocusTask, onResumePause
               </div>
             )}
 
-            {/* 任务行列表 */}
-            {tasks.map((task, taskIndex) => (
-              <TaskBlock
-                key={task.id}
-                task={task}
-                taskIndex={taskIndex}
-                lines={lines}
-                inputRefs={inputRefs}
-                onTextChange={updateText}
-                onKeyDown={handleLineKeyDown}
-                onToggle={toggleLine}
-                onCyclePriority={() => cyclePriority(taskIndex)}
-                onFocusTask={onFocusTask}
-                onPrefetchTask={onPrefetchTask}
-                onDeleteLine={(line) => {
-                  const focusId = deleteLine(line)
-                  if (focusId) setPendingFocusId(focusId)
-                  else setPendingFocusId('__new_line__')
-                }}
-                onResumePaused={onResumePaused}
-              />
-            ))}
+            {/* ===== 未完成任务（可拖拽排序）===== */}
+            {pendingTasks.map((task) => {
+              const taskIndex = tasks.findIndex(t => t.id === task.id)
+              return (
+                <TaskBlock
+                  key={task.id}
+                  task={task}
+                  taskIndex={taskIndex}
+                  lines={lines}
+                  inputRefs={inputRefs}
+                  onTextChange={updateText}
+                  onKeyDown={handleLineKeyDown}
+                  onToggle={toggleLine}
+                  onCyclePriority={() => cyclePriority(taskIndex)}
+                  onFocusTask={onFocusTask}
+                  onPrefetchTask={onPrefetchTask}
+                  onDeleteLine={(line) => {
+                    const focusId = deleteLine(line)
+                    if (focusId) setPendingFocusId(focusId)
+                    else setPendingFocusId('__new_line__')
+                  }}
+                  onResumePaused={onResumePaused}
+                />
+              )
+            })}
 
-            {/* ===== 底部新行输入（聚焦模式时隐藏） ===== */}
-            <div className={`transition-all ${
+            {/* ===== 底部新行输入 ===== */}
+            <div className={`mt-4 transition-all ${
               newLineIndented ? 'ml-[54px]' : 'ml-[26px]'
             }`}>
               <div className="flex items-center gap-2 py-[5px] px-1">
@@ -471,8 +508,47 @@ export default function NoteEditor({ tasks, setTasks, onFocusTask, onResumePause
               </div>
             </div>
 
+            {/* ===== 已完成任务（沉底，不可拖拽）===== */}
+            {completedTasks.length > 0 && (
+              <>
+                {/* 分隔线 */}
+                <div className="flex items-center gap-3 my-3 select-none">
+                  <div className="flex-1 h-px bg-gray-200/70" />
+                  <span className="text-[11px] text-gray-300 whitespace-nowrap">
+                    ✅ 已完成 {completedTasks.length} 项
+                  </span>
+                  <div className="flex-1 h-px bg-gray-200/70" />
+                </div>
+
+                {completedTasks.map((task) => {
+                  const taskIndex = tasks.findIndex(t => t.id === task.id)
+                  return (
+                    <TaskBlock
+                      key={task.id}
+                      task={task}
+                      taskIndex={taskIndex}
+                      lines={lines}
+                      inputRefs={inputRefs}
+                      onTextChange={updateText}
+                      onKeyDown={handleLineKeyDown}
+                      onToggle={toggleLine}
+                      onCyclePriority={() => cyclePriority(taskIndex)}
+                      onFocusTask={onFocusTask}
+                      onPrefetchTask={onPrefetchTask}
+                      onDeleteLine={(line) => {
+                        const focusId = deleteLine(line)
+                        if (focusId) setPendingFocusId(focusId)
+                        else setPendingFocusId('__new_line__')
+                      }}
+                      onResumePaused={onResumePaused}
+                    />
+                  )
+                })}
+              </>
+            )}
+
             {/* 底部留白 */}
-            <div className="h-20" />
+            <div className="h-8" />
           </div>
         </div>
       </SortableContext>
@@ -520,7 +596,7 @@ function TaskBlock({
       style={style}
       // ★ 整行 hover 预加载：鼠标进入任务行区域就触发，比只 hover ▶ 按钮更早
       onMouseEnter={!task.completed && onPrefetchTask ? () => onPrefetchTask(task.id) : undefined}
-      className={`rounded-lg mb-1 transition-all ${
+      className={`rounded-lg mb-2.5 transition-all ${
         isDragging
           ? 'opacity-40 scale-[1.02]'
           : task.completed
