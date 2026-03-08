@@ -13,6 +13,8 @@ import { buildReflectionSystemPrompt } from '../services/ai'
 import type { TrackEvent, DailySummary } from '../services/tracker'
 import { buildDailySummary, summaryToLLMContext } from '../services/tracker'
 import DonutChart from './DonutChart'
+import TaskDurationChart from './TaskDurationChart'
+import type { TaskDurationItem } from './TaskDurationChart'
 import DayTimeline from './DayTimeline'
 import type { TimelineEntry } from './DayTimeline'
 import ReflectionChat from './ReflectionChat'
@@ -133,6 +135,9 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
   useEffect(() => {
     async function loadEvents() {
       try {
+        // ★ 先强制刷新 tracker 缓冲区到磁盘，确保最近的事件不会丢失
+        await tracker.flushAsync()
+
         const raw = await window.electronAPI.loadTrackerEvents(today)
         const typedEvents = raw as TrackEvent[]
         setEvents(typedEvents)
@@ -170,6 +175,32 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
 
   // 构建时间轴条目
   const timelineEntries = useMemo(() => buildTimelineEntries(events), [events])
+
+  // 构建任务用时数据（从 session.ended 事件聚合）
+  const taskDurations: TaskDurationItem[] = useMemo(() => {
+    // 按任务名聚合所有 session 的总时长
+    const durationMap = new Map<string, number>()
+    const endReasonMap = new Map<string, string>()
+
+    for (const e of events) {
+      if (e.type === 'session.ended') {
+        const p = e.payload as { taskTitle: string; totalDurationSeconds: number; endReason: string }
+        durationMap.set(p.taskTitle, (durationMap.get(p.taskTitle) || 0) + p.totalDurationSeconds)
+        // 记录最终结束原因（最后一个 session 的 endReason 为准）
+        endReasonMap.set(p.taskTitle, p.endReason)
+      }
+    }
+
+    // 转为数组，按时长降序排列
+    return Array.from(durationMap.entries())
+      .map(([title, sec]) => ({
+        title,
+        durationMin: Math.round(sec / 60),
+        completed: endReasonMap.get(title) === 'task_done',
+      }))
+      .filter(d => d.durationMin > 0)
+      .sort((a, b) => b.durationMin - a.durationMin)
+  }, [events])
 
   // 构建 AI system prompt
   const systemPrompt = useMemo(() => {
@@ -344,6 +375,19 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
 
             {/* 分隔线 */}
             <div className="border-t border-gray-100" />
+
+            {/* 任务用时条形图 */}
+            {taskDurations.length > 0 && (
+              <div>
+                <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
+                  ⏱ 任务实际用时
+                </h3>
+                <TaskDurationChart data={taskDurations} />
+              </div>
+            )}
+
+            {/* 分隔线 */}
+            {taskDurations.length > 0 && <div className="border-t border-gray-100" />}
 
             {/* 时间轴 */}
             <div>

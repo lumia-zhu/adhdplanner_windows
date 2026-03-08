@@ -145,6 +145,7 @@ function FocusDynamicBar({
   const [chips, setChips] = useState<string[]>([])
   const [loadingChips, setLoadingChips] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
+  const relayPanelRef = useRef<HTMLDivElement>(null)  // 用于测量 relay 面板真实内容高度
 
   // ---- 急救面板状态 ----
   const [stuckChips, setStuckChips] = useState<string[]>([])
@@ -227,6 +228,20 @@ function FocusDynamicBar({
       if (fallbackTimerRef.current) { clearTimeout(fallbackTimerRef.current); fallbackTimerRef.current = null }
     }
   }, [phase, currentSubtaskId, allSubtasksDone])
+
+  // ---- ★ relay 面板高度自适应 ----
+  // 当面板内容变化（如 AI 建议加载完成、chip 数量变化）时，
+  // 测量真实内容高度，自动调整 Electron 窗口大小，避免底部被截断
+  useEffect(() => {
+    if (phase !== 'relay' || allSubtasksDone || !relayPanelRef.current) return
+    const frameId = requestAnimationFrame(() => {
+      if (relayPanelRef.current) {
+        const h = Math.max(relayPanelRef.current.scrollHeight, 200)
+        window.electronAPI.resizeWidget(BAR_W, h)
+      }
+    })
+    return () => cancelAnimationFrame(frameId)
+  }, [phase, allSubtasksDone, chips, loadingChips, currentSubtaskId])
 
   // relay 继续
   const handleContinue = () => {
@@ -697,68 +712,61 @@ function FocusDynamicBar({
 
   // ---- 常规接力面板 ----
   return (
-    <div className="drag-region w-full h-full flex flex-col bg-white/95 backdrop-blur-sm
+    <div ref={relayPanelRef}
+         className="drag-region w-full h-full flex flex-col bg-white/95 backdrop-blur-sm
                     border border-gray-200/60 rounded-2xl
                     shadow-[0_4px_24px_rgba(0,0,0,0.08)] select-none overflow-hidden">
 
-      {/* 顶部：进度条 + 已完成提示 */}
-      <div className="border-b border-gray-100/80">
-        {/* 步数进度条 */}
-        <div className="no-drag flex items-center gap-2 px-4 pt-2.5 pb-1">
-          <div className="flex items-center gap-1">
-            {session.microHistory.map((_, i) => (
-              <div key={i} className="w-4 h-1.5 rounded-full bg-emerald-400" />
-            ))}
-            {/* 当前待填的一步（空心） */}
-            <div className="w-4 h-1.5 rounded-full border border-gray-300 bg-white" />
+      {/* ① 顶部：任务方向锚点 —— 让用户一眼知道"我在推进哪件事" */}
+      <div className="no-drag px-4 pt-3 pb-2.5 border-b border-gray-100/60">
+        <div className="flex items-center justify-between">
+          <span className="text-[10px] text-gray-400 font-medium tracking-wide">正在推进</span>
+          <div className="flex items-center gap-1.5">
+            {/* 轻量步数 + 计时 */}
+            <span className="text-[10px] text-emerald-500 font-medium">
+              第 {session.microHistory.length + 1} 步
+            </span>
+            <span className="text-[10px] text-gray-400 font-mono
+                             bg-gray-100/80 px-1.5 py-0.5 rounded-md">{timeStr}</span>
+            <button
+              onClick={onExit}
+              className="no-drag w-5 h-5 rounded-md flex items-center justify-center
+                         text-gray-300 hover:text-gray-500 hover:bg-gray-100
+                         transition-all flex-shrink-0"
+              title="退出专注"
+            >
+              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
           </div>
-          <span className="text-[10px] text-emerald-500 font-medium whitespace-nowrap">
-            第 {session.microHistory.length} 步 ✓
-          </span>
-          <div className="flex-1" />
-          <span className="text-[10px] text-gray-400 font-mono flex-shrink-0
-                           bg-gray-100/80 px-1.5 py-0.5 rounded-md">{timeStr}</span>
-          <button
-            onClick={onExit}
-            className="no-drag w-5 h-5 rounded-md flex items-center justify-center
-                       text-gray-300 hover:text-gray-500 hover:bg-gray-100
-                       transition-all flex-shrink-0"
-          >
-            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
         </div>
-        {/* 已完成提示文字 */}
-        <div className="no-drag flex items-center gap-2 px-4 pb-2">
-          <div className="w-5 h-5 rounded-full bg-gradient-to-br from-emerald-500 to-emerald-600
-                          flex items-center justify-center flex-shrink-0">
-            <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-            </svg>
-          </div>
-          <span className="text-xs text-emerald-600 font-medium flex-1 min-w-0 truncate">
-            {isSubtaskTransition
-              ? `进入下一个子任务`
-              : `漂亮！「${currentMicroTask}」已完成`}
-          </span>
-        </div>
+        {/* 主任务标题 */}
+        <p className="text-[13px] text-gray-800 font-semibold truncate mt-1">{taskTitle}</p>
+        {/* 当前子任务阶段（有子任务才显示） */}
+        {currentSubtaskTitle && (
+          <p className="text-[11px] text-indigo-500 mt-0.5 truncate">
+            {isSubtaskTransition ? '进入新阶段：' : '当前阶段：'}{currentSubtaskTitle}
+          </p>
+        )}
       </div>
 
-      {/* 接力输入区域 */}
-      <div className="no-drag px-4 py-3 flex flex-col gap-2.5">
-        {/* 提示语：根据是否有子任务+是否刚切换子任务变化 */}
-        <p className="text-xs text-gray-500 font-medium leading-relaxed">
-          {isSubtaskTransition && currentSubtaskTitle ? (
-            <>下一步是「<span className="text-emerald-600 font-bold">{currentSubtaskTitle}</span>」，从哪个<span className="text-emerald-600 font-bold">具体动作</span>开始？</>
-          ) : currentSubtaskTitle ? (
-            <>还在做「<span className="text-indigo-500 font-bold">{currentSubtaskTitle}</span>」，紧接着的<span className="text-emerald-600 font-bold">一个动作</span>是？</>
-          ) : (
-            <>趁热打铁，紧接着的<span className="text-emerald-600 font-bold">一个动作</span>是？</>
-          )}
+      {/* ② 中间主区域 */}
+      <div className="no-drag px-4 py-3 flex flex-col gap-2.5 flex-1">
+
+        {/* 刚完成提示 —— 很轻的一句话，串起上下文连续感 */}
+        <p className="text-[11px] text-gray-400 truncate leading-relaxed">
+          {isSubtaskTransition
+            ? '✓ 上一阶段已完成，继续往下走'
+            : <>✓ 刚完成：<span className="text-emerald-500">{currentMicroTask}</span></>}
         </p>
 
-        {/* 输入框 + 继续按钮 */}
+        {/* 主问题 —— 口语化、低压力 */}
+        <p className="text-xs text-gray-600 font-medium leading-relaxed">
+          接下来最顺手的一小步是什么？
+        </p>
+
+        {/* 输入框 + 确认按钮 */}
         <div className="flex gap-2">
           <input
             ref={inputRef}
@@ -766,101 +774,98 @@ function FocusDynamicBar({
             value={nextMicro}
             onChange={(e) => setNextMicro(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') handleContinue() }}
-            placeholder="下一个微动作…"
+            placeholder="比如：先读第 1 题…"
             maxLength={50}
-            className="flex-1 px-3.5 py-2.5 text-xs rounded-xl border border-gray-200
+            className="flex-1 px-3.5 py-2 text-xs rounded-xl border border-gray-200
                        focus:border-emerald-400 focus:ring-1 focus:ring-emerald-100
                        outline-none bg-gray-50 focus:bg-white transition-all"
           />
           <button
             onClick={handleContinue}
             disabled={!nextMicro.trim()}
-            className="px-3.5 py-2.5 rounded-xl bg-emerald-500 text-white text-xs font-semibold
+            className="px-3.5 py-2 rounded-xl bg-emerald-500 text-white text-xs font-semibold
                        shadow-sm shadow-emerald-200/50
                        hover:bg-emerald-600 hover:shadow-md hover:shadow-emerald-200/60
                        active:scale-95
                        disabled:opacity-40 disabled:cursor-not-allowed disabled:shadow-none
                        transition-all flex-shrink-0"
           >
-            继续
+            就做这个
           </button>
         </div>
 
-        {/* AI 筹码 */}
-        <div className="flex flex-wrap gap-2 min-h-[24px]">
+        {/* AI 快捷接力区 —— 点一下直接开始，不用再确认 */}
+        <div className="flex flex-col gap-1.5 min-h-[24px]">
           {loadingChips && (
             <span className="text-[10px] text-gray-400 flex items-center gap-1.5">
               <span className="w-3 h-3 border-[1.5px] border-gray-300 border-t-emerald-400 rounded-full animate-spin" />
-              AI 思考中…
+              AI 在帮你想…
             </span>
           )}
-          {!loadingChips && chips.map((chip, i) => (
-            <button
-              key={i}
-              onClick={() => { setNextMicro(chip); inputRef.current?.focus() }}
-              className="text-[11px] px-3 py-1.5 rounded-xl
-                         bg-emerald-50 text-emerald-700 border border-emerald-200
-                         hover:bg-emerald-100 hover:border-emerald-300
-                         active:scale-[0.98] transition-all"
-            >
-              💡 {chip}
-            </button>
-          ))}
+          {!loadingChips && chips.length > 0 && (
+            <>
+              <p className="text-[10px] text-gray-400">也可以直接接这个：</p>
+              <div className="flex flex-wrap gap-2">
+                {chips.map((chip, i) => (
+                  <button
+                    key={i}
+                    onClick={() => onNextMicro(chip)}
+                    className="text-[11px] px-3 py-1.5 rounded-xl
+                               bg-emerald-500 text-white border border-emerald-500
+                               hover:bg-emerald-600 hover:border-emerald-600
+                               shadow-sm shadow-emerald-200/50
+                               active:scale-[0.98] transition-all"
+                  >
+                    ▶ {chip}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
         </div>
+      </div>
 
-        {/* 底部操作栏 */}
-        <div className="pt-2 border-t border-gray-100/80 flex flex-col gap-1.5">
-          {/* 第一行：进度信息（可以放长文字） */}
-          <div className="text-[11px] text-gray-400 leading-snug truncate">
-            {currentSubtaskId ? (
-              <>已完成 {session.microHistory.length} 步 · 正在做「<span className="text-indigo-500">{currentSubtaskTitle}</span>」</>
-            ) : (
-              <>已完成 {session.microHistory.length} 步</>
-            )}
-          </div>
-          {/* 第二行：操作按钮（短标签，不会截断） */}
-          <div className="flex items-center gap-1">
-            <button
-              onClick={onPause}
-              className="px-2 py-1 rounded-lg text-[11px] text-gray-400 whitespace-nowrap
-                         hover:bg-gray-100 hover:text-gray-600
-                         active:scale-95 transition-all"
-              title="暂停当前任务，切换到其他任务"
-            >
-              ⏸ 暂停
-            </button>
-            {currentSubtaskId && (
-              <button
-                onClick={onSubtaskDone}
-                className="px-2 py-1 rounded-lg text-[11px] text-indigo-500 whitespace-nowrap
-                           hover:bg-indigo-50 hover:text-indigo-600
-                           active:scale-95 transition-all"
-              >
-                → 下个子任务
-              </button>
-            )}
-            <div className="flex-1" />
-            <button
-              onClick={onEnterFlow}
-              className="px-2 py-1 rounded-lg text-[11px] text-violet-500 whitespace-nowrap
-                         hover:bg-violet-50 hover:text-violet-600
-                         active:scale-95 transition-all"
-            >
-              🚀 直接做
-            </button>
-            <button
-              onClick={(e) => {
-                triggerEffect(e.currentTarget)
-                onTaskDone()
-              }}
-              className="px-2 py-1 rounded-lg text-[11px] text-gray-400 whitespace-nowrap
-                         hover:bg-emerald-50 hover:text-emerald-600
-                         active:scale-95 transition-all"
-            >
-              ✓ 全部完成
-            </button>
-          </div>
-        </div>
+      {/* ③ 底部辅助操作 —— 全部降级成小字，不抢主流程 */}
+      <div className="no-drag px-4 pb-2.5 pt-1.5 border-t border-gray-100/60 flex items-center gap-1">
+        <button
+          onClick={onPause}
+          className="px-2 py-1 rounded-lg text-[11px] text-gray-400 whitespace-nowrap
+                     hover:bg-gray-100 hover:text-gray-600
+                     active:scale-95 transition-all"
+          title="暂停当前任务，切换到其他任务"
+        >
+          暂停一下
+        </button>
+        {currentSubtaskId && (
+          <button
+            onClick={onSubtaskDone}
+            className="px-2 py-1 rounded-lg text-[11px] text-gray-400 whitespace-nowrap
+                       hover:bg-indigo-50 hover:text-indigo-500
+                       active:scale-95 transition-all"
+          >
+            下个子任务
+          </button>
+        )}
+        <div className="flex-1" />
+        <button
+          onClick={onEnterFlow}
+          className="px-2 py-1 rounded-lg text-[11px] text-gray-400 whitespace-nowrap
+                     hover:bg-violet-50 hover:text-violet-500
+                     active:scale-95 transition-all"
+        >
+          🚀 直接做
+        </button>
+        <button
+          onClick={(e) => {
+            triggerEffect(e.currentTarget)
+            onTaskDone()
+          }}
+          className="px-2 py-1 rounded-lg text-[11px] text-gray-400 whitespace-nowrap
+                     hover:bg-emerald-50 hover:text-emerald-500
+                     active:scale-95 transition-all"
+        >
+          这个任务做完了
+        </button>
       </div>
     </div>
   )

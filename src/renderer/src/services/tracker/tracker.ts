@@ -103,6 +103,37 @@ class Tracker {
     }
   }
 
+  /**
+   * 强制刷新缓冲区到磁盘（异步，返回 Promise）
+   * 在需要立即读取事件数据之前调用（如打开反思页面）
+   */
+  async flushAsync(): Promise<void> {
+    if (this.buffer.length === 0) return
+
+    const eventsToWrite = [...this.buffer]
+    this.buffer = []
+
+    const byDate = new Map<string, TrackEvent[]>()
+    for (const event of eventsToWrite) {
+      const list = byDate.get(event.date) || []
+      list.push(event)
+      byDate.set(event.date, list)
+    }
+
+    const promises: Promise<boolean>[] = []
+    for (const [date, events] of byDate) {
+      promises.push(
+        window.electronAPI.appendTrackerEvents(date, events as unknown[]).catch((err) => {
+          console.error('[Tracker] 写入失败:', err)
+          this.buffer.push(...events)
+          return false
+        })
+      )
+    }
+
+    await Promise.all(promises)
+  }
+
   // -------- 内部方法 --------
 
   /**

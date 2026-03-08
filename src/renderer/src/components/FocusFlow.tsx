@@ -205,13 +205,14 @@ export default function FocusFlow({ task, aiConfig, onStart, onCancel }: FocusFl
             {!loadingChips && chips.map((chip, i) => (
               <button
                 key={i}
-                onClick={() => { setMicroTask(chip); sourceRef.current = 'ai_chip'; inputRef.current?.focus() }}
+                onClick={() => onStart(chip, 'ai_chip')}
                 className="text-xs px-3 py-1.5 rounded-full
-                           bg-emerald-50 text-emerald-700 border border-emerald-200
-                           hover:bg-emerald-100 hover:border-emerald-300
+                           bg-emerald-500 text-white border border-emerald-500
+                           hover:bg-emerald-600 hover:border-emerald-600
+                           shadow-sm shadow-emerald-200/50
                            active:scale-95 transition-all cursor-pointer"
               >
-                💡 {chip}
+                ▶ {chip}
               </button>
             ))}
             {!loadingChips && chipError && (

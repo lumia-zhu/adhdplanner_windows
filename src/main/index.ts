@@ -509,14 +509,13 @@ app.whenReady().then(() => {
   powerMonitor.on('resume', () => {
     if (!mainWindow) return
     if (isWidgetMode) {
-      // 重新设置 widget 尺寸（防止 OS 唤醒后窗口大小异常）
-      mainWindow.setMinimumSize(WIDGET_WIDTH, WIDGET_HEIGHT)
-      mainWindow.setMaximumSize(WIDGET_WIDTH, WIDGET_HEIGHT)
-      mainWindow.setSize(WIDGET_WIDTH, WIDGET_HEIGHT)
+      // ★ 只恢复置顶和可见性，不强制重置尺寸
+      // 因为 FocusDynamicBar 有自己的 phase 尺寸管理（executing=66, relay=自适应, stuck=340）
+      // 强制锁死 380×66 会导致 relay/stuck 面板被截断
       mainWindow.setAlwaysOnTop(true, 'floating')
       mainWindow.show()
     }
-    // 通知渲染进程重新同步模式
+    // 通知渲染进程重新同步模式（触发前端 session 恢复）
     mainWindow.webContents.send('window:modeSync', { isWidgetMode })
   })
 

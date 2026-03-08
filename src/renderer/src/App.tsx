@@ -49,6 +49,18 @@ export default function App() {
   // -------- 会话 ID（用于关联同一次专注的所有事件）--------
   const sessionIdRef = useRef<string>('')
 
+  // -------- session 持久化（睡眠唤醒 / HMR 重载后可恢复）--------
+  // session 变化时自动存入 localStorage；清空时自动删除
+  useEffect(() => {
+    if (session) {
+      localStorage.setItem('focusSession', JSON.stringify(session))
+      localStorage.setItem('focusSessionId', sessionIdRef.current)
+    } else {
+      localStorage.removeItem('focusSession')
+      localStorage.removeItem('focusSessionId')
+    }
+  }, [session])
+
   // -------- 初始化追踪器 --------
   useEffect(() => {
     tracker.init()
@@ -86,6 +98,30 @@ export default function App() {
         // ★ 如果主进程说当前是 widget 模式，同步过来（页面重载/唤醒后恢复）
         if (windowMode?.isWidgetMode) {
           setIsWidgetMode(true)
+          // ★ 尝试从 localStorage 恢复专注会话（睡眠唤醒 / HMR 重载后）
+          const savedSession = localStorage.getItem('focusSession')
+          const savedSessionId = localStorage.getItem('focusSessionId')
+          if (savedSession) {
+            try {
+              const restored = JSON.parse(savedSession) as FocusSession
+              const loadedTasks = savedTasks as Task[]
+              const task = loadedTasks.find(t => t.id === restored.taskId)
+              if (task && !task.completed) {
+                // 重置 startTime（不然计时器会显示包含睡眠时间的大数字）
+                restored.startTime = Date.now()
+                setSession(restored)
+                if (savedSessionId) sessionIdRef.current = savedSessionId
+                console.log('[App] 从 localStorage 恢复专注会话 ✓', restored.taskTitle)
+              } else {
+                // 任务已完成或被删除，清除存档
+                localStorage.removeItem('focusSession')
+                localStorage.removeItem('focusSessionId')
+              }
+            } catch {
+              localStorage.removeItem('focusSession')
+              localStorage.removeItem('focusSessionId')
+            }
+          }
         }
       } catch (e) {
         console.error('加载数据失败:', e)
@@ -108,6 +144,17 @@ export default function App() {
       setIsWidgetMode(data.isWidgetMode)
       if (!data.isWidgetMode) {
         setSession(null)
+      } else {
+        // ★ Widget 模式但 session 可能丢失（HMR重载）→ 尝试从 localStorage 恢复
+        const savedSession = localStorage.getItem('focusSession')
+        if (savedSession) {
+          try {
+            const restored = JSON.parse(savedSession) as FocusSession
+            restored.startTime = Date.now()
+            // 只在当前没有 session 时才恢复（不覆盖正常运行中的 session）
+            setSession(prev => prev || restored)
+          } catch { /* ignore */ }
+        }
       }
     })
   }, [])
