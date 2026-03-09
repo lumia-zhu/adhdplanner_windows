@@ -119,15 +119,121 @@ async function callLLM(
   }
 }
 
-// ===================== 核心函数 =====================
+// ===================== Task Understanding（任务理解反思问题） =====================
+
+/** 通用回退反思问题（AI 超时或出错时使用） */
+const FALLBACK_REFLECTION_QUESTIONS = [
+  '这个任务里，你觉得哪一步最不确定该怎么做？',
+  '做这件事之前，你还需要准备什么？',
+  '这个任务里，最让你犹豫的地方是什么？',
+  '如果只做一部分，你会先从哪里开始？',
+]
 
 /**
- * 生成微动作建议
- * @param taskTitle   当前任务标题
- * @param lastStep    上一步完成的动作（可选，用于接力建议）
- * @param config      AI 配置
- * @returns           { chips: string[]; error?: string }
+ * 4. 生成任务理解反思问题 —— 开始任务前帮助用户澄清思路
+ *
+ * @param taskTitle     任务标题
+ * @param taskNote      任务备注（可选）
+ * @param subtaskTitles 子任务标题列表（可选）
+ * @param config        AI 配置
+ * @returns             { question: string; error?: string }
  */
+export async function generateReflectionQuestion(
+  taskTitle: string,
+  taskNote: string | undefined,
+  subtaskTitles: string[] | undefined,
+  config: AIConfig,
+): Promise<{ question: string; error?: string }> {
+  if (!config.apiKey || !config.modelId) {
+    return { question: '' }
+  }
+
+  const systemPrompt =
+    '你是一个帮助用户理解任务的助手。用户即将开始一个任务，请根据任务信息生成一个简短、自然的开放式反思问题，' +
+    '帮助用户想清楚任务中模糊或不确定的地方。\n\n' +
+    '要求：\n' +
+    '- 问题必须与这个具体任务相关，不要泛泛而问\n' +
+    '- 像朋友随口问一句，自然不做作\n' +
+    '- 不要给选项，不要预设答案\n' +
+    '- 不超过30个字\n' +
+    '- 只返回问题本身，不要引号、不要编号、不要其他任何内容\n\n' +
+    '可以从这些角度中选一个切入：\n' +
+    '- 任务中最不清楚的地方\n' +
+    '- 当前最需要先想明白的部分\n' +
+    '- 从哪里开始会更容易上手\n' +
+    '- 做这件事之前还缺什么信息\n' +
+    '- 这个任务里最难的部分在哪'
+
+  let taskContext = `任务：${taskTitle}`
+  if (taskNote) taskContext += `\n备注：${taskNote}`
+  if (subtaskTitles && subtaskTitles.length > 0) {
+    taskContext += `\n子任务：${subtaskTitles.join('、')}`
+  }
+
+  const userPrompt = `${taskContext}\n\n请生成一个反思问题。`
+
+  const { content, error } = await callLLM(systemPrompt, userPrompt, config, 80)
+  if (error) return { question: '', error }
+
+  // 清理返回内容：去除引号、空白
+  const cleaned = content.replace(/^["'「【\s]+|["'」】\s]+$/g, '').trim()
+  return cleaned
+    ? { question: cleaned }
+    : { question: '', error: '返回为空' }
+}
+
+/**
+ * 5. 生成跟进反思问题 —— 基于用户的回答进一步澄清
+ *
+ * @param taskTitle     任务标题
+ * @param prevQuestion  上一个问题
+ * @param userAnswer    用户的回答
+ * @param config        AI 配置
+ */
+export async function generateFollowUpQuestion(
+  taskTitle: string,
+  prevQuestion: string,
+  userAnswer: string,
+  config: AIConfig,
+): Promise<{ question: string; error?: string }> {
+  if (!config.apiKey || !config.modelId) {
+    return { question: '' }
+  }
+
+  const systemPrompt =
+    '你是一个帮助用户理解任务的助手。用户回答了一个关于任务的反思问题。' +
+    '请根据他的回答，生成一个更深入的跟进问题，帮助他进一步理清思路。\n\n' +
+    '要求：\n' +
+    '- 问题要针对用户回答中提到的具体内容\n' +
+    '- 不要重复之前的问题角度\n' +
+    '- 像朋友追问一句，自然不做作\n' +
+    '- 不超过30个字\n' +
+    '- 只返回问题本身，不要引号、不要编号、不要其他任何内容'
+
+  const userPrompt =
+    `任务：${taskTitle}\n` +
+    `之前的问题：${prevQuestion}\n` +
+    `用户的回答：${userAnswer}\n\n` +
+    `请生成一个跟进问题。`
+
+  const { content, error } = await callLLM(systemPrompt, userPrompt, config, 80)
+  if (error) return { question: '', error }
+
+  const cleaned = content.replace(/^["'「【\s]+|["'」】\s]+$/g, '').trim()
+  return cleaned
+    ? { question: cleaned }
+    : { question: '', error: '返回为空' }
+}
+
+/** 获取一个随机的回退反思问题 */
+export function getRandomFallbackQuestion(): string {
+  return FALLBACK_REFLECTION_QUESTIONS[
+    Math.floor(Math.random() * FALLBACK_REFLECTION_QUESTIONS.length)
+  ]
+}
+
+// ===================== 核心函数 =====================
+
 /** 从文本中解析 JSON 数组 */
 function parseChips(content: string, maxCount: number): string[] {
   const match = content.match(/\[[\s\S]*?\]/)
@@ -143,16 +249,18 @@ function parseChips(content: string, maxCount: number): string[] {
 /**
  * 1. 生成微动作建议（开始任务 / 完成后接力）
  *
- * @param taskTitle     宏观任务标题
- * @param lastStep      上一步完成的动作（可选，用于接力建议）
- * @param config        AI 配置
- * @param subtaskTitle  当前子任务标题（可选，让建议更精准）
+ * @param taskTitle              宏观任务标题
+ * @param lastStep               上一步完成的动作（可选，用于接力建议）
+ * @param config                 AI 配置
+ * @param subtaskTitle           当前子任务标题（可选，让建议更精准）
+ * @param understandingContext   用户在 Task Understanding 阶段的反思问答（可选，让建议更贴合用户思路）
  */
 export async function generateMicroActions(
   taskTitle: string,
   lastStep?: string,
   config?: AIConfig,
   subtaskTitle?: string,
+  understandingContext?: string,
 ): Promise<{ chips: string[]; error?: string }> {
   const cfg = config ?? DEFAULT_AI_CONFIG
   if (!cfg.apiKey || !cfg.modelId) return { chips: [] }
@@ -166,9 +274,14 @@ export async function generateMicroActions(
     ? `大任务：${taskTitle}\n当前子任务：${subtaskTitle}`
     : `任务：${taskTitle}`
 
+  // 如果有 understanding 上下文，加入 prompt 让建议更精准
+  const contextBlock = understandingContext
+    ? `\n\n用户的任务理解：\n${understandingContext}`
+    : ''
+
   const userPrompt = lastStep
-    ? `${taskContext}\n上一步完成了：${lastStep}\n请给出紧接着的2个微动作建议。`
-    : `${taskContext}\n请给出开始这个${subtaskTitle ? '子任务' : '任务'}时最先要做的2个微动作建议。`
+    ? `${taskContext}${contextBlock}\n上一步完成了：${lastStep}\n请给出紧接着的2个微动作建议。`
+    : `${taskContext}${contextBlock}\n请给出开始这个${subtaskTitle ? '子任务' : '任务'}时最先要做的2个微动作建议。`
 
   // max_tokens 60 即可（chips 只是 2 个短词的 JSON 数组，远不需要 120）
   const { content, error } = await callLLM(systemPrompt, userPrompt, cfg, 60)

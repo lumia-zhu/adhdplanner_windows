@@ -269,8 +269,9 @@ export default function App() {
 
   /**
    * FocusFlow 阶段1 确认微任务 → 进入执行（阶段2）
+   * @param understandingContext  用户在 Task Understanding 阶段的反思问答（可选）
    */
-  const handleStartMicro = (microTask: string, source: 'self' | 'ai_chip') => {
+  const handleStartMicro = (microTask: string, source: 'self' | 'ai_chip', understandingContext?: string) => {
     const task = tasks.find(t => t.id === scaffoldTaskId)
     if (!task) return
     setScaffoldTaskId(null)
@@ -299,6 +300,15 @@ export default function App() {
     }
     setSession(newSession)
     setFocusTaskId(task.id)
+
+    // 📊 埋点：任务理解（如果有）
+    if (understandingContext) {
+      tracker.track('plan.task_understanding', {
+        taskId: task.id,
+        taskTitle: task.title,
+        understandingContext,
+      })
+    }
 
     // 📊 埋点：破冰第一步 + 会话开始 + 微任务开始
     tracker.track('plan.first_micro', {
