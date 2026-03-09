@@ -8,7 +8,7 @@ import { tracker } from './services/tracker'
 import { aiCache } from './services/ai-cache'
 import TitleBar from './components/TitleBar'
 import NoteEditor from './components/NoteEditor'
-import WidgetView from './components/WidgetView'
+import WidgetView, { ENABLE_STEP_BY_STEP } from './components/WidgetView'
 import FocusFlow from './components/FocusFlow'
 import AISettings from './components/AISettings'
 import ProfileSettings from './components/ProfileSettings'
@@ -50,15 +50,21 @@ export default function App() {
   const sessionIdRef = useRef<string>('')
 
   // -------- session 持久化（睡眠唤醒 / HMR 重载后可恢复）--------
-  // session 变化时自动存入 localStorage；清空时自动删除
+  // ★ 用 ref 标记 session 是否曾被主动设置过
+  //   防止页面重载时初始 null 值误删 localStorage 中保存的 session
+  const sessionInitialized = useRef(false)
   useEffect(() => {
     if (session) {
+      sessionInitialized.current = true
       localStorage.setItem('focusSession', JSON.stringify(session))
       localStorage.setItem('focusSessionId', sessionIdRef.current)
-    } else {
+    } else if (sessionInitialized.current) {
+      // 只有 session 从"有"变成"无"时才清除（不在初始化时清除）
       localStorage.removeItem('focusSession')
       localStorage.removeItem('focusSessionId')
     }
+    // 如果 sessionInitialized.current 为 false 且 session 为 null，
+    // 说明是初始渲染，不动 localStorage（等 loadData 去恢复）
   }, [session])
 
   // -------- 初始化追踪器 --------
@@ -334,7 +340,7 @@ export default function App() {
     setIsWidgetMode(true)
   }
 
-  /** 微任务完成 → 进入 relay 阶段 */
+  /** 微任务完成 → 进入 relay 阶段（或简化模式下直接退出） */
   const handleMicroComplete = () => {
     if (!session) return
 
@@ -348,6 +354,20 @@ export default function App() {
       actualSeconds: elapsed,
     })
 
+    // ★ 简化模式：第一步完成 → 进入整个任务执行（flow mode），而不是退出
+    if (!ENABLE_STEP_BY_STEP) {
+      setSession(s => s ? {
+        ...s,
+        phase: 'executing',
+        isFlowMode: true,
+        currentMicroTask: s.taskTitle,   // 切回宏观任务名
+        microHistory: [...s.microHistory, s.currentMicroTask],
+        startTime: Date.now(),           // 重置计时器
+      } : s)
+      return
+    }
+
+    // 逐步拆解模式：进入 relay 接力阶段
     setSession(s => s ? {
       ...s,
       phase: 'relay',
@@ -542,6 +562,61 @@ export default function App() {
     setSession(null)
   }
 
+  // ===================== 简化模式：任务结构视图中的子任务勾选 =====================
+
+  /**
+   * Widget 任务结构视图中勾选/取消子任务
+   * 纯进度记录，不触发 AI 行为
+   * 如果全部子任务勾选完成 → 自动标记主任务完成并退出
+   */
+  const handleWidgetSubtaskToggle = (subtaskId: string) => {
+    if (!session) return
+
+    let allDone = false
+
+    setTasks(prev => prev.map(t => {
+      if (t.id !== session.taskId) return t
+      const updatedSubs = (t.subtasks ?? []).map(s =>
+        s.id === subtaskId ? { ...s, completed: !s.completed } : s
+      )
+      allDone = updatedSubs.length > 0 && updatedSubs.every(s => s.completed)
+      return { ...t, subtasks: updatedSubs }
+    }))
+
+    // 全部子任务完成 → 自动标记主任务完成并退出
+    if (allDone) {
+      // 延迟一下让 UI 更新 checkbox 状态，然后触发完成
+      setTimeout(() => {
+        // 📊 埋点
+        const elapsed = Math.floor((Date.now() - session.startTime) / 1000)
+        tracker.track('session.macro_completed', {
+          taskId: session.taskId,
+          taskTitle: session.taskTitle,
+          completedVia: 'subtasks_all_done',
+        })
+        tracker.track('session.ended', {
+          sessionId: sessionIdRef.current,
+          taskId: session.taskId,
+          taskTitle: session.taskTitle,
+          totalDurationSeconds: elapsed,
+          completedMicroSteps: session.microHistory.length,
+          endReason: 'task_done',
+        })
+
+        // 标记主任务完成
+        setTasks(prev => prev.map(t =>
+          t.id === session.taskId ? { ...t, completed: true } : t,
+        ))
+
+        // 退出 widget
+        window.electronAPI.exitWidget()
+        setIsWidgetMode(false)
+        setFocusTaskId(null)
+        setSession(null)
+      }, 400)
+    }
+  }
+
   // ===================== 暂停 & 切换 =====================
 
   /**
@@ -730,6 +805,7 @@ export default function App() {
           onResume={handleResume}
           onSubtaskDone={handleSubtaskDone}
           onPause={handlePause}
+          onWidgetSubtaskToggle={handleWidgetSubtaskToggle}
         />
       </div>
     )

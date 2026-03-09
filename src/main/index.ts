@@ -519,6 +519,16 @@ app.whenReady().then(() => {
     mainWindow.webContents.send('window:modeSync', { isWidgetMode })
   })
 
+  // ---- 锁屏解锁后也同步一次（Windows 按电源键可能只锁屏不睡眠） ----
+  powerMonitor.on('unlock-screen', () => {
+    if (!mainWindow) return
+    if (isWidgetMode) {
+      mainWindow.setAlwaysOnTop(true, 'floating')
+      mainWindow.show()
+    }
+    mainWindow.webContents.send('window:modeSync', { isWidgetMode })
+  })
+
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createMainWindow()
   })

@@ -29,6 +29,11 @@ const BAR_W = 380
 const BAR_H_THIN = 66
 const BAR_H_RELAY = 280
 const BAR_H_STUCK = 340
+const BAR_H_FIRST_STEP = 92   // 简化模式：父任务 + 当前步骤 + 按钮行
+
+// ★ Feature Flag：关闭逐步拆解（relay 循环），简化为"理解 → 第一步 → 完成 → 退出"
+// 设为 true 可恢复完整的 step-by-step 接力模式
+export const ENABLE_STEP_BY_STEP = false
 
 // ===================== 类型 =====================
 
@@ -65,6 +70,8 @@ interface WidgetViewProps {
   onResume: (newMicro: string) => void   // 急救完成，用新微任务重启
   onSubtaskDone: () => void              // 当前子任务搞定，切到下一个
   onPause: () => void                    // 暂停当前任务，切到别的事
+  // ★ 简化模式：任务结构视图回调
+  onWidgetSubtaskToggle?: (subtaskId: string) => void  // 勾选/取消子任务
 }
 
 // ===================== 主组件 =====================
@@ -74,6 +81,7 @@ export default function WidgetView({
   onToggle, onExit,
   onMicroComplete, onNextMicro, onEnterFlow, onTaskDone,
   onStuck, onStuckToB, onResume, onSubtaskDone, onPause,
+  onWidgetSubtaskToggle,
 }: WidgetViewProps) {
 
   // 如果没有 session → 走旧的普通小组件模式
@@ -81,11 +89,16 @@ export default function WidgetView({
     return <LegacyWidget tasks={tasks} focusTaskId={focusTaskId} onToggle={onToggle} onExit={onExit} />
   }
 
+  // ★ 简化模式：从 tasks 中获取当前任务的子任务（任务结构视图用）
+  const currentTask = tasks.find(t => t.id === session.taskId)
+  const taskSubtasks = currentTask?.subtasks ?? []
+
   // 有 session → 进入专注执行模式
   return (
     <FocusDynamicBar
       session={session}
       aiConfig={aiConfig}
+      taskSubtasks={taskSubtasks}
       onMicroComplete={onMicroComplete}
       onNextMicro={onNextMicro}
       onEnterFlow={onEnterFlow}
@@ -96,6 +109,7 @@ export default function WidgetView({
       onSubtaskDone={onSubtaskDone}
       onExit={onExit}
       onPause={onPause}
+      onWidgetSubtaskToggle={onWidgetSubtaskToggle}
     />
   )
 }
@@ -105,6 +119,7 @@ export default function WidgetView({
 interface FocusDynamicBarProps {
   session: FocusSession
   aiConfig: AIConfig
+  taskSubtasks: Array<{ id: string; title: string; completed: boolean }>
   onMicroComplete: () => void
   onNextMicro: (micro: string) => void
   onEnterFlow: () => void
@@ -115,12 +130,14 @@ interface FocusDynamicBarProps {
   onSubtaskDone: () => void
   onExit: () => void
   onPause: () => void
+  onWidgetSubtaskToggle?: (subtaskId: string) => void
 }
 
 function FocusDynamicBar({
-  session, aiConfig,
+  session, aiConfig, taskSubtasks,
   onMicroComplete, onNextMicro, onEnterFlow, onTaskDone,
   onStuck, onStuckToB, onResume, onSubtaskDone, onExit, onPause,
+  onWidgetSubtaskToggle,
 }: FocusDynamicBarProps) {
   const {
     taskId, phase, isFlowMode, currentMicroTask, taskTitle, startTime,
@@ -146,6 +163,7 @@ function FocusDynamicBar({
   const [loadingChips, setLoadingChips] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const relayPanelRef = useRef<HTMLDivElement>(null)  // 用于测量 relay 面板真实内容高度
+  const taskStructurePanelRef = useRef<HTMLDivElement>(null)  // 用于测量任务结构面板高度
 
   // ---- 急救面板状态 ----
   const [stuckChips, setStuckChips] = useState<string[]>([])
@@ -162,6 +180,7 @@ function FocusDynamicBar({
   // 用户正在做微任务时，后台提前请求 AI 建议
   // 等用户点"✅ 完成"进入 relay 时，缓存已热好 → 0 等待
   useEffect(() => {
+    if (!ENABLE_STEP_BY_STEP) return  // 逐步拆解关闭时不需要预加载 relay 建议
     if (phase === 'executing' && !isFlowMode && aiConfig.apiKey && aiConfig.modelId) {
       aiCache.prefetch(taskId, taskTitle, aiConfig, currentSubtaskTitle, currentMicroTask)
     }
@@ -217,7 +236,18 @@ function FocusDynamicBar({
       pivotInputRef.current?.focus()
     } else {
       // executing / flow
-      window.electronAPI.resizeWidget(BAR_W, BAR_H_THIN)
+      let execHeight = BAR_H_THIN
+      if (!ENABLE_STEP_BY_STEP) {
+        if (isFlowMode) {
+          // 任务结构视图：基础高度 + 每个子任务 36px，上限 300px
+          const baseH = 110  // 顶部任务名 + 底部按钮
+          const subsH = taskSubtasks.length * 36
+          execHeight = Math.min(baseH + subsH, 300)
+        } else {
+          execHeight = BAR_H_FIRST_STEP
+        }
+      }
+      window.electronAPI.resizeWidget(BAR_W, execHeight)
       setNextMicro('')
       setChips([])
       setStuckChips([])
@@ -227,12 +257,13 @@ function FocusDynamicBar({
       // 清理回退定时器
       if (fallbackTimerRef.current) { clearTimeout(fallbackTimerRef.current); fallbackTimerRef.current = null }
     }
-  }, [phase, currentSubtaskId, allSubtasksDone])
+  }, [phase, currentSubtaskId, allSubtasksDone, isFlowMode, taskSubtasks])
 
   // ---- ★ relay 面板高度自适应 ----
   // 当面板内容变化（如 AI 建议加载完成、chip 数量变化）时，
   // 测量真实内容高度，自动调整 Electron 窗口大小，避免底部被截断
   useEffect(() => {
+    if (!ENABLE_STEP_BY_STEP) return  // 逐步拆解关闭时无 relay 面板
     if (phase !== 'relay' || allSubtasksDone || !relayPanelRef.current) return
     const frameId = requestAnimationFrame(() => {
       if (relayPanelRef.current) {
@@ -313,8 +344,155 @@ function FocusDynamicBar({
     }, 800) // 800ms 闪动后跳转（多 300ms 做预加载安全缓冲）
   }
 
-  // ============ 执行状态 / 心流状态（薄条 58px，两行布局）============
+  // ============ 执行状态 / 心流状态 ============
   if (phase === 'executing') {
+
+    // ===== ENABLE_STEP_BY_STEP OFF：简化执行界面 =====
+    if (!ENABLE_STEP_BY_STEP) {
+
+      // —— 状态 A：正在执行第一步 ——
+      if (!isFlowMode) {
+        return (
+          <div className="drag-region w-full h-full flex flex-col justify-center bg-white/95 backdrop-blur-sm
+                          border border-gray-200/60 rounded-2xl shadow-[0_4px_24px_rgba(0,0,0,0.08)]
+                          px-4 py-2 select-none overflow-hidden">
+
+            {/* Row 1: 父任务名（居中）+ 计时器 */}
+            <div className="flex items-center">
+              <div className="w-[48px] flex-shrink-0" />
+              <p className="flex-1 text-[12px] text-gray-500 text-center truncate">{taskTitle}</p>
+              <span className="w-[48px] text-[11px] text-gray-400 font-mono text-right flex-shrink-0
+                               bg-gray-100/80 px-1.5 py-0.5 rounded-md">{timeStr}</span>
+            </div>
+
+            {/* Row 2: 当前步骤（居中，加粗，行动焦点） */}
+            <p className="text-[14px] text-gray-800 font-semibold text-center mt-1 leading-snug">
+              🎯 {currentMicroTask}
+            </p>
+
+            {/* Row 3: 暂停 | 完成这一步 | 卡住了? */}
+            <div className="flex items-center mt-2">
+              <div className="w-[60px] flex items-center flex-shrink-0">
+                <button
+                  onClick={onPause}
+                  className="no-drag text-[11px] text-gray-400
+                             hover:text-blue-500 active:scale-95 transition-all whitespace-nowrap"
+                  title="暂停，去处理别的事"
+                >
+                  暂停
+                </button>
+              </div>
+              <div className="flex-1 flex justify-center">
+                <button
+                  onClick={handleMicroDoneClick}
+                  disabled={showMicroDone}
+                  className={`no-drag px-6 py-1.5 rounded-xl
+                             text-xs font-semibold transition-all
+                             ${showMicroDone
+                               ? 'bg-teal-400 text-white scale-110 shadow-md shadow-teal-200/60'
+                               : 'bg-teal-500 text-white shadow-sm shadow-teal-200/50 hover:bg-teal-600 active:scale-95'
+                             }`}
+                >
+                  {showMicroDone ? '✅' : '完成这一步'}
+                </button>
+              </div>
+              <div className="w-[60px] flex items-center justify-end flex-shrink-0">
+                <button
+                  onClick={onStuck}
+                  className="no-drag text-[11px] text-amber-500
+                             hover:text-amber-600 active:scale-95 transition-all whitespace-nowrap"
+                  title="卡住了？让AI帮你换条路"
+                >
+                  卡住了?
+                </button>
+              </div>
+            </div>
+          </div>
+        )
+      }
+
+      // —— 状态 B：第一步已完成 → 任务结构视图（主任务 + 子任务 checkbox） ——
+      const taskStructureRef = taskStructurePanelRef
+      return (
+        <div ref={taskStructureRef}
+             className="drag-region w-full h-full flex flex-col bg-white/95 backdrop-blur-sm
+                        border border-gray-200/60 rounded-2xl
+                        shadow-[0_4px_24px_rgba(0,0,0,0.08)] select-none overflow-hidden">
+
+          {/* 顶部：主任务名 + 计时器 */}
+          <div className="no-drag px-4 pt-3 pb-2 border-b border-gray-100/60">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] text-gray-400 font-medium tracking-wide">📋 当前任务</span>
+              <span className="text-[11px] text-gray-400 font-mono
+                               bg-gray-100/80 px-1.5 py-0.5 rounded-md">{timeStr}</span>
+            </div>
+            <p className="text-[14px] text-gray-800 font-semibold mt-1 leading-snug">{taskTitle}</p>
+          </div>
+
+          {/* 中间：子任务列表（有子任务时显示） */}
+          {taskSubtasks.length > 0 && (
+            <div className="no-drag px-4 py-2.5 flex flex-col gap-1.5 flex-1 overflow-y-auto">
+              {taskSubtasks.map((sub) => {
+                const checked = sub.completed
+                return (
+                  <label
+                    key={sub.id}
+                    className={`flex items-center gap-2.5 px-2.5 py-2 rounded-xl cursor-pointer
+                               transition-all hover:bg-gray-50
+                               ${checked ? 'opacity-60' : ''}`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => onWidgetSubtaskToggle?.(sub.id)}
+                      className="no-drag w-4 h-4 rounded border-gray-300
+                                 text-emerald-500 focus:ring-emerald-200
+                                 cursor-pointer flex-shrink-0"
+                    />
+                    <span className={`text-[13px] leading-snug ${
+                      checked
+                        ? 'text-gray-400 line-through'
+                        : 'text-gray-700'
+                    }`}>
+                      {sub.title}
+                    </span>
+                  </label>
+                )
+              })}
+            </div>
+          )}
+
+          {/* 底部：暂停 + 完成主任务 */}
+          <div className="no-drag px-4 pb-3 pt-2 border-t border-gray-100/60 flex items-center">
+            <button
+              onClick={onPause}
+              className="text-[11px] text-gray-400 hover:text-blue-500
+                         active:scale-95 transition-all whitespace-nowrap"
+              title="暂停，去处理别的事"
+            >
+              暂停
+            </button>
+            <div className="flex-1 flex justify-center">
+              <button
+                onClick={(e) => {
+                  triggerEffect(e.currentTarget)
+                  onTaskDone()
+                }}
+                className="px-5 py-2 rounded-xl bg-emerald-500 text-white text-xs font-semibold
+                           shadow-sm shadow-emerald-200/50
+                           hover:bg-emerald-600 hover:shadow-md hover:shadow-emerald-200/60
+                           active:scale-95 transition-all"
+              >
+                ✓ 完成主任务
+              </button>
+            </div>
+            <div className="w-[36px]" /> {/* 右侧占位平衡 */}
+          </div>
+        </div>
+      )
+    }
+
+    // ===== ENABLE_STEP_BY_STEP ON：原逐步拆解执行界面（含心流模式） =====
     const displayTask = isFlowMode ? taskTitle : currentMicroTask
 
     return (
@@ -647,6 +825,9 @@ function FocusDynamicBar({
   }
 
   // ============ 接力状态（展开面板）============
+  // 当 ENABLE_STEP_BY_STEP 关闭时，不应到达此处（App.tsx 会拦截 relay 转向）
+  // 但防御性处理：如果意外到达，返回空
+  if (!ENABLE_STEP_BY_STEP) return null
 
   // ---- 所有子任务完成特殊界面 ----
   if (allSubtasksDone) {
