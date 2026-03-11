@@ -15,12 +15,19 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import type { Task } from '../types'
-import type { AIConfig } from '../services/ai'
+import type { AIConfig, MicroActionChip } from '../services/ai'
 import { generateReflectionQuestion, generateFollowUpQuestion, getRandomFallbackQuestion } from '../services/ai'
 import { aiCache } from '../services/ai-cache'
 
+// ★ Feature Flag：关闭任务理解阶段，直接进入第一步选择
+// 设为 true 可恢复完整的 understanding → micro_action 流程
+export const ENABLE_TASK_UNDERSTANDING = false
+
 // ★ 通用回退建议（AI 超时时兜底显示）
-const FALLBACK_CHIPS = ['打开相关文件', '先写一句话开头']
+const FALLBACK_CHIPS: MicroActionChip[] = [
+  { action: '打开相关文件', note: '先准备好工具就行' },
+  { action: '先写一句话开头', note: '想到什么写什么' },
+]
 
 // ===================== 类型 =====================
 
@@ -43,7 +50,7 @@ export default function FocusFlow({ task, aiConfig, onStart, onCancel }: FocusFl
   // ---- 阶段控制 ----
   const hasAI = !!(aiConfig.apiKey && aiConfig.modelId)
   const [phase, setPhase] = useState<'understanding' | 'micro_action'>(
-    hasAI ? 'understanding' : 'micro_action'
+    (ENABLE_TASK_UNDERSTANDING && hasAI) ? 'understanding' : 'micro_action'
   )
 
   // ---- understanding 阶段状态 ----
@@ -57,8 +64,9 @@ export default function FocusFlow({ task, aiConfig, onStart, onCancel }: FocusFl
 
   // ---- micro_action 阶段状态 ----
   const [microTask, setMicroTask] = useState('')
-  const [chips, setChips] = useState<string[]>([])
-  const [loadingChips, setLoadingChips] = useState(false)
+  const [chips, setChips] = useState<MicroActionChip[]>([])
+  // ★ 如果有 AI 且直接进入 micro_action，初始就显示 loading 避免闪烁
+  const [loadingChips, setLoadingChips] = useState(hasAI && phase === 'micro_action')
   const [chipError, setChipError] = useState<string | null>(null)
   const microInputRef = useRef<HTMLInputElement>(null)
   const sourceRef = useRef<'self' | 'ai_chip'>('self')
@@ -129,6 +137,7 @@ export default function FocusFlow({ task, aiConfig, onStart, onCancel }: FocusFl
 
   // understanding 阶段初始化：生成第一个反思问题
   useEffect(() => {
+    if (!ENABLE_TASK_UNDERSTANDING) return          // ★ flag 关闭时不触发
     if (phase !== 'understanding' || !hasAI) return
 
     fetchReflectionQuestion()
@@ -213,9 +222,6 @@ export default function FocusFlow({ task, aiConfig, onStart, onCancel }: FocusFl
 
   // ===================== Micro Action 阶段逻辑 =====================
 
-  // AI 建议超时回退
-  const fallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-
   // micro_action 阶段初始化：获取 AI 建议 + 聚焦输入框
   useEffect(() => {
     if (phase !== 'micro_action') return
@@ -223,33 +229,28 @@ export default function FocusFlow({ task, aiConfig, onStart, onCancel }: FocusFl
     const focusTimer = setTimeout(() => microInputRef.current?.focus(), 350)
     if (!aiConfig.apiKey || !aiConfig.modelId) return () => clearTimeout(focusTimer)
 
+    // ★ 先清空旧建议 + 显示加载态，等 AI 真正返回后再展示
+    setChips([])
     setLoadingChips(true)
     setChipError(null)
     let cancelled = false
 
-    // ★ 2.5 秒超时回退
-    fallbackTimerRef.current = setTimeout(() => {
-      if (!cancelled) {
-        setChips(prev => prev.length === 0 ? FALLBACK_CHIPS : prev)
-        setLoadingChips(false)
-        console.log('[FocusFlow] AI 建议超时，显示回退模板')
-      }
-    }, 2500)
-
     aiCache.get(task.id, task.title, aiConfig, activeSubtask?.title)
       .then(({ chips: newChips, error, fromCache }) => {
         if (cancelled) return
-        if (fallbackTimerRef.current) clearTimeout(fallbackTimerRef.current)
-        setChips(newChips)
+        // AI 返回为空 → 使用通用回退建议
+        setChips(newChips.length > 0 ? newChips : FALLBACK_CHIPS)
         if (error) setChipError(error)
         if (fromCache) console.log('[FocusFlow] AI 建议来自缓存，秒出 ✓')
+      })
+      .catch(() => {
+        if (!cancelled) setChips(FALLBACK_CHIPS)
       })
       .finally(() => { if (!cancelled) setLoadingChips(false) })
 
     return () => {
       cancelled = true
       clearTimeout(focusTimer)
-      if (fallbackTimerRef.current) clearTimeout(fallbackTimerRef.current)
     }
   }, [phase, task.id])
 
@@ -276,9 +277,9 @@ export default function FocusFlow({ task, aiConfig, onStart, onCancel }: FocusFl
   }
 
   /** AI chip 一键开始 */
-  const handleChipStart = (chip: string) => {
+  const handleChipStart = (chip: MicroActionChip) => {
     const ctx = buildUnderstandingContext(reflectionHistory)
-    onStart(chip, 'ai_chip', ctx)
+    onStart(chip.action, 'ai_chip', ctx)
   }
 
   // ===================== 渲染 =====================
@@ -336,7 +337,7 @@ export default function FocusFlow({ task, aiConfig, onStart, onCancel }: FocusFl
         <div className="mx-6 border-t border-gray-100" />
 
         {/* ============ Understanding 阶段 ============ */}
-        {phase === 'understanding' && (
+        {ENABLE_TASK_UNDERSTANDING && phase === 'understanding' && (
           <div className="px-6 py-5">
             {/* 阶段提示 */}
             <p className="text-[11px] text-gray-400 mb-3">
@@ -480,26 +481,33 @@ export default function FocusFlow({ task, aiConfig, onStart, onCancel }: FocusFl
               </button>
             </div>
 
-            {/* AI 建议筹码 */}
-            <div className="mt-3 flex flex-wrap gap-2 min-h-[28px]">
-              {/* 骨架芯片占位 */}
+            {/* AI 建议：带安抚说明的微动作卡片 */}
+            <div className="mt-3 flex flex-col gap-2 min-h-[28px]">
+              {/* 骨架占位 */}
               {loadingChips && (
-                <>
-                  <span className="h-7 w-24 rounded-full bg-emerald-50 border border-emerald-100 animate-pulse" />
-                  <span className="h-7 w-32 rounded-full bg-emerald-50 border border-emerald-100 animate-pulse" />
-                </>
+                <div className="flex flex-col items-center gap-3 py-3">
+                  <div className="flex items-center gap-2 text-emerald-500">
+                    <span className="w-4 h-4 border-2 border-emerald-200 border-t-emerald-500 rounded-full animate-spin" />
+                    <span className="text-sm font-medium">AI 正在为你想第一步…</span>
+                  </div>
+                  <span className="text-[11px] text-gray-400">根据任务内容生成最小可执行动作</span>
+                </div>
               )}
               {!loadingChips && chips.map((chip, i) => (
                 <button
                   key={i}
                   onClick={() => handleChipStart(chip)}
-                  className="text-xs px-3 py-1.5 rounded-full
-                             bg-emerald-500 text-white border border-emerald-500
-                             hover:bg-emerald-600 hover:border-emerald-600
-                             shadow-sm shadow-emerald-200/50
-                             active:scale-95 transition-all cursor-pointer"
+                  className="w-full text-left px-4 py-2.5 rounded-xl
+                             bg-emerald-50 border border-emerald-200
+                             hover:bg-emerald-100 hover:border-emerald-300
+                             active:scale-[0.98] transition-all cursor-pointer group"
                 >
-                  ▶ {chip}
+                  <span className="text-sm text-emerald-700 font-medium">▶ {chip.action}</span>
+                  {chip.note && (
+                    <span className="block text-[11px] text-emerald-500/70 mt-0.5 leading-snug">
+                      {chip.note}
+                    </span>
+                  )}
                 </button>
               ))}
               {!loadingChips && chipError && (

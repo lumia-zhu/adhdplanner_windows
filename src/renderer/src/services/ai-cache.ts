@@ -17,15 +17,15 @@
  *   const result = await aiCache.get(taskId, taskTitle, aiConfig, subtaskTitle, lastStep)
  */
 
-import type { AIConfig } from './ai'
+import type { AIConfig, MicroActionChip } from './ai'
 import { generateMicroActions } from './ai'
 
 // ===================== 类型 =====================
 
 /** 缓存条目 */
 interface CacheEntry {
-  /** AI 返回的建议芯片 */
-  chips: string[]
+  /** AI 返回的微动作建议 */
+  chips: MicroActionChip[]
   /** 错误信息（如果有） */
   error?: string
   /** 缓存写入时间戳（毫秒） */
@@ -33,8 +33,8 @@ interface CacheEntry {
 }
 
 /** 缓存配置 */
-const CACHE_TTL = 5 * 60 * 1000  // 缓存有效期：5 分钟
-const MAX_CACHE_SIZE = 50         // 最多缓存 50 条（防止内存泄漏）
+const CACHE_TTL = 15 * 60 * 1000  // ★ 缓存有效期：15 分钟（延长以提高命中率）
+const MAX_CACHE_SIZE = 80          // 最多缓存 80 条（配合更大预加载范围）
 
 // ===================== 内部状态 =====================
 
@@ -42,7 +42,7 @@ const MAX_CACHE_SIZE = 50         // 最多缓存 50 条（防止内存泄漏）
 const cache = new Map<string, CacheEntry>()
 
 /** 正在进行中的请求（防止同一个任务重复请求） */
-const inflight = new Map<string, Promise<{ chips: string[]; error?: string }>>()
+const inflight = new Map<string, Promise<{ chips: MicroActionChip[]; error?: string }>>()
 
 // ===================== 工具函数 =====================
 
@@ -129,7 +129,7 @@ function prefetch(
     })
     .catch(err => {
       console.warn('[AI Cache] 预加载失败:', err)
-      return { chips: [] as string[], error: String(err) }
+      return { chips: [] as MicroActionChip[], error: String(err) }
     })
     .finally(() => {
       inflight.delete(key)
@@ -158,7 +158,7 @@ async function get(
   config: AIConfig,
   subtaskTitle?: string,
   lastStep?: string,
-): Promise<{ chips: string[]; error?: string; fromCache: boolean }> {
+): Promise<{ chips: MicroActionChip[]; error?: string; fromCache: boolean }> {
   const key = buildKey(taskId, subtaskTitle, lastStep)
 
   // 1. 有效缓存 → 直接返回

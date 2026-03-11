@@ -32,27 +32,27 @@ function isResponsesApi(url: string): boolean {
 }
 
 /** 构造 Chat Completions 格式的请求体 */
-function buildChatBody(modelId: string, systemPrompt: string, userPrompt: string, maxTokens = 120): string {
+function buildChatBody(modelId: string, systemPrompt: string, userPrompt: string, maxTokens = 120, temperature = 0.7): string {
   return JSON.stringify({
     model: modelId,
     messages: [
       { role: 'system', content: systemPrompt },
       { role: 'user', content: userPrompt },
     ],
-    temperature: 0.7,
+    temperature,
     max_tokens: maxTokens,
   })
 }
 
 /** 构造 Responses API 格式的请求体 */
-function buildResponsesBody(modelId: string, systemPrompt: string, userPrompt: string): string {
+function buildResponsesBody(modelId: string, systemPrompt: string, userPrompt: string, temperature = 0.7): string {
   return JSON.stringify({
     model: modelId,
     input: [
       { role: 'system', content: [{ type: 'input_text', text: systemPrompt }] },
       { role: 'user', content: [{ type: 'input_text', text: userPrompt }] },
     ],
-    temperature: 0.7,
+    temperature,
   })
 }
 
@@ -87,6 +87,7 @@ async function callLLM(
   userPrompt: string,
   cfg: AIConfig,
   maxTokens = 120,
+  temperature = 0.7,
 ): Promise<{ content: string; error?: string }> {
   if (!cfg.apiKey || !cfg.modelId || !cfg.apiUrl) {
     return { content: '', error: '未配置 AI' }
@@ -94,8 +95,8 @@ async function callLLM(
 
   const useResponses = isResponsesApi(cfg.apiUrl)
   const body = useResponses
-    ? buildResponsesBody(cfg.modelId, systemPrompt, userPrompt)
-    : buildChatBody(cfg.modelId, systemPrompt, userPrompt, maxTokens)
+    ? buildResponsesBody(cfg.modelId, systemPrompt, userPrompt, temperature)
+    : buildChatBody(cfg.modelId, systemPrompt, userPrompt, maxTokens, temperature)
 
   try {
     const res = await window.electronAPI.aiRequest({
@@ -234,13 +235,29 @@ export function getRandomFallbackQuestion(): string {
 
 // ===================== 核心函数 =====================
 
-/** 从文本中解析 JSON 数组 */
-function parseChips(content: string, maxCount: number): string[] {
+/** 微动作建议芯片（含安抚说明） */
+export interface MicroActionChip {
+  action: string   // 具体动作（如"打开空白文档"）
+  note: string     // 简短安抚说明（如"先准备好工具就够了"）
+}
+
+/** 从 AI 返回的文本中解析微动作数组（兼容旧格式 string[] 和新格式 {action,note}[]） */
+function parseMicroChips(content: string, maxCount: number): MicroActionChip[] {
   const match = content.match(/\[[\s\S]*?\]/)
   if (match) {
     try {
       const arr = JSON.parse(match[0])
-      if (Array.isArray(arr)) return arr.map(String).slice(0, maxCount)
+      if (Array.isArray(arr)) {
+        return arr.slice(0, maxCount).map(item => {
+          if (typeof item === 'string') {
+            return { action: item, note: '' }
+          }
+          if (item && typeof item === 'object' && typeof item.action === 'string') {
+            return { action: String(item.action), note: String(item.note ?? '') }
+          }
+          return { action: String(item), note: '' }
+        })
+      }
     } catch { /* ignore */ }
   }
   return []
@@ -248,6 +265,12 @@ function parseChips(content: string, maxCount: number): string[] {
 
 /**
  * 1. 生成微动作建议（开始任务 / 完成后接力）
+ *
+ * 设计原则（ADHD 友好）：
+ *   - 第一步必须非常简单，几乎不需要思考
+ *   - 每一步都是具体动作，而不是抽象思考
+ *   - 每一步应该在 5–30 秒内可以完成
+ *   - 语气温和、鼓励，减少用户压力
  *
  * @param taskTitle              宏观任务标题
  * @param lastStep               上一步完成的动作（可选，用于接力建议）
@@ -261,13 +284,17 @@ export async function generateMicroActions(
   config?: AIConfig,
   subtaskTitle?: string,
   understandingContext?: string,
-): Promise<{ chips: string[]; error?: string }> {
-  const cfg = config ?? DEFAULT_AI_CONFIG
-  if (!cfg.apiKey || !cfg.modelId) return { chips: [] }
+): Promise<{ chips: MicroActionChip[]; error?: string }> {
+  const base = config ?? DEFAULT_AI_CONFIG
+  if (!base.apiKey || !base.modelId) return { chips: [] }
+  // ★ 第一步建议用轻量模型，响应更快
+  const cfg: AIConfig = { ...base, modelId: 'doubao-seed-2-0-mini-260215' }
 
+  // ★ 精简 prompt：减少输入 token 以降低首 token 延迟
   const systemPrompt =
-    '你是一个专注力辅助AI。用户给你一个任务名称，你需要生成2个极其具体的、可以立即执行的微小物理动作建议。' +
-    '每个建议不超过10个字，用JSON数组格式返回，如 ["打开空白文档","找导师的纪要"]。只返回JSON数组，不要其他任何内容。'
+    '你是ADHD启动教练。生成2个极小的具体物理动作，5-30秒可完成，不要抽象思考。' +
+    '每个动作≤15字，附≤15字的鼓励。温和语气。' +
+    '返回JSON数组：[{"action":"打开空白文档","note":"先准备好工具就够了"}]。只返回JSON。'
 
   // 构建上下文：宏观任务 + 可选子任务
   const taskContext = subtaskTitle
@@ -283,11 +310,11 @@ export async function generateMicroActions(
     ? `${taskContext}${contextBlock}\n上一步完成了：${lastStep}\n请给出紧接着的2个微动作建议。`
     : `${taskContext}${contextBlock}\n请给出开始这个${subtaskTitle ? '子任务' : '任务'}时最先要做的2个微动作建议。`
 
-  // max_tokens 60 即可（chips 只是 2 个短词的 JSON 数组，远不需要 120）
-  const { content, error } = await callLLM(systemPrompt, userPrompt, cfg, 60)
+  // ★ max_tokens 100 足够 2 个 JSON 对象；temperature 0.3 加速收敛
+  const { content, error } = await callLLM(systemPrompt, userPrompt, cfg, 100, 0.3)
   if (error) return { chips: [], error }
 
-  const chips = parseChips(content, 2)
+  const chips = parseMicroChips(content, 2)
   return chips.length > 0
     ? { chips }
     : { chips: [], error: `AI 返回格式异常：${content.slice(0, 60)}` }

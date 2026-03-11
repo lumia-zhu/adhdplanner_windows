@@ -16,7 +16,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import type { Task } from '../types'
-import type { AIConfig } from '../services/ai'
+import type { AIConfig, MicroActionChip } from '../services/ai'
 import { generateStuckChips, generatePivotResponse } from '../services/ai'
 import type { PivotResult } from '../services/ai'
 import { aiCache } from '../services/ai-cache'
@@ -159,7 +159,7 @@ function FocusDynamicBar({
 
   // ---- 接力输入 ----
   const [nextMicro, setNextMicro] = useState('')
-  const [chips, setChips] = useState<string[]>([])
+  const [chips, setChips] = useState<MicroActionChip[]>([])
   const [loadingChips, setLoadingChips] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const relayPanelRef = useRef<HTMLDivElement>(null)  // 用于测量 relay 面板真实内容高度
@@ -187,7 +187,11 @@ function FocusDynamicBar({
   }, [phase, taskId, currentMicroTask, currentSubtaskTitle])
 
   // ---- 回退模板：AI 超过 2.5 秒没返回时显示通用建议 ----
-  const FALLBACK_CHIPS = ['继续往下做', '换个更简单的方式', '先做最熟悉的部分']
+  const FALLBACK_CHIPS: MicroActionChip[] = [
+    { action: '继续往下做', note: '保持节奏就好' },
+    { action: '换个更简单的方式', note: '降低门槛也是进展' },
+    { action: '先做最熟悉的部分', note: '从擅长的开始' },
+  ]
   const fallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // ---- 窗口尺寸管理 ----
@@ -990,14 +994,14 @@ function FocusDynamicBar({
                 {chips.map((chip, i) => (
                   <button
                     key={i}
-                    onClick={() => onNextMicro(chip)}
+                    onClick={() => onNextMicro(chip.action)}
                     className="text-[11px] px-3 py-1.5 rounded-xl
                                bg-emerald-500 text-white border border-emerald-500
                                hover:bg-emerald-600 hover:border-emerald-600
                                shadow-sm shadow-emerald-200/50
                                active:scale-[0.98] transition-all"
                   >
-                    ▶ {chip}
+                    ▶ {chip.action}
                   </button>
                 ))}
               </div>

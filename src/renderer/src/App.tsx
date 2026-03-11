@@ -738,14 +738,13 @@ export default function App() {
 
   // -------- AI 建议预加载 --------
 
-  // ★ 策略1：页面加载后预加载前 3 个待办任务（错开请求，避免同时打 API）
+  // ★ 策略1：页面加载后预加载所有待办任务（错开请求，避免并发压力）
   useEffect(() => {
     if (loading || isWidgetMode || !aiConfig.apiKey) return
-    const topTasks = pendingTasks.slice(0, 3)
-    topTasks.forEach((t, i) => {
+    pendingTasks.forEach((t, i) => {
       const subtaskTitle = (t.subtasks ?? []).find(s => !s.completed)?.title
-      // 错开 0ms / 800ms / 1600ms，避免并发压力
-      setTimeout(() => aiCache.prefetch(t.id, t.title, aiConfig, subtaskTitle), i * 800)
+      // 错开 1 秒间隔，避免并发压力
+      setTimeout(() => aiCache.prefetch(t.id, t.title, aiConfig, subtaskTitle), i * 1000)
     })
   }, [loading, isWidgetMode, aiConfig])  // 注意：不监听 tasks，只在加载完成时触发一次
 
@@ -903,6 +902,7 @@ export default function App() {
       {/* FocusFlow 覆盖层（阶段1：元认知拦截） */}
       {scaffoldTask && (
         <FocusFlow
+          key={scaffoldTask.id}
           task={scaffoldTask}
           aiConfig={aiConfig}
           onStart={handleStartMicro}
