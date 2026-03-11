@@ -55,6 +55,91 @@ function saveProfile(profile: Record<string, unknown>): boolean {
   } catch (e) { console.error('[saveProfile]', e); return false }
 }
 
+// ===================== 活跃度采样数据存储 =====================
+
+/** 活跃度记录：每 30 秒聚合一条 */
+interface ActivityRecord {
+  /** Unix 时间戳（ms） */
+  ts: number
+  /** 采样时刻的系统空闲时间（秒） */
+  idle: number
+  /** 该 30 秒窗口内活跃采样次数（idle 小于阈值） */
+  activeSamples: number
+  /** 该 30 秒窗口内总采样次数 */
+  totalSamples: number
+  /** 该 30 秒窗口内的活跃时间占比，范围 0-1 */
+  activeRatio: number
+}
+
+/** 获取某天的活跃度数据文件路径，如 activity-2026-03-11.json */
+const getActivityPath = (date: string): string =>
+  join(app.getPath('userData'), `activity-${date}.json`)
+
+/** 追加活跃度记录到指定日期的文件 */
+function appendActivityRecords(date: string, records: ActivityRecord[]): boolean {
+  try {
+    const p = getActivityPath(date)
+    let existing: ActivityRecord[] = []
+    if (fs.existsSync(p)) {
+      existing = JSON.parse(fs.readFileSync(p, 'utf-8'))
+    }
+    const merged = [...existing, ...records]
+    fs.writeFileSync(p, JSON.stringify(merged), 'utf-8') // 不缩进，节省磁盘
+    return true
+  } catch (e) {
+    console.error('[Activity] 追加记录失败:', e)
+    return false
+  }
+}
+
+/** 兼容旧版 inputs 记录，统一归一化为 activeRatio 结构 */
+function normalizeActivityRecord(raw: unknown): ActivityRecord | null {
+  if (!raw || typeof raw !== 'object') return null
+
+  const r = raw as Record<string, unknown>
+  if (typeof r.ts !== 'number' || typeof r.idle !== 'number') return null
+
+  if (
+    typeof r.activeSamples === 'number' &&
+    typeof r.totalSamples === 'number' &&
+    typeof r.activeRatio === 'number'
+  ) {
+    return {
+      ts: r.ts,
+      idle: r.idle,
+      activeSamples: r.activeSamples,
+      totalSamples: r.totalSamples,
+      activeRatio: r.activeRatio,
+    }
+  }
+
+  // 旧版数据只有 inputs。这里用一个保守的近似映射，避免历史数据直接消失。
+  const legacyInputs = typeof r.inputs === 'number' ? r.inputs : 0
+  const approxRatio = Math.max(0, Math.min(legacyInputs / 4, 1))
+  const totalSamples = 15
+  const activeSamples = Math.round(approxRatio * totalSamples)
+
+  return {
+    ts: r.ts,
+    idle: r.idle,
+    activeSamples,
+    totalSamples,
+    activeRatio: approxRatio,
+  }
+}
+
+/** 读取指定日期的所有活跃度记录 */
+function loadActivityData(date: string): ActivityRecord[] {
+  try {
+    const p = getActivityPath(date)
+    if (fs.existsSync(p)) {
+      const raw = JSON.parse(fs.readFileSync(p, 'utf-8')) as unknown[]
+      return raw.map(normalizeActivityRecord).filter((r): r is ActivityRecord => r !== null)
+    }
+  } catch (e) { console.error('[Activity] 读取数据失败:', e) }
+  return []
+}
+
 // ===================== 行为追踪数据存储 =====================
 
 /** 获取某天的追踪日志文件路径，如 tracker-2026-02-21.json */
@@ -98,6 +183,146 @@ const MAIN_WIDTH  = 480
 const MAIN_HEIGHT = 680
 const WIDGET_WIDTH  = 380
 const WIDGET_HEIGHT = 66
+
+// ===================== 活跃度采样引擎 =====================
+
+/**
+ * 高频空闲采样器
+ *
+ * 原理：
+ *   - 每 2 秒读取 powerMonitor.getSystemIdleTime()
+ *   - 如果 idle 小于阈值，说明用户刚刚有过操作 → 记为一次活跃采样
+ *   - 每 30 秒聚合为一条 ActivityRecord，写入磁盘缓冲
+ *   - 每 5 分钟（或缓冲满 20 条）批量持久化到 JSON 文件
+ */
+const activitySampler = {
+  /** 高频采样定时器（2 秒） */
+  fastTimer: null as ReturnType<typeof setInterval> | null,
+  /** 聚合写入定时器（5 分钟） */
+  flushTimer: null as ReturnType<typeof setInterval> | null,
+
+  /** 判定为“活跃”的 idle 阈值（秒） */
+  ACTIVE_IDLE_THRESHOLD: 2,
+  /** 当前 30 秒窗口内活跃采样次数 */
+  activeSamples: 0,
+  /** 当前 30 秒窗口内总采样次数 */
+  totalSamples: 0,
+  /** 当前 30 秒窗口的开始时间 */
+  windowStart: Date.now(),
+  /** 内存缓冲区 */
+  buffer: [] as ActivityRecord[],
+
+  /** 采样间隔（ms） */
+  SAMPLE_INTERVAL: 2000,
+  /** 聚合窗口大小（ms） */
+  WINDOW_SIZE: 30_000,
+  /** 磁盘写入间隔（ms） */
+  FLUSH_INTERVAL: 5 * 60_000,
+  /** 缓冲区满多少条就写入 */
+  FLUSH_THRESHOLD: 20,
+
+  /** 启动采样 */
+  start(): void {
+    this.activeSamples = 0
+    this.totalSamples = 0
+    this.windowStart = Date.now()
+
+    // 每 2 秒采样一次
+    this.fastTimer = setInterval(() => this.sample(), this.SAMPLE_INTERVAL)
+
+    // 每 5 分钟落盘一次
+    this.flushTimer = setInterval(() => this.flush(), this.FLUSH_INTERVAL)
+
+    console.log('[ActivitySampler] 启动，采样间隔', this.SAMPLE_INTERVAL, 'ms')
+  },
+
+  /** 停止采样 */
+  stop(): void {
+    if (this.fastTimer) { clearInterval(this.fastTimer); this.fastTimer = null }
+    if (this.flushTimer) { clearInterval(this.flushTimer); this.flushTimer = null }
+    this.flush() // 退出前写入残余数据
+    console.log('[ActivitySampler] 已停止')
+  },
+
+  /** 单次采样（每 2 秒调用） */
+  sample(): void {
+    const currentIdle = powerMonitor.getSystemIdleTime()
+
+    this.totalSamples++
+    // idle 很小，说明用户最近仍在持续操作电脑
+    if (currentIdle <= this.ACTIVE_IDLE_THRESHOLD) {
+      this.activeSamples++
+    }
+
+    // 检查是否到了 30 秒窗口边界
+    const now = Date.now()
+    if (now - this.windowStart >= this.WINDOW_SIZE) {
+      this.aggregate(now, currentIdle)
+    }
+  },
+
+  /** 聚合一个 30 秒窗口 */
+  aggregate(now: number, currentIdle: number): void {
+    const activeRatio =
+      this.totalSamples > 0 ? this.activeSamples / this.totalSamples : 0
+
+    const record: ActivityRecord = {
+      ts: now,
+      idle: currentIdle,
+      activeSamples: this.activeSamples,
+      totalSamples: this.totalSamples,
+      activeRatio,
+    }
+    this.buffer.push(record)
+
+    // 重置窗口
+    this.activeSamples = 0
+    this.totalSamples = 0
+    this.windowStart = now
+
+    // 缓冲区满就写入
+    if (this.buffer.length >= this.FLUSH_THRESHOLD) {
+      this.flush()
+    }
+  },
+
+  /** 强制聚合当前未满的窗口（在 flush 前调用，确保不丢数据） */
+  drainCurrentWindow(): void {
+    const now = Date.now()
+    if (this.totalSamples > 0) {
+      const currentIdle = powerMonitor.getSystemIdleTime()
+      this.aggregate(now, currentIdle)
+    }
+  },
+
+  /** 批量写入磁盘 */
+  flush(): void {
+    // 先把当前未满窗口也聚合进来
+    this.drainCurrentWindow()
+
+    if (this.buffer.length === 0) return
+
+    const records = [...this.buffer]
+    this.buffer = []
+
+    // 按日期分组
+    const byDate = new Map<string, ActivityRecord[]>()
+    for (const r of records) {
+      const d = new Date(r.ts)
+      const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+      const list = byDate.get(dateStr) || []
+      list.push(r)
+      byDate.set(dateStr, list)
+    }
+
+    for (const [date, recs] of byDate) {
+      if (!appendActivityRecords(date, recs)) {
+        // 写入失败 → 放回缓冲区
+        this.buffer.push(...recs)
+      }
+    }
+  },
+}
 
 // ===================== 全局状态 =====================
 
@@ -493,6 +718,13 @@ function setupIPC(): void {
     appendTrackerEvents(date, events))
   ipcMain.handle('tracker:load', (_, date: string) =>
     loadTrackerEvents(date))
+
+  // -------- 活跃度数据 --------
+  /** 先把内存缓冲区 flush 到磁盘，再读取 → 保证数据最新 */
+  ipcMain.handle('activity:load', (_, date: string) => {
+    activitySampler.flush()
+    return loadActivityData(date)
+  })
 }
 
 // ===================== 应用生命周期 =====================
@@ -504,6 +736,9 @@ app.whenReady().then(() => {
   createTray()
   // 启动每日反思提醒定时器
   startReflectionTimer()
+
+  // 启动活跃度采样
+  activitySampler.start()
 
   // ---- 系统唤醒后重新同步窗口状态 ----
   powerMonitor.on('resume', () => {
@@ -532,6 +767,11 @@ app.whenReady().then(() => {
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createMainWindow()
   })
+})
+
+// 退出前停止活跃度采样，确保数据落盘
+app.on('before-quit', () => {
+  activitySampler.stop()
 })
 
 // 所有窗口关闭时：只有 forceQuit=true 才真正退出

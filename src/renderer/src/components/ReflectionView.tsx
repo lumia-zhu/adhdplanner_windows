@@ -17,6 +17,9 @@ import TaskDurationChart from './TaskDurationChart'
 import type { TaskDurationItem } from './TaskDurationChart'
 import DayTimeline from './DayTimeline'
 import type { TimelineEntry } from './DayTimeline'
+import ActivityHeatmap from './ActivityHeatmap'
+import type { ActivityRecord } from './ActivityHeatmap'
+import ActivityRhythmChart from './ActivityRhythmChart'
 import ReflectionChat from './ReflectionChat'
 import { tracker } from '../services/tracker'
 
@@ -113,6 +116,7 @@ function getToday(): string {
 export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionViewProps) {
   const [events, setEvents] = useState<TrackEvent[]>([])
   const [summary, setSummary] = useState<DailySummary | null>(null)
+  const [activityData, setActivityData] = useState<ActivityRecord[]>([])
   const [loadingData, setLoadingData] = useState(true)
 
   // ---- 侧边栏状态 ----
@@ -131,16 +135,21 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
 
   const today = getToday()
 
-  // 加载今日事件数据
+  // 加载今日事件数据 + 活跃度数据
   useEffect(() => {
     async function loadEvents() {
       try {
         // ★ 先强制刷新 tracker 缓冲区到磁盘，确保最近的事件不会丢失
         await tracker.flushAsync()
 
-        const raw = await window.electronAPI.loadTrackerEvents(today)
+        const [raw, rawActivity] = await Promise.all([
+          window.electronAPI.loadTrackerEvents(today),
+          window.electronAPI.loadActivityData(today),
+        ])
+
         const typedEvents = raw as TrackEvent[]
         setEvents(typedEvents)
+        setActivityData(rawActivity as ActivityRecord[])
 
         const s = buildDailySummary(today, typedEvents)
         setSummary(s)
@@ -388,6 +397,28 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
 
             {/* 分隔线 */}
             {taskDurations.length > 0 && <div className="border-t border-gray-100" />}
+
+            {/* 活跃度热力时间轴 */}
+            <div>
+              <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
+                🟩 活跃度热力图
+              </h3>
+              <ActivityHeatmap data={activityData} />
+            </div>
+
+            {/* 分隔线 */}
+            <div className="border-t border-gray-100" />
+
+            {/* 每日活跃节奏曲线 */}
+            <div>
+              <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
+                📈 活跃节奏曲线
+              </h3>
+              <ActivityRhythmChart data={activityData} />
+            </div>
+
+            {/* 分隔线 */}
+            <div className="border-t border-gray-100" />
 
             {/* 时间轴 */}
             <div>

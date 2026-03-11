@@ -77,4 +77,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   /** 读取指定日期的所有事件 */
   loadTrackerEvents: (date: string): Promise<unknown[]> =>
     ipcRenderer.invoke('tracker:load', date),
+
+  // -------- 活跃度数据 --------
+  /** 读取指定日期的活跃度采样记录 */
+  loadActivityData: (date: string): Promise<unknown[]> =>
+    ipcRenderer.invoke('activity:load', date),
 })
