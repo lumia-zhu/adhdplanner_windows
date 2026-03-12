@@ -493,8 +493,6 @@ function updateTrayMenu(): void {
   if (!tray) return
 
   const isVisible = mainWindow?.isVisible() ?? false
-  const isAutoStart = app.getLoginItemSettings().openAtLogin
-
   const menu = Menu.buildFromTemplate([
     // 第一行：显示当前任务数量（不可点击，只作提示）
     {
@@ -531,18 +529,6 @@ function updateTrayMenu(): void {
           mainWindow?.webContents.send('widget:enter') // 通知前端切换 UI
         }
         updateTrayMenu()
-      },
-    },
-
-    { type: 'separator' },
-
-    // 开机自启开关
-    {
-      label: isAutoStart ? '✓ 开机自动启动' : '开机自动启动',
-      click: () => {
-        const newValue = !isAutoStart
-        app.setLoginItemSettings({ openAtLogin: newValue })
-        updateTrayMenu() // 立刻更新菜单勾选状态
       },
     },
 
@@ -731,6 +717,12 @@ function setupIPC(): void {
 
 app.whenReady().then(() => {
   app.setAppUserModelId('com.taskmanager.app')
+
+  // ★ 正式打包版：强制开机自启动（实验需要持续追踪活跃度）
+  if (app.isPackaged) {
+    app.setLoginItemSettings({ openAtLogin: true })
+  }
+
   setupIPC()
   createMainWindow()
   createTray()
