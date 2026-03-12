@@ -37,5 +37,8 @@ interface Window {
     // 活跃度数据
     /** 读取指定日期的活跃度采样记录 */
     loadActivityData: (date: string) => Promise<unknown[]>
+    // 拖拽区域刷新（Windows Chromium bug workaround）
+    onRefreshDrag: (cb: () => void) => void
+    offRefreshDrag: (cb: () => void) => void
   }
 }

@@ -82,4 +82,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   /** 读取指定日期的活跃度采样记录 */
   loadActivityData: (date: string): Promise<unknown[]> =>
     ipcRenderer.invoke('activity:load', date),
+
+  // -------- 拖拽区域刷新（Windows Chromium bug workaround） --------
+  /** 主进程 resize 后通知前端刷新 drag-region */
+  onRefreshDrag: (cb: () => void): void => { ipcRenderer.on('widget:refreshDrag', cb) },
+  offRefreshDrag: (cb: () => void): void => { ipcRenderer.removeListener('widget:refreshDrag', cb) },
 })

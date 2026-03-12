@@ -188,6 +188,22 @@ function FocusDynamicBar({
   const [reflectionData, setReflectionData] = useState<StuckReflectionResult | null>(null)
   const [loadingReflection, setLoadingReflection] = useState(false)
 
+  // ---- ★ Workaround: Windows 下 Chromium 拖拽区域缓存 bug ----
+  // 窗口 resize 后 -webkit-app-region 命中区域不会自动重算，
+  // 主进程 resize 后会发 'widget:refreshDrag'，这里通过切换 CSS 强制刷新。
+  useEffect(() => {
+    const refresh = (): void => {
+      document.body.style.setProperty('-webkit-app-region', 'no-drag')
+      requestAnimationFrame(() => {
+        document.body.style.removeProperty('-webkit-app-region')
+      })
+    }
+    window.electronAPI?.onRefreshDrag?.(refresh)
+    return () => {
+      window.electronAPI?.offRefreshDrag?.(refresh)
+    }
+  }, [])
+
   // ---- ★ 执行阶段：静默预加载 relay 接力建议 ----
   // 用户正在做微任务时，后台提前请求 AI 建议
   // 等用户点"✅ 完成"进入 relay 时，缓存已热好 → 0 等待

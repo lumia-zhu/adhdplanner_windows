@@ -652,6 +652,14 @@ function setupIPC(): void {
     mainWindow.setMinimumSize(width, height)
     mainWindow.setMaximumSize(width, height)
     mainWindow.setSize(width, height)
+
+    // ★ Workaround: Chromium 在 Windows 上有 bug，-webkit-app-region 的命中区域
+    // 在窗口 setSize 后不会自动重算，导致拖不动。这里延迟通知渲染进程刷新。
+    setTimeout(() => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('widget:refreshDrag')
+      }
+    }, 80)
   })
 
   // -------- 主窗口动态调整大小（反思侧边栏展开/收起） --------
