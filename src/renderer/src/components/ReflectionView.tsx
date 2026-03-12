@@ -105,10 +105,24 @@ function buildTimelineEntries(events: TrackEvent[]): TimelineEntry[] {
   return entries
 }
 
-/** 获取今日日期字符串 */
+/** 获取今日日期字符串 YYYY-MM-DD */
 function getToday(): string {
   const d = new Date()
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+/** 日期加减 n 天，返回 YYYY-MM-DD */
+function shiftDate(dateStr: string, days: number): string {
+  const d = new Date(dateStr + 'T00:00:00')
+  d.setDate(d.getDate() + days)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+/** 把 YYYY-MM-DD 格式化为友好显示，如 "3月12日 周四" */
+const WEEKDAYS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
+function formatDateFriendly(dateStr: string): string {
+  const d = new Date(dateStr + 'T00:00:00')
+  return `${d.getMonth() + 1}月${d.getDate()}日 ${WEEKDAYS[d.getDay()]}`
 }
 
 // ===================== 主组件 =====================
@@ -129,38 +143,61 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
   )
   const [showBubble, setShowBubble] = useState(false)
 
+  // ---- 日期选择 ----
+  const today = getToday()
+  const [selectedDate, setSelectedDate] = useState(today)
+  const isToday = selectedDate === today
+
+  const goPrev = useCallback(() => {
+    setSelectedDate(d => shiftDate(d, -1))
+    // 切到历史日期时关闭 AI 侧边栏
+    if (chatOpen) { setChatOpen(false); window.electronAPI.resizeMainWindow(MAIN_WIDTH, MAIN_HEIGHT) }
+  }, [chatOpen])
+  const goNext = useCallback(() => {
+    setSelectedDate(d => {
+      const next = shiftDate(d, 1)
+      return next > getToday() ? d : next   // 不能超过今天
+    })
+  }, [])
+  const goToday = useCallback(() => setSelectedDate(getToday()), [])
+
   // ---- 拖拽分隔条 ----
   const isDragging = useRef(false)
   const containerRef = useRef<HTMLDivElement>(null)
 
-  const today = getToday()
-
-  // 加载今日事件数据 + 活跃度数据
+  // 加载选中日期的事件数据 + 活跃度数据
   useEffect(() => {
+    let cancelled = false
     async function loadEvents() {
+      setLoadingData(true)
       try {
-        // ★ 先强制刷新 tracker 缓冲区到磁盘，确保最近的事件不会丢失
-        await tracker.flushAsync()
+        // ★ 如果是今天，先刷新 tracker 缓冲区确保最新数据
+        if (selectedDate === getToday()) {
+          await tracker.flushAsync()
+        }
 
         const [raw, rawActivity] = await Promise.all([
-          window.electronAPI.loadTrackerEvents(today),
-          window.electronAPI.loadActivityData(today),
+          window.electronAPI.loadTrackerEvents(selectedDate),
+          window.electronAPI.loadActivityData(selectedDate),
         ])
+
+        if (cancelled) return  // 防止切换日期后旧请求覆盖新数据
 
         const typedEvents = raw as TrackEvent[]
         setEvents(typedEvents)
         setActivityData(rawActivity as ActivityRecord[])
 
-        const s = buildDailySummary(today, typedEvents)
+        const s = buildDailySummary(selectedDate, typedEvents)
         setSummary(s)
       } catch (e) {
         console.error('加载反思数据失败:', e)
       } finally {
-        setLoadingData(false)
+        if (!cancelled) setLoadingData(false)
       }
     }
     loadEvents()
-  }, [today])
+    return () => { cancelled = true }
+  }, [selectedDate])
 
   // 气泡提示：打开 1.2 秒后显示，5 秒后自动隐藏
   useEffect(() => {
@@ -312,7 +349,53 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
             <span className="text-sm">💡</span>
           </div>
           <h1 className="font-semibold text-gray-800 text-sm">每日反思</h1>
-          <span className="text-xs text-gray-400">{today}</span>
+
+          {/* ---- 日期导航 ---- */}
+          <div className="flex items-center gap-1 ml-1">
+            {/* 前一天 */}
+            <button
+              onClick={goPrev}
+              className="w-6 h-6 rounded-md hover:bg-gray-100 flex items-center justify-center
+                         text-gray-400 hover:text-gray-600 transition-colors"
+              title="前一天"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" />
+              </svg>
+            </button>
+
+            {/* 当前日期 */}
+            <span className="text-xs font-medium text-gray-600 min-w-[90px] text-center select-none">
+              {formatDateFriendly(selectedDate)}
+            </span>
+
+            {/* 后一天 */}
+            <button
+              onClick={goNext}
+              disabled={isToday}
+              className={`w-6 h-6 rounded-md flex items-center justify-center transition-colors
+                ${isToday
+                  ? 'text-gray-200 cursor-not-allowed'
+                  : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'
+                }`}
+              title={isToday ? '已经是今天' : '后一天'}
+            >
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" />
+              </svg>
+            </button>
+
+            {/* 回到今天（非今天时显示） */}
+            {!isToday && (
+              <button
+                onClick={goToday}
+                className="ml-1 px-2 py-0.5 rounded-full text-[10px] font-semibold
+                           bg-indigo-50 text-indigo-500 hover:bg-indigo-100 transition-colors"
+              >
+                今天
+              </button>
+            )}
+          </div>
         </div>
         <button
           onClick={handleClose}
@@ -339,46 +422,48 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
               ? 'max-w-sm'
               : 'max-w-xl mx-auto'
           }`}>
-            {/* 圆环图 */}
-            <div className="flex flex-col items-center">
-              <DonutChart
-                percentage={completionRate}
-                size={chatOpen ? 140 : 180}
-                strokeWidth={chatOpen ? 12 : 14}
-                label="任务完成率"
-              />
+            {/* 圆环图（仅今天显示，历史日期没有任务快照） */}
+            {isToday && (
+              <div className="flex flex-col items-center">
+                <DonutChart
+                  percentage={completionRate}
+                  size={chatOpen ? 140 : 180}
+                  strokeWidth={chatOpen ? 12 : 14}
+                  label="任务完成率"
+                />
+              </div>
+            )}
 
-              {/* 快捷统计 */}
-              <div className={`mt-5 grid gap-3 w-full transition-all duration-400 ${
-                chatOpen ? 'grid-cols-2' : 'grid-cols-4'
-              }`}>
-                <div className="text-center bg-emerald-50 rounded-xl py-2.5 px-2">
-                  <p className="text-lg font-bold text-emerald-600">
-                    {summary?.stats.completedMicroSteps ?? 0}
-                  </p>
-                  <p className="text-[10px] text-emerald-500 mt-0.5">微步完成</p>
-                </div>
-                <div className="text-center bg-violet-50 rounded-xl py-2.5 px-2">
-                  <p className="text-lg font-bold text-violet-600">
-                    {summary?.stats.totalFlowMinutes ?? 0}
-                    <span className="text-xs font-normal ml-0.5">分钟</span>
-                  </p>
-                  <p className="text-[10px] text-violet-500 mt-0.5">心流时长</p>
-                </div>
-                <div className="text-center bg-indigo-50 rounded-xl py-2.5 px-2">
-                  <p className="text-lg font-bold text-indigo-600">
-                    {summary?.stats.totalFocusMinutes ?? 0}
-                    <span className="text-xs font-normal ml-0.5">分钟</span>
-                  </p>
-                  <p className="text-[10px] text-indigo-500 mt-0.5">总专注</p>
-                </div>
-                <div className="text-center bg-orange-50 rounded-xl py-2.5 px-2">
-                  <p className="text-lg font-bold text-orange-600">
-                    {summary?.stats.totalStuckCount ?? 0}
-                    <span className="text-xs font-normal ml-0.5">次</span>
-                  </p>
-                  <p className="text-[10px] text-orange-500 mt-0.5">卡顿次数</p>
-                </div>
+            {/* 快捷统计（tracker 事件数据，历史也可看） */}
+            <div className={`grid gap-3 w-full transition-all duration-400 ${
+              chatOpen ? 'grid-cols-2' : 'grid-cols-4'
+            }`}>
+              <div className="text-center bg-emerald-50 rounded-xl py-2.5 px-2">
+                <p className="text-lg font-bold text-emerald-600">
+                  {summary?.stats.completedMicroSteps ?? 0}
+                </p>
+                <p className="text-[10px] text-emerald-500 mt-0.5">微步完成</p>
+              </div>
+              <div className="text-center bg-violet-50 rounded-xl py-2.5 px-2">
+                <p className="text-lg font-bold text-violet-600">
+                  {summary?.stats.totalFlowMinutes ?? 0}
+                  <span className="text-xs font-normal ml-0.5">分钟</span>
+                </p>
+                <p className="text-[10px] text-violet-500 mt-0.5">心流时长</p>
+              </div>
+              <div className="text-center bg-indigo-50 rounded-xl py-2.5 px-2">
+                <p className="text-lg font-bold text-indigo-600">
+                  {summary?.stats.totalFocusMinutes ?? 0}
+                  <span className="text-xs font-normal ml-0.5">分钟</span>
+                </p>
+                <p className="text-[10px] text-indigo-500 mt-0.5">总专注</p>
+              </div>
+              <div className="text-center bg-orange-50 rounded-xl py-2.5 px-2">
+                <p className="text-lg font-bold text-orange-600">
+                  {summary?.stats.totalStuckCount ?? 0}
+                  <span className="text-xs font-normal ml-0.5">次</span>
+                </p>
+                <p className="text-[10px] text-orange-500 mt-0.5">卡顿次数</p>
               </div>
             </div>
 
@@ -428,8 +513,8 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
               <DayTimeline entries={timelineEntries} />
             </div>
 
-            {/* 遗留任务 */}
-            {summary && summary.leftoverTasks.length > 0 && (
+            {/* 遗留任务（仅今天显示，历史日期没有任务快照） */}
+            {isToday && summary && summary.leftoverTasks.length > 0 && (
               <>
                 <div className="border-t border-gray-100" />
                 <div>
@@ -521,8 +606,8 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
           </div>
         </div>
 
-        {/* ---- 右下角 AI 机器人浮标（始终显示） ---- */}
-        {!chatOpen && (
+        {/* ---- 右下角 AI 机器人浮标（仅今天显示） ---- */}
+        {!chatOpen && isToday && (
           <div className="absolute bottom-5 right-5 flex flex-col items-end gap-2 z-20">
             {/* 气泡提示 */}
             <div

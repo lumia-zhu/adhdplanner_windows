@@ -17,8 +17,8 @@
 import { useState, useEffect, useRef } from 'react'
 import type { Task } from '../types'
 import type { AIConfig, MicroActionChip } from '../services/ai'
-import { generateStuckChips, generatePivotResponse } from '../services/ai'
-import type { PivotResult } from '../services/ai'
+import { generateStuckChips, generatePivotResponse, generateStuckReflection } from '../services/ai'
+import type { PivotResult, StuckReflectionResult } from '../services/ai'
 import { aiCache } from '../services/ai-cache'
 import { tracker } from '../services/tracker'
 import { triggerEffect } from '../effects'
@@ -34,6 +34,14 @@ const BAR_H_FIRST_STEP = 92   // 简化模式：父任务 + 当前步骤 + 按�
 // ★ Feature Flag：关闭逐步拆解（relay 循环），简化为"理解 → 第一步 → 完成 → 退出"
 // 设为 true 可恢复完整的 step-by-step 接力模式
 export const ENABLE_STEP_BY_STEP = false
+
+/** 卡住时的常见原因快捷标签（点击自动填入输入框） */
+const STUCK_COMMON_REASONS = [
+  '不确定下一步该做什么',
+  '这一步太大了，不知道从哪开始',
+  '不确定去哪找需要的信息',
+  '总是被其他事情分心',
+]
 
 // ===================== 类型 =====================
 
@@ -176,6 +184,10 @@ function FocusDynamicBar({
   const [pivotInput, setPivotInput] = useState('')
   const pivotInputRef = useRef<HTMLInputElement>(null)
 
+  // ---- 卡住反思状态 ----
+  const [reflectionData, setReflectionData] = useState<StuckReflectionResult | null>(null)
+  const [loadingReflection, setLoadingReflection] = useState(false)
+
   // ---- ★ 执行阶段：静默预加载 relay 接力建议 ----
   // 用户正在做微任务时，后台提前请求 AI 建议
   // 等用户点"✅ 完成"进入 relay 时，缓存已热好 → 0 等待
@@ -284,8 +296,8 @@ function FocusDynamicBar({
     if (text) onNextMicro(text)
   }
 
-  // stuck_a → stuck_b：用户选择了卡点原因
-  const handleSubmitStuckReason = (reason: string, reasonSource: 'ai_chip' | 'self') => {
+  // stuck_a → stuck_b：用户点击 Reflect，提交困难描述并请求 AI 反思提示
+  const handleSubmitStuckReason = (reason: string, reasonSource: 'common_chip' | 'self') => {
     if (!reason.trim()) return
 
     // 📊 埋点：卡顿归因
@@ -297,29 +309,42 @@ function FocusDynamicBar({
       reasonSource,
     })
 
-    // 切换到 stuck_b 阶段
+    // 切换到 stuck_b 阶段（显示反思提示）
     onStuckToB()
 
-    // 同时发起 AI 请求获取同理心+绕路建议
-    setLoadingPivot(true)
-    setPivotData(null)
-    setPivotInput('')
+    // 请求 AI 生成反思提示
+    setLoadingReflection(true)
+    setReflectionData(null)
 
-    generatePivotResponse(taskTitle, currentMicroTask, reason, aiConfig)
+    generateStuckReflection(taskTitle, currentMicroTask, reason.trim(), aiConfig)
       .then(result => {
-        setPivotData(result)
-        // 📊 埋点：AI 生成了绕路建议
-        if (result.empathy || result.pivots.length > 0) {
-          tracker.track('stuck.pivot_offered', {
+        if (result.reflection) {
+          setReflectionData(result.reflection)
+          // 📊 埋点：AI 生成了反思提示
+          tracker.track('stuck.reflection_shown', {
             sessionId: session.sessionId,
             taskId: session.taskId,
-            empathy: result.empathy,
-            pivotSuggestions: result.pivots,
+            difficulty: reason.trim(),
+            reflection: JSON.stringify(result.reflection),
+          })
+        } else {
+          // AI 返回失败时用 fallback
+          setReflectionData({
+            interpret: '暂时没能帮你分析，不过没关系——试着自己想一想刚才为什么会卡住。',
+            hints: ['回忆一下刚才具体卡在哪个点？'],
+            cheer: '你可以的 💪',
           })
         }
-        setLoadingPivot(false)
+        setLoadingReflection(false)
       })
-      .catch(() => setLoadingPivot(false))
+      .catch(() => {
+        setReflectionData({
+          interpret: '网络不太好，不过没关系——这也是一个暂停思考的机会。',
+          hints: ['想想刚才卡在哪一步，也许答案已经在你脑海里了'],
+          cheer: '相信自己 ✨',
+        })
+        setLoadingReflection(false)
+      })
   }
 
   // stuck_b → 重启：用户选了绕路方案或自定义输入
@@ -430,7 +455,7 @@ function FocusDynamicBar({
               <span className="text-[11px] text-gray-400 font-mono
                                bg-gray-100/80 px-1.5 py-0.5 rounded-md">{timeStr}</span>
             </div>
-            <p className="text-[14px] text-gray-800 font-semibold mt-1 leading-snug">{taskTitle}</p>
+            <p className="text-[14px] text-gray-800 font-semibold mt-1 leading-snug text-center">{taskTitle}</p>
           </div>
 
           {/* 中间：子任务列表（有子任务时显示） */}
@@ -466,16 +491,18 @@ function FocusDynamicBar({
             </div>
           )}
 
-          {/* 底部：暂停 + 完成主任务 */}
+          {/* 底部：暂停 + 完成主任务 + 卡住了 */}
           <div className="no-drag px-4 pb-3 pt-2 border-t border-gray-100/60 flex items-center">
-            <button
-              onClick={onPause}
-              className="text-[11px] text-gray-400 hover:text-blue-500
-                         active:scale-95 transition-all whitespace-nowrap"
-              title="暂停，去处理别的事"
-            >
-              暂停
-            </button>
+            <div className="w-[60px] flex items-center flex-shrink-0">
+              <button
+                onClick={onPause}
+                className="text-[11px] text-gray-400 hover:text-blue-500
+                           active:scale-95 transition-all whitespace-nowrap"
+                title="暂停，去处理别的事"
+              >
+                暂停
+              </button>
+            </div>
             <div className="flex-1 flex justify-center">
               <button
                 onClick={(e) => {
@@ -490,7 +517,16 @@ function FocusDynamicBar({
                 ✓ 完成主任务
               </button>
             </div>
-            <div className="w-[36px]" /> {/* 右侧占位平衡 */}
+            <div className="w-[60px] flex items-center justify-end flex-shrink-0">
+              <button
+                onClick={onStuck}
+                className="text-[11px] text-amber-500
+                           hover:text-amber-600 active:scale-95 transition-all whitespace-nowrap"
+                title="卡住了？让AI帮你换条路"
+              >
+                卡住了?
+              </button>
+            </div>
           </div>
         </div>
       )
@@ -595,7 +631,7 @@ function FocusDynamicBar({
     )
   }
 
-  // ============ 急救状态A：卡点预测 ============
+  // ============ 急救状态A：描述困难 + 常见原因标签 ============
   if (phase === 'stuck_a') {
     return (
       <div className="drag-region w-full h-full flex flex-col bg-white/95 backdrop-blur-sm
@@ -614,10 +650,11 @@ function FocusDynamicBar({
           <span className="no-drag text-xs text-gray-500 font-mono flex-shrink-0
                            bg-gray-100/80 px-2 py-0.5 rounded-md">{timeStr}</span>
           <button
-            onClick={onExit}
+            onClick={() => onResume(currentMicroTask)}
             className="no-drag w-6 h-6 rounded-xl flex items-center justify-center
                        text-gray-300 hover:text-gray-500 hover:bg-gray-100
                        transition-all flex-shrink-0"
+            title="返回继续做"
           >
             <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -625,72 +662,77 @@ function FocusDynamicBar({
           </button>
         </div>
 
-        {/* 急救内容 */}
-        <div className="no-drag flex-1 px-4 py-3.5 flex flex-col gap-3 overflow-y-auto">
+        {/* 内容区 */}
+        <div className="no-drag flex-1 px-4 py-3 flex flex-col gap-3 overflow-y-auto">
 
-          {/* LLM 提示语 */}
+          {/* 提示语 */}
           <p className="text-xs text-gray-600 leading-relaxed">
-            <span className="text-orange-500 font-bold">卡住太正常了</span>，这说明大脑在处理复杂信息。深呼吸。
-            <br />现在主要是遇到<span className="text-orange-600 font-bold">什么具体问题</span>了？
+            描述一下你遇到了<span className="text-orange-600 font-bold">什么困难</span>？
           </p>
 
-          {/* 动态预测筹码 */}
-          <div className="flex flex-col gap-2 min-h-[36px]">
-            {loadingStuck && (
-              <span className="text-[10px] text-gray-400 flex items-center gap-1.5">
-                <span className="w-3 h-3 border-[1.5px] border-gray-300 border-t-orange-400 rounded-full animate-spin" />
-                AI 正在分析卡点…
-              </span>
-            )}
-            {!loadingStuck && stuckChips.map((chip, i) => (
-              <button
-                key={i}
-                onClick={() => handleSubmitStuckReason(chip, 'ai_chip')}
-                className="text-left text-xs px-3.5 py-2.5 rounded-xl
-                           bg-orange-50 text-orange-700 border border-orange-200
-                           hover:bg-orange-100 hover:border-orange-300
-                           active:scale-[0.98] transition-all"
-              >
-                🔘 {chip}
-              </button>
-            ))}
+          {/* 输入框 */}
+          <textarea
+            ref={stuckInputRef as unknown as React.RefObject<HTMLTextAreaElement>}
+            value={stuckInput}
+            onChange={(e) => setStuckInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey && stuckInput.trim()) {
+                e.preventDefault()
+                handleSubmitStuckReason(stuckInput.trim(), 'self')
+              }
+              if (e.key === 'Escape') onResume(currentMicroTask)
+            }}
+            placeholder="我现在遇到的问题是……"
+            maxLength={200}
+            rows={2}
+            className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-gray-200
+                       focus:border-orange-400 focus:ring-1 focus:ring-orange-100
+                       outline-none bg-gray-50 focus:bg-white transition-all resize-none"
+          />
+
+          {/* 常见原因标签 */}
+          <div className="flex flex-col gap-1.5">
+            <p className="text-[10px] text-gray-400 font-medium">常见原因（点击填入）：</p>
+            <div className="flex flex-wrap gap-1.5">
+              {STUCK_COMMON_REASONS.map((reason, i) => (
+                <button
+                  key={i}
+                  onClick={() => setStuckInput(reason)}
+                  className={`text-left text-[11px] px-2.5 py-1.5 rounded-lg transition-all
+                    ${stuckInput === reason
+                      ? 'bg-orange-100 text-orange-700 border border-orange-300'
+                      : 'bg-gray-50 text-gray-500 border border-gray-200 hover:bg-orange-50 hover:text-orange-600 hover:border-orange-200'
+                    }`}
+                >
+                  {reason}
+                </button>
+              ))}
+            </div>
           </div>
 
-          {/* 开放倾诉输入框 */}
-          <div className="flex gap-2">
-            <input
-              ref={stuckInputRef}
-              type="text"
-              value={stuckInput}
-              onChange={(e) => setStuckInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && stuckInput.trim()) handleSubmitStuckReason(stuckInput.trim(), 'self')
-                if (e.key === 'Escape') onExit()
-              }}
-              placeholder="都不是，其实是因为……"
-              maxLength={100}
-              className="flex-1 px-3.5 py-2.5 text-xs rounded-xl border border-gray-200
-                         focus:border-orange-400 focus:ring-1 focus:ring-orange-100
-                         outline-none bg-gray-50 focus:bg-white transition-all"
-            />
+          {/* Reflect 按钮 */}
+          <div className="flex justify-center pt-1">
             <button
               onClick={() => {
-                if (stuckInput.trim()) handleSubmitStuckReason(stuckInput.trim(), 'self')
+                if (stuckInput.trim()) {
+                  const source = STUCK_COMMON_REASONS.includes(stuckInput.trim()) ? 'common_chip' : 'self'
+                  handleSubmitStuckReason(stuckInput.trim(), source as 'common_chip' | 'self')
+                }
               }}
               disabled={!stuckInput.trim()}
-              className="px-3.5 py-2.5 rounded-xl bg-orange-500 text-white text-xs font-semibold
+              className="px-6 py-2 rounded-xl bg-orange-500 text-white text-xs font-semibold
                          shadow-sm shadow-orange-200/50
                          hover:bg-orange-600 hover:shadow-md hover:shadow-orange-200/60
                          active:scale-95
                          disabled:opacity-40 disabled:cursor-not-allowed disabled:shadow-none
-                         transition-all flex-shrink-0"
+                         transition-all"
             >
-              说说
+              Reflect
             </button>
           </div>
 
-          {/* 底部：返回继续执行 */}
-          <div className="flex items-center justify-end pt-2 border-t border-gray-100/80">
+          {/* 返回继续执行 */}
+          <div className="flex items-center justify-end pt-1 border-t border-gray-100/80">
             <button
               onClick={() => onResume(currentMicroTask)}
               className="text-[11px] text-gray-400 hover:text-gray-600 transition-colors"
@@ -703,7 +745,7 @@ function FocusDynamicBar({
     )
   }
 
-  // ============ 急救状态B：同理心接住 + 绕路 ============
+  // ============ 急救状态B：反思提示 ============
   if (phase === 'stuck_b') {
     return (
       <div className="drag-region w-full h-full flex flex-col bg-white/95 backdrop-blur-sm
@@ -712,20 +754,21 @@ function FocusDynamicBar({
 
         {/* 顶部条 */}
         <div className="flex items-center px-4 py-2.5 gap-2.5 border-b border-gray-100/80">
-          <div className="no-drag w-6 h-6 rounded-full bg-gradient-to-br from-blue-400 to-blue-500
+          <div className="no-drag w-6 h-6 rounded-full bg-gradient-to-br from-amber-400 to-amber-500
                           flex items-center justify-center flex-shrink-0 shadow-sm">
-            <span className="text-white text-[10px]">💙</span>
+            <span className="text-white text-[10px]">💡</span>
           </div>
-          <span className="no-drag text-xs text-blue-600 font-medium flex-1 truncate">
-            别急，换条路走
+          <span className="no-drag text-xs text-amber-700 font-medium flex-1 truncate">
+            反思提示
           </span>
           <span className="no-drag text-xs text-gray-500 font-mono flex-shrink-0
                            bg-gray-100/80 px-2 py-0.5 rounded-md">{timeStr}</span>
           <button
-            onClick={onExit}
+            onClick={() => onResume(currentMicroTask)}
             className="no-drag w-6 h-6 rounded-xl flex items-center justify-center
                        text-gray-300 hover:text-gray-500 hover:bg-gray-100
                        transition-all flex-shrink-0"
+            title="返回继续做"
           >
             <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -733,96 +776,47 @@ function FocusDynamicBar({
           </button>
         </div>
 
-        {/* 急救内容 */}
-        <div className="no-drag flex-1 px-4 py-3.5 flex flex-col gap-3 overflow-y-auto">
+        {/* 反思内容 —— 单卡片自然呈现，ADHD 友好 */}
+        <div className="no-drag flex-1 px-4 py-3 flex flex-col gap-2.5 overflow-y-auto">
 
           {/* 加载中 */}
-          {loadingPivot && (
-            <div className="flex items-center gap-2 py-4 justify-center">
-              <span className="w-3 h-3 border-2 border-gray-300 border-t-blue-400 rounded-full animate-spin" />
-              <span className="text-xs text-gray-400">AI 正在帮你想办法…</span>
+          {loadingReflection && (
+            <div className="flex items-center gap-2 py-6 justify-center">
+              <span className="w-3.5 h-3.5 border-2 border-gray-300 border-t-amber-400 rounded-full animate-spin" />
+              <span className="text-xs text-gray-400">AI 正在帮你梳理思路…</span>
             </div>
           )}
 
-          {/* 同理心安抚 */}
-          {!loadingPivot && pivotData && (
-            <>
-              {pivotData.empathy && (
-                <div className="bg-blue-50/80 border border-blue-100 rounded-xl px-3.5 py-3">
-                  <p className="text-xs text-blue-700 leading-relaxed">
-                    💙 {pivotData.empathy}
-                  </p>
-                </div>
-              )}
-
-              {/* 错误提示 */}
-              {pivotData.error && (
-                <span className="text-xs text-red-400">⚠️ {pivotData.error}</span>
-              )}
-
-              {/* 绕路筹码 */}
-              {pivotData.pivots.length > 0 && (
-                <div className="flex flex-col gap-2">
-                  <p className="text-[10px] text-gray-400 font-medium">试试这样绕一下：</p>
-                  {pivotData.pivots.map((pivot, i) => (
-                    <button
-                      key={i}
-                      onClick={() => handlePivotResume(pivot, 'ai_chip')}
-                      className="text-left text-xs px-3.5 py-2.5 rounded-xl
-                                 bg-blue-50 text-blue-700 border border-blue-200
-                                 hover:bg-blue-100 hover:border-blue-300
-                                 active:scale-[0.98] transition-all"
-                    >
-                      🔘 {pivot}
-                    </button>
+          {/* 反思卡片 —— 统一样式，分段但不分格式 */}
+          {!loadingReflection && reflectionData && (
+            <div className="bg-amber-50/60 border border-amber-200/60 rounded-xl px-4 py-3
+                            text-xs text-gray-700 leading-[1.85] flex flex-col gap-2">
+              <p>{reflectionData.interpret}</p>
+              {reflectionData.hints.length > 0 && (
+                <p>
+                  {reflectionData.hints.map((h, i) => (
+                    <span key={i}>{i > 0 && <br />}💡 {h}</span>
                   ))}
-                </div>
+                </p>
               )}
-            </>
+              <p>{reflectionData.cheer}</p>
+            </div>
           )}
 
-          {/* 自定义转轴输入 */}
-          <div className="flex gap-2">
-            <input
-              ref={pivotInputRef}
-              type="text"
-              value={pivotInput}
-              onChange={(e) => setPivotInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && pivotInput.trim()) handlePivotResume(pivotInput, 'self')
-                if (e.key === 'Escape') onExit()
-              }}
-              placeholder="或者你想直接做点别的？"
-              maxLength={50}
-              className="flex-1 px-3.5 py-2.5 text-xs rounded-xl border border-gray-200
-                         focus:border-blue-400 focus:ring-1 focus:ring-blue-100
-                         outline-none bg-gray-50 focus:bg-white transition-all"
-            />
-            <button
-              onClick={() => {
-                if (pivotInput.trim()) handlePivotResume(pivotInput, 'self')
-              }}
-              disabled={!pivotInput.trim()}
-              className="px-3.5 py-2.5 rounded-xl bg-blue-500 text-white text-xs font-semibold
-                         shadow-sm shadow-blue-200/50
-                         hover:bg-blue-600 hover:shadow-md hover:shadow-blue-200/60
-                         active:scale-95
-                         disabled:opacity-40 disabled:cursor-not-allowed disabled:shadow-none
-                         transition-all flex-shrink-0"
-            >
-              走起
-            </button>
-          </div>
-
-          {/* 返回继续 */}
-          <div className="flex items-center justify-end pt-2 border-t border-gray-100/80">
-            <button
-              onClick={() => onResume(currentMicroTask)}
-              className="text-[11px] text-gray-400 hover:text-gray-600 transition-colors"
-            >
-              没事，我继续原来的 →
-            </button>
-          </div>
+          {/* Continue task 按钮 */}
+          {!loadingReflection && (
+            <div className="flex justify-center pt-0.5">
+              <button
+                onClick={() => onResume(currentMicroTask)}
+                className="px-6 py-2 rounded-xl bg-emerald-500 text-white text-xs font-semibold
+                           shadow-sm shadow-emerald-200/50
+                           hover:bg-emerald-600 hover:shadow-md hover:shadow-emerald-200/60
+                           active:scale-95 transition-all"
+              >
+                继续任务
+              </button>
+            </div>
+          )}
         </div>
       </div>
     )

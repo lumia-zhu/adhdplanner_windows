@@ -393,6 +393,86 @@ export async function generatePivotResponse(
   return { empathy: '', pivots: [], error: `AI 返回格式异常：${content.slice(0, 60)}` }
 }
 
+/**
+ * 4. 卡住反思提示 —— 用户描述困难后，生成引导式反思（不给具体方案）
+ *
+ * 设计原则（元认知反思）：
+ *   - 解释用户可能遇到的困难
+ *   - 提供 1-2 个思考方向
+ *   - 鼓励用户决定如何继续
+ *   - 明确不给出具体解决方案
+ */
+/** 结构化反思提示 —— ADHD 友好，一个卡片内自然呈现 */
+export interface StuckReflectionResult {
+  interpret: string  // 对用户困难的元认知解读：为什么这个任务会让你有这种感觉（≤50字）
+  hints: string[]    // 1-2 个具体可行的方向提示（每条≤25字）
+  cheer: string      // 一句鼓励（≤15字）
+}
+
+export async function generateStuckReflection(
+  taskTitle: string,
+  microTask: string,
+  userDifficulty: string,
+  config: AIConfig,
+): Promise<{ reflection: StuckReflectionResult | null; error?: string }> {
+  if (!config.apiKey || !config.modelId) {
+    return { reflection: null }
+  }
+
+  const systemPrompt =
+    '你是一个温暖且务实的反思教练，用户在做任务时卡住了并描述了困难。\n' +
+    '请返回严格 JSON（不要 markdown），格式：\n' +
+    '{"interpret":"元认知解读（≤50字）","hints":["方向1（≤25字）","方向2（≤25字，可选）"],"cheer":"鼓励（≤15字）"}\n\n' +
+    '★ 核心原则：\n' +
+    '1. interpret 是最重要的部分——你要帮用户理解「为什么这个任务会让你卡住/分心/不知所措」，' +
+    '这是元认知反思的关键。不是复述用户说的话，而是帮 ta 看到背后的原因。\n' +
+    '2. 所有内容必须紧扣用户的具体任务，不说空话。\n' +
+    '3. 语气要温和、试探性的，用"可能是""也许是""或许是"，绝对不要用"是因为"这种断言式表达——你是在帮用户探索，不是下诊断。\n\n' +
+    '写法示例：\n' +
+    '· 任务"开发stuck模块"，困难"总被分心" →\n' +
+    '  interpret: "你总被分心，可能是因为「开发stuck模块」这步还太大，大脑找不到明确切入点，就容易被别的事拉走。"\n' +
+    '  hints: ["试试先只写「原因输入框」这一个组件？","把其他标签页都关掉，只留这个文件？"]\n' +
+    '· 任务"写论文"，困难"不知道下一步该做什么" →\n' +
+    '  interpret: "感觉迷茫可能是因为论文结构还没理清，不确定这一段要承接什么、引向哪里。"\n' +
+    '  hints: ["先用一句话写出这一段的核心观点？","看看上一段的结尾，顺着它往下接？"]\n' +
+    '· 任务"整理房间"，困难"这步太大不知从哪开始" →\n' +
+    '  interpret: "「整理房间」听起来是个大工程，可能是大脑一下子要处理太多选择，反而动不了。"\n' +
+    '  hints: ["先只清理桌面？其他的之后再说","拿个袋子，先把明显的垃圾扔掉？"]\n\n' +
+    '- cheer：简短有力，和任务相关\n' +
+    '- 总字数 ≤ 90\n' +
+    '- 只返回 JSON'
+
+  const userPrompt =
+    `任务：${taskTitle}\n当前步骤：${microTask}\n用户描述的困难：${userDifficulty}`
+
+  const { content, error } = await callLLM(systemPrompt, userPrompt, config, 200, 0.5)
+  if (error) return { reflection: null, error }
+
+  // 解析 JSON —— 兼容 AI 可能在 JSON 外包裹 markdown 代码块
+  try {
+    const cleaned = content.replace(/```json?\s*/g, '').replace(/```/g, '').trim()
+    const parsed = JSON.parse(cleaned)
+    const result: StuckReflectionResult = {
+      interpret: typeof parsed.interpret === 'string' ? parsed.interpret : '',
+      hints: Array.isArray(parsed.hints) ? parsed.hints.map(String) : [],
+      cheer: typeof parsed.cheer === 'string' ? parsed.cheer : '你可以的 💪',
+    }
+    if (!result.interpret && result.hints.length === 0) {
+      return { reflection: null, error: 'AI 返回内容不完整' }
+    }
+    return { reflection: result }
+  } catch {
+    // JSON 解析失败时做 fallback：把原文当做 interpret
+    return {
+      reflection: {
+        interpret: content.trim().slice(0, 100),
+        hints: [],
+        cheer: '你可以的 💪',
+      },
+    }
+  }
+}
+
 // ===================== 每日反思对话 =====================
 
 /**

@@ -103,7 +103,15 @@ export interface StuckReasonPayload {
   taskId: string
   microAction: string
   reason: string            // 具体原因
-  reasonSource: 'ai_chip' | 'self' // 点了 AI 预测 or 自己输入
+  reasonSource: 'ai_chip' | 'self' | 'common_chip' // 点了 AI 预测 / 自己输入 / 点了常见原因标签
+}
+
+/** AI 生成了反思提示（新版 stuck 流程） */
+export interface StuckReflectionShownPayload {
+  sessionId: string
+  taskId: string
+  difficulty: string        // 用户描述的困难
+  reflection: string        // AI 生成的反思提示文本
 }
 
 /** AI 生成了绕路建议 */
@@ -185,10 +193,11 @@ export interface TrackEventMap {
   'exec.flow_ended':          ExecFlowEndedPayload
 
   // 卡顿急救
-  'stuck.triggered':        StuckTriggeredPayload
-  'stuck.reason':           StuckReasonPayload
-  'stuck.pivot_offered':    StuckPivotOfferedPayload
-  'stuck.pivot_chosen':     StuckPivotChosenPayload
+  'stuck.triggered':          StuckTriggeredPayload
+  'stuck.reason':             StuckReasonPayload
+  'stuck.reflection_shown':   StuckReflectionShownPayload
+  'stuck.pivot_offered':      StuckPivotOfferedPayload
+  'stuck.pivot_chosen':       StuckPivotChosenPayload
 
   // 中断放弃
   'abandon.exit':           AbandonExitPayload
