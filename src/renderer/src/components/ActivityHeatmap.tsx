@@ -66,7 +66,7 @@ const LEVEL_COLORS = [
   'bg-emerald-600',    // 3: 高
 ]
 
-const LEVEL_LABELS = ['空闲', '低活跃', '中等活跃', '高活跃']
+const LEVEL_LABELS = ['未使用', '< 10 分钟', '10~20 分钟', '> 20 分钟']
 
 /** 时间刻度标签（底部显示的关键时间点） */
 const TIME_TICKS = [0, 3, 6, 9, 12, 15, 18, 21, 24]
@@ -126,7 +126,7 @@ export default function ActivityHeatmap({ data }: Props) {
     <div className="relative">
       {/* 图例 */}
       <div className="flex items-center gap-3 mb-2.5 text-[10px] text-gray-400">
-        <span>活跃占比：</span>
+        <span>每半小时使用时长：</span>
         {LEVEL_COLORS.map((c, i) => (
           <div key={i} className="flex items-center gap-1">
             <div className={`w-3 h-3 rounded-sm ${c}`} />
