@@ -28,6 +28,13 @@ const CHART_W = W - PAD_L - PAD_R
 const CHART_H = H - PAD_T - PAD_B
 
 export default function ActivityRhythmChart({ data }: Props) {
+  /**
+   * 每小时理论记录数。
+   * 采样 2 秒一次 → 聚合 30 秒 → 每分钟 2 条 → 1 小时 = 120 条。
+   * 用固定分母代替"实际记录数"，避免 app 中途启动 / 休眠恢复时活跃度虚高。
+   */
+  const EXPECTED_RECORDS_PER_HOUR = 120
+
   // 按小时聚合平均 activeRatio，并转换为百分比
   const hourlyAvg = useMemo(() => {
     const buckets: { totalRatio: number; count: number }[] = Array.from({ length: 24 }, () => ({
@@ -41,7 +48,8 @@ export default function ActivityRhythmChart({ data }: Props) {
       buckets[h].count++
     }
 
-    return buckets.map(b => (b.count > 0 ? (b.totalRatio / b.count) * 100 : 0))
+    // 用固定分母：totalRatio / 120，这样只在最后 5 分钟活跃不会被高估
+    return buckets.map(b => (b.totalRatio / EXPECTED_RECORDS_PER_HOUR) * 100)
   }, [data])
 
   // 百分比语义下固定 0-100，更便于跨天比较

@@ -43,6 +43,13 @@ interface Props {
 /** 总共 48 个格子（每格 30 分钟） */
 const TOTAL_BLOCKS = 48
 
+/**
+ * 每个 30 分钟格子理论上应有的记录数。
+ * 采样间隔 2 秒 → 聚合窗口 30 秒 → 每分钟 2 条记录 → 30 分钟 = 60 条。
+ * 用固定分母代替"实际记录数"，避免 app 中途启动或休眠恢复时活跃度被严重高估。
+ */
+const EXPECTED_RECORDS_PER_BLOCK = 60
+
 /** 活跃占比 → 活跃等级 0-3 */
 function ratioToLevel(activeRatio: number): number {
   if (activeRatio <= 0) return 0
@@ -66,7 +73,7 @@ const TIME_TICKS = [0, 3, 6, 9, 12, 15, 18, 21, 24]
 
 export default function ActivityHeatmap({ data }: Props) {
   const [tooltip, setTooltip] = useState<{
-    x: number; y: number; label: string; activeRatio: number; level: number
+    x: number; y: number; label: string; activeRatio: number; level: number; activeMinutes: number
   } | null>(null)
 
   // 把原始记录聚合到 48 个 30 分钟格子
@@ -88,13 +95,19 @@ export default function ActivityHeatmap({ data }: Props) {
     return buckets.map((b, i) => {
       const hour = Math.floor((i * 30) / 60)
       const minute = (i * 30) % 60
-      const avgActiveRatio = b.count > 0 ? b.totalRatio / b.count : 0
+      // 用固定分母（理论记录数）而非实际记录数，
+      // 这样 app 中途启动 / 休眠恢复后不会虚高
+      const avgActiveRatio = b.totalRatio / EXPECTED_RECORDS_PER_BLOCK
       const endTotalMinutes = (i + 1) * 30
       const endHour = Math.floor(endTotalMinutes / 60)
       const endMinute = endTotalMinutes % 60
+      // 活跃分钟数 ≈ sum(activeRatio) × 0.5（每条记录覆盖 30 秒 = 0.5 分钟）
+      // 例如 40 条记录各 activeRatio=0.8 → 40×0.8×0.5 = 16 分钟活跃
+      const activeMinutes = Math.round(b.totalRatio * 0.5)
       return {
         index: i,
         avgActiveRatio,
+        activeMinutes,
         count: b.count,
         label: `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}–${String(endHour).padStart(2, '0')}:${String(endMinute).padStart(2, '0')}`,
       }
@@ -140,6 +153,7 @@ export default function ActivityHeatmap({ data }: Props) {
                   label: block.label,
                   activeRatio: block.avgActiveRatio,
                   level,
+                  activeMinutes: block.activeMinutes,
                 })
               }}
               onMouseLeave={() => setTooltip(null)}
@@ -181,7 +195,7 @@ export default function ActivityHeatmap({ data }: Props) {
         >
           <span className="font-medium">{tooltip.label}</span>
           <span className="mx-1.5 opacity-40">|</span>
-          <span>活跃占比 {Math.round(tooltip.activeRatio * 100)}%</span>
+          <span>活跃约 {tooltip.activeMinutes} / 30 分钟</span>
           <span className="mx-1.5 opacity-40">|</span>
           <span>{LEVEL_LABELS[tooltip.level]}</span>
         </div>
