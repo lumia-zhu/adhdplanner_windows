@@ -48,13 +48,14 @@ export default function ActivityRhythmChart({ data }: Props) {
       buckets[h].count++
     }
 
-    // 用固定分母：totalRatio / 120，这样只在最后 5 分钟活跃不会被高估
-    return buckets.map(b => (b.totalRatio / EXPECTED_RECORDS_PER_HOUR) * 100)
+    // 用固定分母：totalRatio / 120，再乘以 0.5 转为分钟（每条记录覆盖 30 秒）
+    // 例如：totalRatio=80 → 80 × 0.5 = 40 分钟（该小时内约 40 分钟在活跃使用）
+    return buckets.map(b => (b.totalRatio / EXPECTED_RECORDS_PER_HOUR) * 60)
   }, [data])
 
-  // 百分比语义下固定 0-100，更便于跨天比较
-  const maxVal = 100
-  const ticks = [0, 25, 50, 75, 100]
+  // Y 轴用"分钟"表示（0-60），和热力图统一用"时间"让用户直观理解
+  const maxVal = 60
+  const ticks = [0, 15, 30, 45, 60]
 
   // ★ 固定显示 0-23 小时，不再裁剪
   // 生成折线路径点（24 个点）
@@ -102,7 +103,7 @@ export default function ActivityRhythmChart({ data }: Props) {
       {peakHour.val > 0 && (
         <p className="text-[11px] text-gray-500 mb-2">
           🌟 今日活跃高峰：<span className="font-semibold text-emerald-600">{peakHour.hour}:00</span> 时段
-          <span className="text-gray-400 ml-1">（平均活跃占比 {Math.round(peakHour.val)}%）</span>
+          <span className="text-gray-400 ml-1">（约 {Math.round(peakHour.val)} 分钟/小时）</span>
         </p>
       )}
 
@@ -173,7 +174,7 @@ export default function ActivityRhythmChart({ data }: Props) {
                 x={peakPt.x} y={peakPt.y - 7}
                 textAnchor="middle" fontSize={7} fill="#059669" fontWeight="bold"
               >
-                ★ {Math.round(peakHour.val)}%
+                ★ {Math.round(peakHour.val)}min
               </text>
             </g>
           )
@@ -182,7 +183,7 @@ export default function ActivityRhythmChart({ data }: Props) {
 
       {/* y 轴说明 */}
       <p className="text-[10px] text-gray-400 mt-1 text-center">
-        纵轴：平均活跃占比（%） · 横轴：时间
+        纵轴：每小时使用时长（分钟） · 横轴：时间
       </p>
     </div>
   )

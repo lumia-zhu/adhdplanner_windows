@@ -12,7 +12,10 @@ interface TitleBarProps {
   hasProfile?: boolean          // 是否已填写个人资料（用于显示小绿点）
 }
 
-export default function TitleBar({ taskCount, onOpenProfile, onOpenAISettings, onOpenReflection, hasProfile }: TitleBarProps) {
+export default function TitleBar({
+  taskCount,
+  onOpenProfile, onOpenAISettings, onOpenReflection, hasProfile,
+}: TitleBarProps) {
   return (
     // drag-region 类让这块区域可以被鼠标拖动来移动窗口
     <div className="drag-region flex items-center justify-between px-4 py-3 bg-white border-b border-gray-100 select-none">

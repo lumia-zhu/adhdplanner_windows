@@ -2,8 +2,10 @@
 
 interface Window {
   electronAPI: {
-    loadTasks: () => Promise<unknown[]>
-    saveTasks: (tasks: unknown[]) => Promise<boolean>
+    loadTasks: (date?: string) => Promise<unknown[]>
+    saveTasks: (date: string, tasks: unknown[]) => Promise<boolean>
+    findCarryOver: (today?: string) => Promise<{ fromDate: string; tasks: unknown[] } | null>
+    carryOverTasks: (fromDate: string, taskIds: string[], today?: string) => Promise<boolean>
     minimizeWindow: () => void
     hideWindow: () => void
     quitApp: () => void

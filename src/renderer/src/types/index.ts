@@ -23,6 +23,8 @@ export interface Task {
   subtasks?: Subtask[]    // 子任务列表（可选，旧数据没有此字段时当空数组处理）
   /** 暂停的专注会话快照（用户切换到其他任务时保存，恢复时读取） */
   pausedSession?: PausedSession | null
+  /** 从哪天搬迁来的（格式 YYYY-MM-DD），仅搬迁的任务有此字段 */
+  carriedFrom?: string
 }
 
 /** 暂停的专注会话快照 */

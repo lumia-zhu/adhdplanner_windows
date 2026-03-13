@@ -7,6 +7,7 @@ import type { FocusSession } from './components/WidgetView'
 import { tracker } from './services/tracker'
 import { aiCache } from './services/ai-cache'
 import TitleBar from './components/TitleBar'
+import CarryOverBanner from './components/CarryOverBanner'
 import NoteEditor from './components/NoteEditor'
 import WidgetView, { ENABLE_STEP_BY_STEP } from './components/WidgetView'
 import FocusFlow from './components/FocusFlow'
@@ -23,11 +24,55 @@ import ReflectionView from './components/ReflectionView'
  *   3. 执行 → 完成 → 接力输入 → 循环 / 进入心流
  *   4. 心流完成 → 任务标记完成 → 退出小组件
  */
+/** 获取今天的日期字符串（YYYY-MM-DD） */
+function getToday(): string {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+/** 把日期字符串偏移 N 天，返回新的 YYYY-MM-DD */
+function shiftDate(dateStr: string, delta: number): string {
+  const d = new Date(dateStr + 'T00:00:00')
+  d.setDate(d.getDate() + delta)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+/** 搬迁数据结构 */
+interface CarryOverInfo {
+  fromDate: string
+  tasks: Task[]
+}
+
 export default function App() {
   const [tasks, setTasks] = useState<Task[]>([])
   const [loading, setLoading] = useState(true)
   const [isWidgetMode, setIsWidgetMode] = useState(false)
   const [focusTaskId, setFocusTaskId] = useState<string | null>(null)
+
+  // -------- 日期概念：每天有独立的任务列表 --------
+  const [currentDate, setCurrentDate] = useState(getToday)
+  const isToday = currentDate === getToday()
+
+  /** 切换到前一天 */
+  const goPrevDate = useCallback(() => {
+    setCurrentDate(d => shiftDate(d, -1))
+  }, [])
+
+  /** 切换到后一天（不能超过今天） */
+  const goNextDate = useCallback(() => {
+    setCurrentDate(d => {
+      const next = shiftDate(d, 1)
+      return next > getToday() ? d : next
+    })
+  }, [])
+
+  /** 跳回今天 */
+  const goToday = useCallback(() => {
+    setCurrentDate(getToday())
+  }, [])
+
+  // -------- 搬迁状态：检测到前几天有未完成任务时显示横幅 --------
+  const [carryOver, setCarryOver] = useState<CarryOverInfo | null>(null)
 
   // -------- 专注力流程状态 --------
   /** 当前正在进行 FocusFlow 覆盖层（阶段1）的任务 */
@@ -73,17 +118,15 @@ export default function App() {
     return () => tracker.destroy()
   }, [])
 
-  // -------- 数据加载 --------
+  // -------- 初始化数据加载（AI配置 / 个人资料 / 窗口模式恢复 — 只跑一次） --------
   useEffect(() => {
-    const loadData = async () => {
+    const initApp = async () => {
       try {
-        const [savedTasks, savedConfig, savedProfile, windowMode] = await Promise.all([
-          window.electronAPI.loadTasks(),
+        const [savedConfig, savedProfile, windowMode] = await Promise.all([
           window.electronAPI.loadAIConfig(),
           window.electronAPI.loadProfile(),
           window.electronAPI.getWindowMode(),   // ★ 同步窗口模式（解决睡眠唤醒问题）
         ])
-        setTasks(savedTasks as Task[])
         if (savedConfig && savedConfig.apiKey) {
           setAIConfig({
             apiUrl: savedConfig.apiUrl || DEFAULT_AI_CONFIG.apiUrl,
@@ -104,39 +147,77 @@ export default function App() {
         // ★ 如果主进程说当前是 widget 模式，同步过来（页面重载/唤醒后恢复）
         if (windowMode?.isWidgetMode) {
           setIsWidgetMode(true)
-          // ★ 尝试从 localStorage 恢复专注会话（睡眠唤醒 / HMR 重载后）
-          const savedSession = localStorage.getItem('focusSession')
-          const savedSessionId = localStorage.getItem('focusSessionId')
-          if (savedSession) {
-            try {
-              const restored = JSON.parse(savedSession) as FocusSession
-              const loadedTasks = savedTasks as Task[]
-              const task = loadedTasks.find(t => t.id === restored.taskId)
-              if (task && !task.completed) {
-                // 重置 startTime（不然计时器会显示包含睡眠时间的大数字）
-                restored.startTime = Date.now()
-                setSession(restored)
-                if (savedSessionId) sessionIdRef.current = savedSessionId
-                console.log('[App] 从 localStorage 恢复专注会话 ✓', restored.taskTitle)
-              } else {
-                // 任务已完成或被删除，清除存档
-                localStorage.removeItem('focusSession')
-                localStorage.removeItem('focusSessionId')
+        }
+      } catch (e) {
+        console.error('初始化数据加载失败:', e)
+      }
+    }
+    initApp()
+  }, [])
+
+  // -------- 按日期加载任务 + 搬迁检测（currentDate 变化时重新加载） --------
+  useEffect(() => {
+    const loadDailyTasks = async () => {
+      try {
+        const savedTasks = await window.electronAPI.loadTasks(currentDate)
+        setTasks(savedTasks as Task[])
+
+        // ★ widget 模式恢复（仅首次加载时需要，日期切换时不需要）
+        // 这里用 loading 判断：true = 首次加载
+        if (loading) {
+          try {
+            const windowMode = await window.electronAPI.getWindowMode()
+            if (windowMode?.isWidgetMode) {
+              const savedSession = localStorage.getItem('focusSession')
+              const savedSessionId = localStorage.getItem('focusSessionId')
+              if (savedSession) {
+                try {
+                  const restored = JSON.parse(savedSession) as FocusSession
+                  const loadedTasks = savedTasks as Task[]
+                  const task = loadedTasks.find(t => t.id === restored.taskId)
+                  if (task && !task.completed) {
+                    restored.startTime = Date.now()
+                    setSession(restored)
+                    if (savedSessionId) sessionIdRef.current = savedSessionId
+                    console.log('[App] 从 localStorage 恢复专注会话 ✓', restored.taskTitle)
+                  } else {
+                    localStorage.removeItem('focusSession')
+                    localStorage.removeItem('focusSessionId')
+                  }
+                } catch {
+                  localStorage.removeItem('focusSession')
+                  localStorage.removeItem('focusSessionId')
+                }
               }
-            } catch {
-              localStorage.removeItem('focusSession')
-              localStorage.removeItem('focusSessionId')
             }
+          } catch { /* ignore */ }
+        }
+
+        // ★ 搬迁检测：检查前几天是否有未完成的任务
+        const dismissKey = `carryOverDismissed-${currentDate}`
+        if (!localStorage.getItem(dismissKey)) {
+          try {
+            const result = await window.electronAPI.findCarryOver(currentDate)
+            if (result && result.tasks.length > 0) {
+              setCarryOver({
+                fromDate: result.fromDate,
+                tasks: result.tasks as Task[],
+              })
+            } else {
+              setCarryOver(null)
+            }
+          } catch (err) {
+            console.error('[CarryOver] 检测失败:', err)
           }
         }
       } catch (e) {
-        console.error('加载数据失败:', e)
+        console.error('加载任务数据失败:', e)
       } finally {
         setLoading(false)
       }
     }
-    loadData()
-  }, [])
+    loadDailyTasks()
+  }, [currentDate]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // -------- 监听托盘菜单触发的模式切换 --------
   useEffect(() => {
@@ -172,10 +253,28 @@ export default function App() {
     })
   }, [])
 
+  // -------- 跨天检测：如果用户一直开着 app 到了第二天，自动切换日期 --------
+  // ★ 注意：在小组件（专注模式）下不切换，避免任务数据丢失
+  //   退出小组件后会重新检测，届时自动切到新一天
+  useEffect(() => {
+    const timer = setInterval(() => {
+      if (isWidgetMode) return // 专注模式下不切换日期
+      const today = getToday()
+      setCurrentDate(prev => {
+        if (prev !== today) {
+          console.log(`[DayChange] 检测到日期变化：${prev} → ${today}，自动切换`)
+          return today  // 这会触发 loadData effect 重新加载新一天的任务
+        }
+        return prev
+      })
+    }, 60_000) // 每 60 秒检查一次
+    return () => clearInterval(timer)
+  }, [isWidgetMode])
+
   // -------- 数据自动保存 + 托盘数量同步 --------
-  const saveTasks = useCallback(async (newTasks: Task[]) => {
+  const saveTasks = useCallback(async (date: string, newTasks: Task[]) => {
     try {
-      await window.electronAPI.saveTasks(newTasks)
+      await window.electronAPI.saveTasks(date, newTasks)
     } catch (e) {
       console.error('保存任务失败:', e)
     }
@@ -183,11 +282,11 @@ export default function App() {
 
   useEffect(() => {
     if (!loading) {
-      saveTasks(tasks)
+      saveTasks(currentDate, tasks)
       const count = tasks.filter(t => !t.completed).length
       window.electronAPI.updateTrayCount(count)
     }
-  }, [tasks, loading, saveTasks])
+  }, [tasks, loading, currentDate, saveTasks])
 
   // -------- AI 配置保存（同时清除旧缓存） --------
   const handleSaveAIConfig = async (cfg: AIConfig) => {
@@ -729,6 +828,29 @@ export default function App() {
     setTasks(prev => prev.filter(t => !t.completed))
   }
 
+  // -------- 搬迁操作 --------
+  /** 执行搬迁：把选中的旧任务复制到今天 */
+  const handleCarryOver = async (taskIds: string[]) => {
+    if (!carryOver) return
+    try {
+      const ok = await window.electronAPI.carryOverTasks(carryOver.fromDate, taskIds, currentDate)
+      if (ok) {
+        // 重新加载今天的任务
+        const refreshed = await window.electronAPI.loadTasks(currentDate)
+        setTasks(refreshed as Task[])
+        setCarryOver(null)
+      }
+    } catch (e) {
+      console.error('[CarryOver] 搬迁失败:', e)
+    }
+  }
+
+  /** 忽略搬迁（今天不再提示） */
+  const handleDismissCarryOver = () => {
+    localStorage.setItem(`carryOverDismissed-${currentDate}`, '1')
+    setCarryOver(null)
+  }
+
   // -------- 数据分组 --------
   const pendingTasks = tasks.filter(t => !t.completed)
   const completedTasks = tasks.filter(t => t.completed)
@@ -834,13 +956,28 @@ export default function App() {
         hasProfile={hasProfile}
       />
 
+      {/* 搬迁横幅：仅今天、检测到前几天有未完成任务时显示 */}
+      {isToday && carryOver && (
+        <CarryOverBanner
+          fromDate={carryOver.fromDate}
+          tasks={carryOver.tasks}
+          onCarryOver={handleCarryOver}
+          onDismiss={handleDismissCarryOver}
+        />
+      )}
+
       {/* 核心编辑区域 */}
-      <NoteEditor tasks={tasks} setTasks={setTasks} onFocusTask={handleFocusTask} onResumePaused={handleResumePaused} onPrefetchTask={handlePrefetchTask} />
+      <NoteEditor
+        tasks={tasks} setTasks={setTasks}
+        onFocusTask={handleFocusTask} onResumePaused={handleResumePaused} onPrefetchTask={handlePrefetchTask}
+        isToday={isToday} currentDate={currentDate}
+        onPrevDate={goPrevDate} onNextDate={goNextDate} onGoToday={goToday}
+      />
 
       {/* 底部区域 */}
       <div className="flex-shrink-0 select-none">
-        {/* 开启任务按钮（辅助入口，默认指向第一个待办） */}
-        {pendingTasks.length > 0 && (
+        {/* 开启任务按钮（仅今天显示；辅助入口，默认指向第一个待办） */}
+        {isToday && pendingTasks.length > 0 && (
           <div className="flex justify-center -mt-4 mb-2 relative z-10">
             <button
               onClick={() => handleFocusTask(pendingTasks[0].id)}
@@ -859,15 +996,17 @@ export default function App() {
           </div>
         )}
 
-        {/* 状态栏：鼓励性语言 */}
+        {/* 状态栏 */}
         {tasks.length > 0 && (
           <div className="px-5 py-1.5 flex items-center justify-between">
             <span className="text-xs text-gray-400">
-              {completedTasks.length === 0
-                ? `今天还有 ${pendingTasks.length} 件事等你`
-                : completedTasks.length === tasks.length
-                  ? '全部搞定！今天太棒了 🎉'
-                  : `已搞定 ${completedTasks.length} 件，还剩 ${pendingTasks.length} 件 💪`
+              {isToday
+                ? completedTasks.length === 0
+                  ? `今天还有 ${pendingTasks.length} 件事等你`
+                  : completedTasks.length === tasks.length
+                    ? '全部搞定！今天太棒了 🎉'
+                    : `已搞定 ${completedTasks.length} 件，还剩 ${pendingTasks.length} 件 💪`
+                : `当天共 ${tasks.length} 个任务，完成 ${completedTasks.length} 个`
               }
             </span>
             <div className="flex items-center gap-3">

@@ -5,12 +5,20 @@ import { contextBridge, ipcRenderer } from 'electron'
  * 就像一个"翻译官"，让前端能安全地使用系统功能
  */
 contextBridge.exposeInMainWorld('electronAPI', {
-  // -------- 任务数据操作 --------
-  /** 从本地文件加载任务列表 */
-  loadTasks: (): Promise<unknown[]> => ipcRenderer.invoke('tasks:load'),
+  // -------- 任务数据操作（按日期存储） --------
+  /** 加载指定日期的任务列表（不传 date 则默认今天） */
+  loadTasks: (date?: string): Promise<unknown[]> => ipcRenderer.invoke('tasks:load', date),
 
-  /** 保存任务列表到本地文件 */
-  saveTasks: (tasks: unknown[]): Promise<boolean> => ipcRenderer.invoke('tasks:save', tasks),
+  /** 保存任务列表到指定日期的文件 */
+  saveTasks: (date: string, tasks: unknown[]): Promise<boolean> => ipcRenderer.invoke('tasks:save', date, tasks),
+
+  /** 查找可搬迁的任务（最近 7 天内的未完成任务） */
+  findCarryOver: (today?: string): Promise<{ fromDate: string; tasks: unknown[] } | null> =>
+    ipcRenderer.invoke('tasks:findCarryOver', today),
+
+  /** 执行搬迁：把指定日期的指定任务复制到今天 */
+  carryOverTasks: (fromDate: string, taskIds: string[], today?: string): Promise<boolean> =>
+    ipcRenderer.invoke('tasks:carryOver', fromDate, taskIds, today),
 
   // -------- 窗口控制 --------
   /** 最小化窗口到任务栏 */

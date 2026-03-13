@@ -4,9 +4,45 @@ import fs from 'fs'
 
 // ===================== 数据存储相关 =====================
 
-const getDataPath = (): string => join(app.getPath('userData'), 'tasks.json')
 const getAIConfigPath = (): string => join(app.getPath('userData'), 'ai-config.json')
 const getProfilePath = (): string => join(app.getPath('userData'), 'profile.json')
+
+/** 旧版单文件路径（用于一次性迁移） */
+const getLegacyTasksPath = (): string => join(app.getPath('userData'), 'tasks.json')
+
+/** 按日期的任务文件路径，如 tasks-2026-03-13.json */
+const getDailyTasksPath = (date: string): string =>
+  join(app.getPath('userData'), `tasks-${date}.json`)
+
+/**
+ * 一次性迁移：如果旧的 tasks.json 存在，把内容写入今天的每日文件，然后重命名旧文件为备份。
+ * 这样老用户升级后不会丢数据。
+ */
+function migrateTasksIfNeeded(): void {
+  const legacyPath = getLegacyTasksPath()
+  if (!fs.existsSync(legacyPath)) return
+
+  try {
+    const data = JSON.parse(fs.readFileSync(legacyPath, 'utf-8'))
+    if (Array.isArray(data) && data.length > 0) {
+      const today = getTodayStr()
+      const todayPath = getDailyTasksPath(today)
+      // 只在今天的文件不存在时才迁移（避免重复）
+      if (!fs.existsSync(todayPath)) {
+        fs.writeFileSync(todayPath, JSON.stringify(data, null, 2), 'utf-8')
+        console.log(`[Migration] 已将 tasks.json (${data.length} 条) 迁移到 tasks-${today}.json`)
+      }
+    }
+    // 重命名旧文件为备份
+    const backupPath = legacyPath + '.bak'
+    if (!fs.existsSync(backupPath)) {
+      fs.renameSync(legacyPath, backupPath)
+      console.log('[Migration] 旧 tasks.json 已备份为 tasks.json.bak')
+    }
+  } catch (e) {
+    console.error('[Migration] 迁移失败:', e)
+  }
+}
 
 function loadAIConfig(): Record<string, string> {
   try {
@@ -23,19 +59,90 @@ function saveAIConfig(config: Record<string, string>): boolean {
   } catch (e) { console.error('[saveAIConfig]', e); return false }
 }
 
-function loadTasks(): unknown[] {
+/** 加载指定日期的任务列表 */
+function loadTasks(date: string): unknown[] {
   try {
-    const p = getDataPath()
+    const p = getDailyTasksPath(date)
     if (fs.existsSync(p)) return JSON.parse(fs.readFileSync(p, 'utf-8'))
   } catch (e) { console.error('[loadTasks]', e) }
   return []
 }
 
-function saveTasks(tasks: unknown[]): boolean {
+/** 保存任务列表到指定日期的文件 */
+function saveTasks(date: string, tasks: unknown[]): boolean {
   try {
-    fs.writeFileSync(getDataPath(), JSON.stringify(tasks, null, 2), 'utf-8')
+    fs.writeFileSync(getDailyTasksPath(date), JSON.stringify(tasks, null, 2), 'utf-8')
     return true
   } catch (e) { console.error('[saveTasks]', e); return false }
+}
+
+/**
+ * 扫描最近 N 天，找到有未完成任务的最近日期。
+ * 返回 { fromDate, tasks } 或 null（没有可搬迁的任务）。
+ * 接口设计为通用的：将来上云只需替换扫描逻辑。
+ */
+function findCarryOverTasks(today: string): { fromDate: string; tasks: unknown[] } | null {
+  const SCAN_DAYS = 7  // 最多往前扫 7 天
+  const todayDate = new Date(today + 'T00:00:00')
+
+  for (let i = 1; i <= SCAN_DAYS; i++) {
+    const d = new Date(todayDate)
+    d.setDate(d.getDate() - i)
+    const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+
+    const tasks = loadTasks(dateStr) as Array<Record<string, unknown>>
+    const incomplete = tasks.filter(t => !t.completed)
+    if (incomplete.length > 0) {
+      return { fromDate: dateStr, tasks: incomplete }
+    }
+  }
+  return null
+}
+
+/**
+ * 执行搬迁：把指定日期的未完成任务复制到今天的文件中。
+ * - 生成新的 id（避免冲突）
+ * - 添加 carriedFrom 标记（方便 UI 显示来源）
+ * - 清空 pausedSession（跨天的暂停状态没意义）
+ * - 不修改源文件（保留历史记录完整性）
+ */
+function executeCarryOver(fromDate: string, taskIds: string[], today: string): boolean {
+  try {
+    const sourceTasks = loadTasks(fromDate) as Array<Record<string, unknown>>
+    const todayTasks = loadTasks(today) as Array<Record<string, unknown>>
+
+    // 用 title 集合去重，避免重复搬迁
+    const existingTitles = new Set(todayTasks.map(t => String(t.title || '')))
+
+    const toCarry = sourceTasks.filter(t =>
+      !t.completed && taskIds.includes(String(t.id))
+    )
+
+    let addedCount = 0
+    for (const task of toCarry) {
+      if (existingTitles.has(String(task.title || ''))) continue  // 标题重复则跳过
+
+      const newTask = {
+        ...task,
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        carriedFrom: fromDate,
+        pausedSession: null,   // 跨天的暂停状态清空
+        createdAt: Date.now(), // 重置创建时间为今天
+      }
+      todayTasks.push(newTask)
+      existingTitles.add(String(task.title || ''))
+      addedCount++
+    }
+
+    if (addedCount > 0) {
+      saveTasks(today, todayTasks)
+      console.log(`[CarryOver] 从 ${fromDate} 搬迁 ${addedCount} 个任务到 ${today}`)
+    }
+    return true
+  } catch (e) {
+    console.error('[CarryOver] 搬迁失败:', e)
+    return false
+  }
 }
 
 // ===================== 用户个人资料存储 =====================
@@ -626,9 +733,20 @@ function exitWidget(): void {
 // ===================== IPC 通信 =====================
 
 function setupIPC(): void {
-  ipcMain.handle('tasks:load', () => loadTasks())
+  // -------- 按日期的任务数据操作 --------
+  /** 加载指定日期的任务，不传 date 则默认今天 */
+  ipcMain.handle('tasks:load', (_, date?: string) => loadTasks(date || getTodayStr()))
 
-  ipcMain.handle('tasks:save', (_, tasks: unknown[]) => saveTasks(tasks))
+  /** 保存任务到指定日期，不传 date 则默认今天 */
+  ipcMain.handle('tasks:save', (_, date: string, tasks: unknown[]) => saveTasks(date, tasks))
+
+  /** 查找可搬迁的任务（最近 7 天内的未完成任务） */
+  ipcMain.handle('tasks:findCarryOver', (_, today?: string) =>
+    findCarryOverTasks(today || getTodayStr()))
+
+  /** 执行搬迁：把指定日期的指定任务复制到今天 */
+  ipcMain.handle('tasks:carryOver', (_, fromDate: string, taskIds: string[], today?: string) =>
+    executeCarryOver(fromDate, taskIds, today || getTodayStr()))
 
   // 前端同步待办数量，用于更新托盘提示
   ipcMain.on('tray:updateCount', (_, count: number) => {
@@ -730,6 +848,9 @@ app.whenReady().then(() => {
   if (app.isPackaged) {
     app.setLoginItemSettings({ openAtLogin: true })
   }
+
+  // ★ 一次性迁移：旧版 tasks.json → 按日期的 tasks-YYYY-MM-DD.json
+  migrateTasksIfNeeded()
 
   setupIPC()
   createMainWindow()

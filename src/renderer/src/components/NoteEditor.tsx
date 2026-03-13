@@ -35,6 +35,16 @@ interface NoteEditorProps {
   onResumePaused: (taskId: string) => void
   /** hover ▶ 按钮时预加载 AI 建议（可选） */
   onPrefetchTask?: (taskId: string) => void
+  /** 是否是今天（历史日期时隐藏新建输入框和专注按钮） */
+  isToday?: boolean
+  /** 当前显示的日期（YYYY-MM-DD），用于日期区域显示 */
+  currentDate?: string
+  /** 切换到前一天 */
+  onPrevDate?: () => void
+  /** 切换到后一天 */
+  onNextDate?: () => void
+  /** 跳回今天 */
+  onGoToday?: () => void
 }
 
 /** 扁平化的"行"，用于键盘导航和聚焦管理 */
@@ -64,9 +74,9 @@ const uid = (prefix = 't') => `${prefix}-${Date.now()}-${Math.random().toString(
 
 // ===================== 日期 & 问候语 =====================
 
-/** 获取当天日期的友好显示，如 "3月8日 · 周日" */
-function getDateLabel(): string {
-  const now = new Date()
+/** 获取日期的友好显示，如 "3月8日 · 周日" */
+function getDateLabel(dateStr?: string): string {
+  const now = dateStr ? new Date(dateStr + 'T00:00:00') : new Date()
   const month = now.getMonth() + 1
   const day = now.getDate()
   const weekNames = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
@@ -85,7 +95,10 @@ function getGreeting(): string {
 
 // ===================== 主组件 =====================
 
-export default function NoteEditor({ tasks, setTasks, onFocusTask, onResumePaused, onPrefetchTask }: NoteEditorProps) {
+export default function NoteEditor({
+  tasks, setTasks, onFocusTask, onResumePaused, onPrefetchTask,
+  isToday = true, currentDate, onPrevDate, onNextDate, onGoToday,
+}: NoteEditorProps) {
   // 底部"新行"输入框文本
   const [newLineText, setNewLineText] = useState('')
   // 新行是否处于"子任务缩进"模式（先按 Tab 再打字）
@@ -414,21 +427,77 @@ export default function NoteEditor({ tasks, setTasks, onFocusTask, onResumePause
       <SortableContext items={pendingIds} strategy={verticalListSortingStrategy}>
         <div className="flex-1 overflow-y-auto">
           <div className="px-5 py-3">
-            {/* 日期行 + 时段问候语 */}
+            {/* 日期行 + 时段问候语 + 左右切换 */}
             <div className="text-center select-none pt-2 pb-5">
-              <p className="text-[13.5px] text-gray-500/80 font-semibold tracking-wide">{getDateLabel()}</p>
-              <p className="text-[11px] text-gray-300 mt-1">{getGreeting()}</p>
+              <div className="flex items-center justify-center gap-1">
+                {/* ◀ 前一天 */}
+                {onPrevDate && (
+                  <button
+                    onClick={onPrevDate}
+                    className="w-6 h-6 rounded-full flex items-center justify-center
+                               text-gray-300 hover:text-indigo-500 hover:bg-indigo-50
+                               transition-all"
+                    title="前一天"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" />
+                    </svg>
+                  </button>
+                )}
+
+                {/* 日期文字 */}
+                <span className={`text-[13.5px] font-semibold tracking-wide px-2 ${
+                  isToday ? 'text-gray-500/80' : 'text-indigo-500'
+                }`}>
+                  {getDateLabel(currentDate)}
+                </span>
+
+                {/* ▶ 后一天 */}
+                {onNextDate && (
+                  <button
+                    onClick={onNextDate}
+                    disabled={isToday}
+                    className="w-6 h-6 rounded-full flex items-center justify-center
+                               text-gray-300 hover:text-indigo-500 hover:bg-indigo-50
+                               disabled:opacity-0 disabled:cursor-default
+                               transition-all"
+                    title={isToday ? '' : '后一天'}
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" />
+                    </svg>
+                  </button>
+                )}
+              </div>
+
+              {/* 问候语 / 历史日期提示 */}
+              <div className="mt-1 flex items-center justify-center gap-2">
+                {isToday ? (
+                  <p className="text-[11px] text-gray-300">{getGreeting()}</p>
+                ) : (
+                  <button
+                    onClick={onGoToday}
+                    className="text-[11px] text-indigo-400 hover:text-indigo-600 transition-colors"
+                  >
+                    ← 回到今天
+                  </button>
+                )}
+              </div>
             </div>
 
             {/* 空状态提示 */}
             {tasks.length === 0 && !newLineText && (
               <div className="flex flex-col items-center justify-center py-16 select-none">
-                <p className="text-gray-300 text-sm">开始输入你的第一个任务吧</p>
-                <p className="text-gray-300 text-xs mt-1.5">
-                  按 <kbd className="px-1 py-0.5 bg-gray-100 rounded text-gray-400 text-[10px]">Enter</kbd> 添加
-                  {' · '}
-                  按 <kbd className="px-1 py-0.5 bg-gray-100 rounded text-gray-400 text-[10px]">Tab</kbd> 创建子任务
+                <p className="text-gray-300 text-sm">
+                  {isToday ? '开始输入你的第一个任务吧' : '这一天没有任务记录'}
                 </p>
+                {isToday && (
+                  <p className="text-gray-300 text-xs mt-1.5">
+                    按 <kbd className="px-1 py-0.5 bg-gray-100 rounded text-gray-400 text-[10px]">Enter</kbd> 添加
+                    {' · '}
+                    按 <kbd className="px-1 py-0.5 bg-gray-100 rounded text-gray-400 text-[10px]">Tab</kbd> 创建子任务
+                  </p>
+                )}
               </div>
             )}
 
@@ -454,59 +523,62 @@ export default function NoteEditor({ tasks, setTasks, onFocusTask, onResumePause
                     else setPendingFocusId('__new_line__')
                   }}
                   onResumePaused={onResumePaused}
+                  isToday={isToday}
                 />
               )
             })}
 
-            {/* ===== 底部新行输入 ===== */}
-            <div className={`mt-4 transition-all ${
-              newLineIndented ? 'ml-[54px]' : 'ml-[26px]'
-            }`}>
-              <div className="flex items-center gap-2 py-[5px] px-1">
-                {/* 虚线空心圆（缩进模式时变小，表示子任务） */}
-                <div className={`border-dashed flex-shrink-0 transition-all ${
-                  newLineIndented
-                    ? 'w-[14px] h-[14px] rounded-[3px] border-[1.5px] border-gray-300/60'
-                    : 'w-[18px] h-[18px] rounded-full border-2 border-gray-200'
-                }`} />
-                <input
-                  ref={newLineRef}
-                  type="text"
-                  value={newLineText}
-                  onChange={(e) => setNewLineText(e.target.value)}
-                  onKeyDown={handleNewLineKeyDown}
-                  onFocus={() => setNewLineFocused(true)}
-                  onBlur={() => setNewLineFocused(false)}
-                  placeholder={
-                    tasks.length === 0
-                      ? '输入第一个任务…'
-                      : newLineIndented
-                        ? '子任务…'
-                        : '新任务…'
-                  }
-                  className={`flex-1 bg-transparent outline-none placeholder-gray-300/70 ${
-                    newLineIndented
-                      ? 'text-[13px] text-gray-600'
-                      : 'text-[15px] font-medium text-gray-800'
-                  }`}
-                />
-              </div>
-              {/* 快捷键提示：仅在聚焦且输入为空时显示 */}
-              <div className={`overflow-hidden transition-all duration-200 ${
-                newLineFocused && !newLineText
-                  ? 'max-h-6 opacity-100'
-                  : 'max-h-0 opacity-0'
+            {/* ===== 底部新行输入（仅今天显示）===== */}
+            {isToday && (
+              <div className={`mt-4 transition-all ${
+                newLineIndented ? 'ml-[54px]' : 'ml-[26px]'
               }`}>
-                <p className="text-[11px] text-gray-300 pl-7 pb-1">
-                  {tasks.length === 0
-                    ? 'Enter 添加'
-                    : newLineIndented
-                      ? 'Enter 添加 · 再按 Enter 退出子任务 · Shift+Tab 取消缩进'
-                      : 'Enter 添加 · Tab 变子任务'
-                  }
-                </p>
+                <div className="flex items-center gap-2 py-[5px] px-1">
+                  {/* 虚线空心圆（缩进模式时变小，表示子任务） */}
+                  <div className={`border-dashed flex-shrink-0 transition-all ${
+                    newLineIndented
+                      ? 'w-[14px] h-[14px] rounded-[3px] border-[1.5px] border-gray-300/60'
+                      : 'w-[18px] h-[18px] rounded-full border-2 border-gray-200'
+                  }`} />
+                  <input
+                    ref={newLineRef}
+                    type="text"
+                    value={newLineText}
+                    onChange={(e) => setNewLineText(e.target.value)}
+                    onKeyDown={handleNewLineKeyDown}
+                    onFocus={() => setNewLineFocused(true)}
+                    onBlur={() => setNewLineFocused(false)}
+                    placeholder={
+                      tasks.length === 0
+                        ? '输入第一个任务…'
+                        : newLineIndented
+                          ? '子任务…'
+                          : '新任务…'
+                    }
+                    className={`flex-1 bg-transparent outline-none placeholder-gray-300/70 ${
+                      newLineIndented
+                        ? 'text-[13px] text-gray-600'
+                        : 'text-[15px] font-medium text-gray-800'
+                    }`}
+                  />
+                </div>
+                {/* 快捷键提示：仅在聚焦且输入为空时显示 */}
+                <div className={`overflow-hidden transition-all duration-200 ${
+                  newLineFocused && !newLineText
+                    ? 'max-h-6 opacity-100'
+                    : 'max-h-0 opacity-0'
+                }`}>
+                  <p className="text-[11px] text-gray-300 pl-7 pb-1">
+                    {tasks.length === 0
+                      ? 'Enter 添加'
+                      : newLineIndented
+                        ? 'Enter 添加 · 再按 Enter 退出子任务 · Shift+Tab 取消缩进'
+                        : 'Enter 添加 · Tab 变子任务'
+                    }
+                  </p>
+                </div>
               </div>
-            </div>
+            )}
 
             {/* ===== 已完成任务（沉底，不可拖拽）===== */}
             {completedTasks.length > 0 && (
@@ -541,6 +613,7 @@ export default function NoteEditor({ tasks, setTasks, onFocusTask, onResumePause
                         else setPendingFocusId('__new_line__')
                       }}
                       onResumePaused={onResumePaused}
+                      isToday={isToday}
                     />
                   )
                 })}
@@ -571,11 +644,14 @@ interface TaskBlockProps {
   onPrefetchTask?: (taskId: string) => void
   onDeleteLine: (line: FlatLine) => void
   onResumePaused: (taskId: string) => void
+  /** 是否是今天（历史日期时隐藏专注和恢复按钮） */
+  isToday?: boolean
 }
 
 function TaskBlock({
   task, taskIndex, lines, inputRefs,
   onTextChange, onKeyDown, onToggle, onCyclePriority, onFocusTask, onPrefetchTask, onDeleteLine, onResumePaused,
+  isToday = true,
 }: TaskBlockProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: task.id })
   const style = { transform: CSS.Transform.toString(transform), transition }
@@ -615,8 +691,8 @@ function TaskBlock({
         onKeyDown={onKeyDown}
         onToggle={onToggle}
         onCyclePriority={onCyclePriority}
-        onFocus={!task.completed ? () => onFocusTask(task.id) : undefined}
-        onHoverFocus={!task.completed && onPrefetchTask ? () => onPrefetchTask(task.id) : undefined}
+        onFocus={isToday && !task.completed ? () => onFocusTask(task.id) : undefined}
+        onHoverFocus={isToday && !task.completed && onPrefetchTask ? () => onPrefetchTask(task.id) : undefined}
         onDelete={() => onDeleteLine(taskLine)}
       />
       {/* 备注 */}
@@ -625,8 +701,8 @@ function TaskBlock({
           <span className="text-[11px] text-gray-400 italic leading-tight">{task.note}</span>
         </div>
       )}
-      {/* 暂停态指示器 */}
-      {task.pausedSession && !task.completed && (
+      {/* 暂停态指示器（仅今天显示恢复按钮） */}
+      {task.pausedSession && !task.completed && isToday && (
         <div className="ml-[52px] mb-1.5 flex items-center gap-2">
           <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-blue-50/80 border border-blue-100">
             <span className="text-[11px] text-blue-400">⏸</span>
