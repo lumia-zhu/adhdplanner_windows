@@ -1,13 +1,14 @@
 /**
- * ActivityHeatmap —— 活跃度热力时间轴（单行 24 小时）
+ * ActivityHeatmap —— 每小时使用时长热力图（单行 24 小时）
  *
- * 将一天 24 小时划分为 48 个 30 分钟格子，用一行水平条展示：
- *   - 灰色：无数据 / 空闲
- *   - 浅绿：低活跃（1%-30%）
- *   - 中绿：中等活跃（31%-70%）
- *   - 深绿：高活跃（71%-100%）
+ * 将一天 24 小时划分为 24 个 1 小时格子，用一行水平条展示：
+ *   - 灰色：无数据 / 未使用
+ *   - 浅绿：低使用（< 20 分钟/小时）
+ *   - 中绿：中等使用（20-40 分钟/小时）
+ *   - 深绿：高使用（> 40 分钟/小时）
  *
- * 始终显示完整 24 小时，用户一眼看出全天活跃节奏。
+ * 使用"1 分钟无操作 → 未使用"的判定模型。
+ * 始终显示完整 24 小时，用户一眼看出全天使用节奏。
  */
 
 import { useMemo, useState } from 'react'
@@ -16,15 +17,18 @@ import { useMemo, useState } from 'react'
 export interface ActivityRecord {
   ts: number    // Unix 时间戳（ms）
   idle: number  // 空闲时间（秒）
-  activeSamples?: number // 30 秒窗口内活跃采样次数（新版）
+  activeSamples?: number // 30 秒窗口内"使用中"采样次数（新版）
   totalSamples?: number  // 30 秒窗口内总采样次数（新版）
-  activeRatio?: number   // 活跃时间占比 0-1（新版）
+  activeRatio?: number   // 使用时间占比 0-1（新版，语义已改为 60 秒阈值）
   inputs?: number        // 旧版字段（兼容）
 }
 
-/** 安全获取记录的 activeRatio，兼容新旧格式 */
+/**
+ * 安全获取记录的使用占比（usageRatio），兼容新旧格式。
+ * 新版数据使用 60 秒空闲阈值；旧版数据做近似映射。
+ */
 export function getActiveRatio(r: ActivityRecord): number {
-  // 新版：直接使用 activeRatio
+  // 新版：直接使用 activeRatio（现在语义是"使用占比"，60 秒阈值）
   if (typeof r.activeRatio === 'number' && !isNaN(r.activeRatio)) {
     return r.activeRatio
   }
@@ -32,53 +36,53 @@ export function getActiveRatio(r: ActivityRecord): number {
   if (typeof r.inputs === 'number') {
     return Math.max(0, Math.min(r.inputs / 4, 1))
   }
-  // 兜底：用 idle 判断（idle ≤ 2 算活跃）
-  return r.idle <= 2 ? 1 : 0
+  // 兜底：用 idle 判断（idle ≤ 60 算使用中）
+  return r.idle <= 60 ? 1 : 0
 }
 
 interface Props {
   data: ActivityRecord[]
 }
 
-/** 总共 48 个格子（每格 30 分钟） */
-const TOTAL_BLOCKS = 48
+/** 总共 24 个格子（每格 1 小时） */
+const TOTAL_BLOCKS = 24
 
 /**
- * 每个 30 分钟格子理论上应有的记录数。
- * 采样间隔 2 秒 → 聚合窗口 30 秒 → 每分钟 2 条记录 → 30 分钟 = 60 条。
- * 用固定分母代替"实际记录数"，避免 app 中途启动或休眠恢复时活跃度被严重高估。
+ * 每个 1 小时格子理论上应有的记录数。
+ * 采样间隔 2 秒 → 聚合窗口 30 秒 → 每分钟 2 条记录 → 1 小时 = 120 条。
+ * 用固定分母代替"实际记录数"，避免 app 中途启动或休眠恢复时数据被严重高估。
  */
-const EXPECTED_RECORDS_PER_BLOCK = 60
+const EXPECTED_RECORDS_PER_BLOCK = 120
 
-/** 活跃占比 → 活跃等级 0-3 */
-function ratioToLevel(activeRatio: number): number {
-  if (activeRatio <= 0) return 0
-  if (activeRatio <= 0.3) return 1
-  if (activeRatio <= 0.7) return 2
-  return 3
+/** 使用占比 → 使用等级 0-3 */
+function ratioToLevel(usageRatio: number): number {
+  if (usageRatio <= 0) return 0
+  if (usageRatio <= 0.33) return 1   // < 20 分钟/小时
+  if (usageRatio <= 0.67) return 2   // 20-40 分钟/小时
+  return 3                            // > 40 分钟/小时
 }
 
-/** 活跃等级 → 背景色 class */
+/** 使用等级 → 背景色 class */
 const LEVEL_COLORS = [
-  'bg-gray-100',       // 0: 无活跃
+  'bg-gray-100',       // 0: 未使用
   'bg-emerald-200',    // 1: 低
   'bg-emerald-400',    // 2: 中
   'bg-emerald-600',    // 3: 高
 ]
 
-const LEVEL_LABELS = ['未使用', '< 10 分钟', '10~20 分钟', '> 20 分钟']
+const LEVEL_LABELS = ['未使用', '< 20 分钟', '20~40 分钟', '> 40 分钟']
 
 /** 时间刻度标签（底部显示的关键时间点） */
 const TIME_TICKS = [0, 3, 6, 9, 12, 15, 18, 21, 24]
 
 export default function ActivityHeatmap({ data }: Props) {
   const [tooltip, setTooltip] = useState<{
-    x: number; y: number; label: string; activeRatio: number; level: number; activeMinutes: number
+    x: number; y: number; label: string; usageRatio: number; level: number; usageMinutes: number
   } | null>(null)
 
-  // 把原始记录聚合到 48 个 30 分钟格子
+  // 把原始记录聚合到 24 个 1 小时格子
   const blocks = useMemo(() => {
-    // 按 30 分钟格子分桶
+    // 按 1 小时格子分桶
     const buckets: { totalRatio: number; count: number }[] = Array.from(
       { length: TOTAL_BLOCKS },
       () => ({ totalRatio: 0, count: 0 })
@@ -86,30 +90,23 @@ export default function ActivityHeatmap({ data }: Props) {
 
     for (const r of data) {
       const d = new Date(r.ts)
-      const minutesInDay = d.getHours() * 60 + d.getMinutes()
-      const blockIdx = Math.min(Math.floor(minutesInDay / 30), TOTAL_BLOCKS - 1)
+      const blockIdx = Math.min(d.getHours(), TOTAL_BLOCKS - 1)
       buckets[blockIdx].totalRatio += getActiveRatio(r)
       buckets[blockIdx].count++
     }
 
     return buckets.map((b, i) => {
-      const hour = Math.floor((i * 30) / 60)
-      const minute = (i * 30) % 60
       // 用固定分母（理论记录数）而非实际记录数，
       // 这样 app 中途启动 / 休眠恢复后不会虚高
-      const avgActiveRatio = b.totalRatio / EXPECTED_RECORDS_PER_BLOCK
-      const endTotalMinutes = (i + 1) * 30
-      const endHour = Math.floor(endTotalMinutes / 60)
-      const endMinute = endTotalMinutes % 60
-      // 活跃分钟数 ≈ sum(activeRatio) × 0.5（每条记录覆盖 30 秒 = 0.5 分钟）
-      // 例如 40 条记录各 activeRatio=0.8 → 40×0.8×0.5 = 16 分钟活跃
-      const activeMinutes = Math.round(b.totalRatio * 0.5)
+      const avgUsageRatio = b.totalRatio / EXPECTED_RECORDS_PER_BLOCK
+      // 使用分钟数 ≈ sum(usageRatio) × 0.5（每条记录覆盖 30 秒 = 0.5 分钟）
+      const usageMinutes = Math.round(b.totalRatio * 0.5)
       return {
         index: i,
-        avgActiveRatio,
-        activeMinutes,
+        avgUsageRatio,
+        usageMinutes,
         count: b.count,
-        label: `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}–${String(endHour).padStart(2, '0')}:${String(endMinute).padStart(2, '0')}`,
+        label: `${String(i).padStart(2, '0')}:00–${String(i + 1 === 24 ? 0 : i + 1).padStart(2, '0')}:00`,
       }
     })
   }, [data])
@@ -117,7 +114,7 @@ export default function ActivityHeatmap({ data }: Props) {
   if (data.length === 0) {
     return (
       <div className="text-center py-6 text-gray-400 text-xs">
-        暂无活跃度数据（数据采集中…）
+        暂无使用数据（数据采集中…）
       </div>
     )
   }
@@ -126,7 +123,7 @@ export default function ActivityHeatmap({ data }: Props) {
     <div className="relative">
       {/* 图例 */}
       <div className="flex items-center gap-3 mb-2.5 text-[10px] text-gray-400">
-        <span>每半小时使用时长：</span>
+        <span>每小时使用时长：</span>
         {LEVEL_COLORS.map((c, i) => (
           <div key={i} className="flex items-center gap-1">
             <div className={`w-3 h-3 rounded-sm ${c}`} />
@@ -135,10 +132,10 @@ export default function ActivityHeatmap({ data }: Props) {
         ))}
       </div>
 
-      {/* 热力条：48 格 */}
-      <div className="flex gap-[1px] w-full">
+      {/* 热力条：24 格 */}
+      <div className="flex gap-[2px] w-full">
         {blocks.map((block) => {
-          const level = ratioToLevel(block.avgActiveRatio)
+          const level = ratioToLevel(block.avgUsageRatio)
           return (
             <div
               key={block.index}
@@ -151,9 +148,9 @@ export default function ActivityHeatmap({ data }: Props) {
                   x: rect.left + rect.width / 2,
                   y: rect.top,
                   label: block.label,
-                  activeRatio: block.avgActiveRatio,
+                  usageRatio: block.avgUsageRatio,
                   level,
-                  activeMinutes: block.activeMinutes,
+                  usageMinutes: block.usageMinutes,
                 })
               }}
               onMouseLeave={() => setTooltip(null)}
@@ -195,7 +192,7 @@ export default function ActivityHeatmap({ data }: Props) {
         >
           <span className="font-medium">{tooltip.label}</span>
           <span className="mx-1.5 opacity-40">|</span>
-          <span>活跃约 {tooltip.activeMinutes} / 30 分钟</span>
+          <span>使用约 {tooltip.usageMinutes} / 60 分钟</span>
           <span className="mx-1.5 opacity-40">|</span>
           <span>{LEVEL_LABELS[tooltip.level]}</span>
         </div>

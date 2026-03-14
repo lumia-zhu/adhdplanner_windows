@@ -164,17 +164,17 @@ function saveProfile(profile: Record<string, unknown>): boolean {
 
 // ===================== 活跃度采样数据存储 =====================
 
-/** 活跃度记录：每 30 秒聚合一条 */
+/** 使用时长记录：每 30 秒聚合一条 */
 interface ActivityRecord {
   /** Unix 时间戳（ms） */
   ts: number
   /** 采样时刻的系统空闲时间（秒） */
   idle: number
-  /** 该 30 秒窗口内活跃采样次数（idle 小于阈值） */
+  /** 该 30 秒窗口内"使用中"采样次数（idle ≤ 60 秒） */
   activeSamples: number
   /** 该 30 秒窗口内总采样次数 */
   totalSamples: number
-  /** 该 30 秒窗口内的活跃时间占比，范围 0-1 */
+  /** 该 30 秒窗口内的使用时间占比，范围 0-1（1 分钟无操作 → 未使用） */
   activeRatio: number
 }
 
@@ -199,7 +199,7 @@ function appendActivityRecords(date: string, records: ActivityRecord[]): boolean
   }
 }
 
-/** 兼容旧版 inputs 记录，统一归一化为 activeRatio 结构 */
+/** 兼容旧版 inputs 记录，统一归一化为 activeRatio（使用占比）结构 */
 function normalizeActivityRecord(raw: unknown): ActivityRecord | null {
   if (!raw || typeof raw !== 'object') return null
 
@@ -308,8 +308,11 @@ const activitySampler = {
   /** 聚合写入定时器（5 分钟） */
   flushTimer: null as ReturnType<typeof setInterval> | null,
 
-  /** 判定为“活跃”的 idle 阈值（秒） */
-  ACTIVE_IDLE_THRESHOLD: 2,
+  /**
+   * 判定为"使用中"的 idle 阈值（秒）
+   * 规则：连续 60 秒无任何键鼠操作 → "未使用"，否则算"使用中"
+   */
+  ACTIVE_IDLE_THRESHOLD: 60,
   /** 当前 30 秒窗口内活跃采样次数 */
   activeSamples: 0,
   /** 当前 30 秒窗口内总采样次数 */
@@ -356,7 +359,7 @@ const activitySampler = {
     const currentIdle = powerMonitor.getSystemIdleTime()
 
     this.totalSamples++
-    // idle 很小，说明用户最近仍在持续操作电脑
+    // idle ≤ 60 秒，说明用户 1 分钟内有过操作 → 算"使用中"
     if (currentIdle <= this.ACTIVE_IDLE_THRESHOLD) {
       this.activeSamples++
     }

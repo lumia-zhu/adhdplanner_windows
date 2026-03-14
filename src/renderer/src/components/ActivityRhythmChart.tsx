@@ -1,11 +1,12 @@
 /**
- * ActivityRhythmChart —— 每日活跃节奏曲线
+ * ActivityRhythmChart —— 每日使用节奏曲线
  *
- * 用 SVG 折线图展示一天中每小时的平均活跃度变化趋势。
+ * 用 SVG 折线图展示一天中每小时的使用时长变化趋势。
  * X 轴：小时（0-23）
- * Y 轴：平均活跃占比（0-100%）
+ * Y 轴：每小时使用时长（0-60 分钟）
  *
- * 面积填充 + 平滑曲线，直观呈现"什么时候状态最好"。
+ * 面积填充 + 折线，直观呈现"什么时候在用电脑"。
+ * 使用"1 分钟无操作 → 未使用"的判定模型。
  */
 
 import { useMemo } from 'react'
@@ -31,12 +32,12 @@ export default function ActivityRhythmChart({ data }: Props) {
   /**
    * 每小时理论记录数。
    * 采样 2 秒一次 → 聚合 30 秒 → 每分钟 2 条 → 1 小时 = 120 条。
-   * 用固定分母代替"实际记录数"，避免 app 中途启动 / 休眠恢复时活跃度虚高。
+   * 用固定分母代替"实际记录数"，避免 app 中途启动 / 休眠恢复时使用时长虚高。
    */
   const EXPECTED_RECORDS_PER_HOUR = 120
 
-  // 按小时聚合平均 activeRatio，并转换为百分比
-  const hourlyAvg = useMemo(() => {
+  // 按小时聚合使用占比，并转换为"使用分钟数"
+  const hourlyUsage = useMemo(() => {
     const buckets: { totalRatio: number; count: number }[] = Array.from({ length: 24 }, () => ({
       totalRatio: 0,
       count: 0,
@@ -48,26 +49,25 @@ export default function ActivityRhythmChart({ data }: Props) {
       buckets[h].count++
     }
 
-    // 用固定分母：totalRatio / 120，再乘以 0.5 转为分钟（每条记录覆盖 30 秒）
-    // 例如：totalRatio=80 → 80 × 0.5 = 40 分钟（该小时内约 40 分钟在活跃使用）
+    // 用固定分母：totalRatio / 120，再乘以 60 转为分钟
+    // 例如：totalRatio=80 → (80/120)*60 = 40 分钟（该小时内约 40 分钟在使用）
     return buckets.map(b => (b.totalRatio / EXPECTED_RECORDS_PER_HOUR) * 60)
   }, [data])
 
-  // Y 轴用"分钟"表示（0-60），和热力图统一用"时间"让用户直观理解
+  // Y 轴用"分钟"表示（0-60）
   const maxVal = 60
   const ticks = [0, 15, 30, 45, 60]
 
-  // ★ 固定显示 0-23 小时，不再裁剪
-  // 生成折线路径点（24 个点）
+  // 固定显示 0-23 小时，生成折线路径点（24 个点）
   const points = useMemo(() => {
     const pts: { x: number; y: number; hour: number; val: number }[] = []
     for (let h = 0; h < 24; h++) {
       const x = PAD_L + (h / 23) * CHART_W
-      const y = PAD_T + CHART_H - (maxVal > 0 ? (hourlyAvg[h] / maxVal) * CHART_H : 0)
-      pts.push({ x, y, hour: h, val: hourlyAvg[h] })
+      const y = PAD_T + CHART_H - (maxVal > 0 ? (hourlyUsage[h] / maxVal) * CHART_H : 0)
+      pts.push({ x, y, hour: h, val: hourlyUsage[h] })
     }
     return pts
-  }, [hourlyAvg, maxVal])
+  }, [hourlyUsage, maxVal])
 
   // SVG 路径
   const linePath = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ')
@@ -81,18 +81,18 @@ export default function ActivityRhythmChart({ data }: Props) {
   const peakHour = useMemo(() => {
     let peak = 0, peakVal = 0
     for (let h = 0; h < 24; h++) {
-      if (hourlyAvg[h] > peakVal) {
-        peakVal = hourlyAvg[h]
+      if (hourlyUsage[h] > peakVal) {
+        peakVal = hourlyUsage[h]
         peak = h
       }
     }
     return { hour: peak, val: peakVal }
-  }, [hourlyAvg])
+  }, [hourlyUsage])
 
   if (data.length === 0) {
     return (
       <div className="text-center py-6 text-gray-400 text-xs">
-        暂无活跃度数据（数据采集中…）
+        暂无使用数据（数据采集中…）
       </div>
     )
   }
@@ -102,18 +102,17 @@ export default function ActivityRhythmChart({ data }: Props) {
       {/* 高峰提示 */}
       {peakHour.val > 0 && (
         <p className="text-[11px] text-gray-500 mb-2">
-          🌟 今日活跃高峰：<span className="font-semibold text-emerald-600">{peakHour.hour}:00</span> 时段
+          🌟 今日使用高峰：<span className="font-semibold text-emerald-600">{peakHour.hour}:00</span> 时段
           <span className="text-gray-400 ml-1">（约 {Math.round(peakHour.val)} 分钟/小时）</span>
         </p>
       )}
 
       {/* SVG 图表 */}
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ maxHeight: 140 }}>
-        {/* 背景网格线（智能刻度） */}
+        {/* 背景网格线 */}
         {ticks.map((tickVal, i) => {
           const ratio = maxVal > 0 ? tickVal / maxVal : 0
           const y = PAD_T + CHART_H * (1 - ratio)
-          // 格式化：小数就显示一位，整数就显示整数
           const label = tickVal % 1 === 0 ? String(tickVal) : tickVal.toFixed(1)
           return (
             <g key={i}>
@@ -141,11 +140,11 @@ export default function ActivityRhythmChart({ data }: Props) {
         ))}
 
         {/* 面积填充 */}
-        <path d={areaPath} fill="url(#activityGradient)" opacity={0.3} />
+        <path d={areaPath} fill="url(#usageGradient)" opacity={0.3} />
 
         {/* 渐变定义 */}
         <defs>
-          <linearGradient id="activityGradient" x1="0" y1="0" x2="0" y2="1">
+          <linearGradient id="usageGradient" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor="#10b981" stopOpacity={0.6} />
             <stop offset="100%" stopColor="#10b981" stopOpacity={0.05} />
           </linearGradient>

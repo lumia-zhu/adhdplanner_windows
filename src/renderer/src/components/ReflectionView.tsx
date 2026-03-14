@@ -19,6 +19,7 @@ import DayTimeline from './DayTimeline'
 import type { TimelineEntry } from './DayTimeline'
 import ActivityHeatmap from './ActivityHeatmap'
 import type { ActivityRecord } from './ActivityHeatmap'
+import { getActiveRatio } from './ActivityHeatmap'
 import ActivityRhythmChart from './ActivityRhythmChart'
 import ReflectionChat from './ReflectionChat'
 import { tracker } from '../services/tracker'
@@ -248,13 +249,46 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
       .sort((a, b) => b.durationMin - a.durationMin)
   }, [events])
 
+  // ---- 生产力指标（基于使用时长模型：1 分钟无操作 → 未使用） ----
+
+  /** 电脑使用总时长（分钟）：所有 30 秒窗口的 usageRatio 之和 × 0.5 */
+  const totalUsageMinutes = useMemo(() => {
+    if (activityData.length === 0) return 0
+    return Math.round(
+      activityData.reduce((sum, r) => sum + getActiveRatio(r) * 0.5, 0)
+    )
+  }, [activityData])
+
+  /** 生产力比率：专注时长 / 电脑使用时长 × 100% */
+  const productivityRatio = useMemo(() => {
+    if (totalUsageMinutes <= 0) return 0
+    const focusMin = summary?.stats.totalFocusMinutes ?? 0
+    return Math.min(Math.round((focusMin / totalUsageMinutes) * 100), 100)
+  }, [totalUsageMinutes, summary])
+
+  /** 心流占比：心流时长 / 专注时长 × 100% */
+  const flowRatio = useMemo(() => {
+    const focusMin = summary?.stats.totalFocusMinutes ?? 0
+    if (focusMin <= 0) return 0
+    const flowMin = summary?.stats.totalFlowMinutes ?? 0
+    return Math.min(Math.round((flowMin / focusMin) * 100), 100)
+  }, [summary])
+
+  /** 格式化使用时长：< 60 分钟显示"X分钟"，>= 60 分钟显示"X.Xh" */
+  const usageDurationStr = useMemo(() => {
+    if (totalUsageMinutes < 60) return { value: totalUsageMinutes, unit: '分钟' }
+    const hours = (totalUsageMinutes / 60).toFixed(1)
+    return { value: hours, unit: '小时' }
+  }, [totalUsageMinutes])
+
   // 构建 AI system prompt
   const systemPrompt = useMemo(() => {
     if (!summary) return ''
     const context = summaryToLLMContext(summary)
     const taskInfo = `\n\n额外信息：\n- 当前任务总数：${tasks.length}\n- 已完成任务：${tasks.filter(t => t.completed).length}\n- 完成率：${completionRate}%\n- 待办任务：${tasks.filter(t => !t.completed).map(t => t.title).join('、') || '无'}`
-    return buildReflectionSystemPrompt(context + taskInfo)
-  }, [summary, tasks, completionRate])
+    const productivityInfo = `\n\n生产力指标：\n- 电脑使用时长：${totalUsageMinutes}分钟\n- 专注时长：${summary.stats.totalFocusMinutes}分钟\n- 生产力比率：${productivityRatio}%（专注/使用）\n- 心流占比：${flowRatio}%（心流/专注）`
+    return buildReflectionSystemPrompt(context + taskInfo + productivityInfo)
+  }, [summary, tasks, completionRate, totalUsageMinutes, productivityRatio, flowRatio])
 
   // 反思完成回调
   const handleReflectionComplete = (summaryText: string) => {
@@ -434,9 +468,51 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
               </div>
             )}
 
-            {/* 快捷统计（tracker 事件数据，历史也可看） */}
+            {/* 生产力指标（基于使用时长模型） */}
+            <div>
+              <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
+                📊 生产力概览
+              </h3>
+              <div className={`grid gap-3 w-full ${
+                chatOpen ? 'grid-cols-2' : 'grid-cols-4'
+              }`}>
+                <div className="text-center bg-blue-50 rounded-xl py-2.5 px-2">
+                  <p className="text-lg font-bold text-blue-600">
+                    {usageDurationStr.value}
+                    <span className="text-xs font-normal ml-0.5">{usageDurationStr.unit}</span>
+                  </p>
+                  <p className="text-[10px] text-blue-500 mt-0.5">💻 电脑使用</p>
+                </div>
+                <div className="text-center bg-indigo-50 rounded-xl py-2.5 px-2">
+                  <p className="text-lg font-bold text-indigo-600">
+                    {summary?.stats.totalFocusMinutes ?? 0}
+                    <span className="text-xs font-normal ml-0.5">分钟</span>
+                  </p>
+                  <p className="text-[10px] text-indigo-500 mt-0.5">🎯 专注时长</p>
+                </div>
+                <div className="text-center bg-emerald-50 rounded-xl py-2.5 px-2">
+                  <p className="text-lg font-bold text-emerald-600">
+                    {productivityRatio}
+                    <span className="text-xs font-normal ml-0.5">%</span>
+                  </p>
+                  <p className="text-[10px] text-emerald-500 mt-0.5">⚡ 生产力比率</p>
+                </div>
+                <div className="text-center bg-violet-50 rounded-xl py-2.5 px-2">
+                  <p className="text-lg font-bold text-violet-600">
+                    {flowRatio}
+                    <span className="text-xs font-normal ml-0.5">%</span>
+                  </p>
+                  <p className="text-[10px] text-violet-500 mt-0.5">🔥 心流占比</p>
+                </div>
+              </div>
+            </div>
+
+            {/* 分隔线 */}
+            <div className="border-t border-gray-100" />
+
+            {/* 执行统计 */}
             <div className={`grid gap-3 w-full transition-all duration-400 ${
-              chatOpen ? 'grid-cols-2' : 'grid-cols-4'
+              chatOpen ? 'grid-cols-2' : 'grid-cols-3'
             }`}>
               <div className="text-center bg-emerald-50 rounded-xl py-2.5 px-2">
                 <p className="text-lg font-bold text-emerald-600">
@@ -450,13 +526,6 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
                   <span className="text-xs font-normal ml-0.5">分钟</span>
                 </p>
                 <p className="text-[10px] text-violet-500 mt-0.5">心流时长</p>
-              </div>
-              <div className="text-center bg-indigo-50 rounded-xl py-2.5 px-2">
-                <p className="text-lg font-bold text-indigo-600">
-                  {summary?.stats.totalFocusMinutes ?? 0}
-                  <span className="text-xs font-normal ml-0.5">分钟</span>
-                </p>
-                <p className="text-[10px] text-indigo-500 mt-0.5">总专注</p>
               </div>
               <div className="text-center bg-orange-50 rounded-xl py-2.5 px-2">
                 <p className="text-lg font-bold text-orange-600">
@@ -483,10 +552,10 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
             {/* 分隔线 */}
             {taskDurations.length > 0 && <div className="border-t border-gray-100" />}
 
-            {/* 活跃度热力时间轴 */}
+            {/* 使用时长热力图 */}
             <div>
               <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
-                🟩 活跃度热力图
+                🟩 使用时长热力图
               </h3>
               <ActivityHeatmap data={activityData} />
             </div>
@@ -494,10 +563,10 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
             {/* 分隔线 */}
             <div className="border-t border-gray-100" />
 
-            {/* 每日活跃节奏曲线 */}
+            {/* 使用节奏曲线 */}
             <div>
               <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
-                📈 活跃节奏曲线
+                📈 使用节奏曲线
               </h3>
               <ActivityRhythmChart data={activityData} />
             </div>
