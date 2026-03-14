@@ -12,7 +12,7 @@
  *   拖拽把手     → 拖动整个任务块重新排序
  */
 
-import { useState, useRef, useEffect, useMemo, useCallback } from 'react'
+import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react'
 import {
   DndContext, closestCenter, PointerSensor, useSensor, useSensors,
   DragEndEvent,
@@ -25,6 +25,7 @@ import { CSS } from '@dnd-kit/utilities'
 import type { Task, Subtask } from '../types'
 import { PRIORITY_CONFIG } from '../types'
 import { triggerEffect } from '../effects'
+import MiniCalendar from './MiniCalendar'
 
 // ===================== 类型 =====================
 
@@ -45,6 +46,8 @@ interface NoteEditorProps {
   onNextDate?: () => void
   /** 跳回今天 */
   onGoToday?: () => void
+  /** 跳转到指定日期（YYYY-MM-DD） */
+  onJumpToDate?: (date: string) => void
 }
 
 /** 扁平化的"行"，用于键盘导航和聚焦管理 */
@@ -97,7 +100,7 @@ function getGreeting(): string {
 
 export default function NoteEditor({
   tasks, setTasks, onFocusTask, onResumePaused, onPrefetchTask,
-  isToday = true, currentDate, onPrevDate, onNextDate, onGoToday,
+  isToday = true, currentDate, onPrevDate, onNextDate, onGoToday, onJumpToDate,
 }: NoteEditorProps) {
   // 底部"新行"输入框文本
   const [newLineText, setNewLineText] = useState('')
@@ -107,6 +110,9 @@ export default function NoteEditor({
   const [pendingFocusId, setPendingFocusId] = useState<string | null>(null)
   // 底部输入框是否聚焦（用于显示/隐藏快捷键提示）
   const [newLineFocused, setNewLineFocused] = useState(false)
+  // 日历弹窗是否打开
+  const [calendarOpen, setCalendarOpen] = useState(false)
+  const calendarRef = useRef<HTMLDivElement>(null)
 
   // 存储每一行 <input> 的 ref，键是行 ID
   const inputRefs = useRef<Map<string, HTMLInputElement>>(new Map())
@@ -427,8 +433,8 @@ export default function NoteEditor({
       <SortableContext items={pendingIds} strategy={verticalListSortingStrategy}>
         <div className="flex-1 overflow-y-auto">
           <div className="px-5 py-3">
-            {/* 日期行 + 时段问候语 + 左右切换 */}
-            <div className="text-center select-none pt-2 pb-5">
+            {/* 日期行 + 时段问候语 + 左右切换 + 日历弹窗 */}
+            <div className="text-center select-none pt-2 pb-5 relative">
               <div className="flex items-center justify-center gap-1">
                 {/* ◀ 前一天 */}
                 {onPrevDate && (
@@ -445,12 +451,21 @@ export default function NoteEditor({
                   </button>
                 )}
 
-                {/* 日期文字 */}
-                <span className={`text-[13.5px] font-semibold tracking-wide px-2 ${
-                  isToday ? 'text-gray-500/80' : 'text-indigo-500'
-                }`}>
+                {/* 日期文字（点击弹出日历） */}
+                <button
+                  onClick={() => setCalendarOpen(v => !v)}
+                  className={`text-[13.5px] font-semibold tracking-wide px-2 py-0.5 rounded-lg
+                              transition-all hover:bg-indigo-50 active:scale-95 ${
+                    isToday ? 'text-gray-500/80' : 'text-indigo-500'
+                  }`}
+                  title="点击选择日期"
+                >
                   {getDateLabel(currentDate)}
-                </span>
+                  <svg className={`inline-block w-3 h-3 ml-1 transition-transform ${calendarOpen ? 'rotate-180' : ''}`}
+                    fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
 
                 {/* ▶ 后一天 */}
                 {onNextDate && (
@@ -469,6 +484,19 @@ export default function NoteEditor({
                   </button>
                 )}
               </div>
+
+              {/* 日历弹窗 */}
+              {calendarOpen && (
+                <MiniCalendar
+                  ref={calendarRef}
+                  selectedDate={currentDate || new Date().toISOString().slice(0, 10)}
+                  onSelect={(date) => {
+                    if (onJumpToDate) onJumpToDate(date)
+                    setCalendarOpen(false)
+                  }}
+                  onClose={() => setCalendarOpen(false)}
+                />
+              )}
 
               {/* 问候语 / 历史日期提示 */}
               <div className="mt-1 flex items-center justify-center gap-2">
@@ -913,3 +941,4 @@ function LineRow({
     </div>
   )
 }
+

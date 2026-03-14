@@ -71,6 +71,13 @@ export default function App() {
     setCurrentDate(getToday())
   }, [])
 
+  /** 跳转到指定日期（由日历弹窗触发） */
+  const jumpToDate = useCallback((date: string) => {
+    // 不能超过今天
+    const today = getToday()
+    setCurrentDate(date > today ? today : date)
+  }, [])
+
   // -------- 搬迁状态：检测到前几天有未完成任务时显示横幅 --------
   const [carryOver, setCarryOver] = useState<CarryOverInfo | null>(null)
 
@@ -980,6 +987,7 @@ export default function App() {
         onFocusTask={handleFocusTask} onResumePaused={handleResumePaused} onPrefetchTask={handlePrefetchTask}
         isToday={isToday} currentDate={currentDate}
         onPrevDate={goPrevDate} onNextDate={goNextDate} onGoToday={goToday}
+        onJumpToDate={jumpToDate}
       />
 
       {/* 底部区域 */}

@@ -22,6 +22,7 @@ import type { ActivityRecord } from './ActivityHeatmap'
 import { getActiveRatio } from './ActivityHeatmap'
 import ActivityRhythmChart from './ActivityRhythmChart'
 import ReflectionChat from './ReflectionChat'
+import MiniCalendar from './MiniCalendar'
 import { tracker } from '../services/tracker'
 
 interface ReflectionViewProps {
@@ -144,10 +145,11 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
   )
   const [showBubble, setShowBubble] = useState(false)
 
-  // ---- 日期选择 ----
+  // ---- 日期选择 & 日历弹窗 ----
   const today = getToday()
   const [selectedDate, setSelectedDate] = useState(today)
   const isToday = selectedDate === today
+  const [reflCalendarOpen, setReflCalendarOpen] = useState(false)
 
   const goPrev = useCallback(() => {
     setSelectedDate(d => shiftDate(d, -1))
@@ -385,7 +387,7 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
           <h1 className="font-semibold text-gray-800 text-sm">每日反思</h1>
 
           {/* ---- 日期导航 ---- */}
-          <div className="flex items-center gap-1 ml-1">
+          <div className="flex items-center gap-1 ml-1 relative">
             {/* 前一天 */}
             <button
               onClick={goPrev}
@@ -398,10 +400,37 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
               </svg>
             </button>
 
-            {/* 当前日期 */}
-            <span className="text-xs font-medium text-gray-600 min-w-[90px] text-center select-none">
+            {/* 当前日期（点击弹出日历） */}
+            <button
+              onClick={() => setReflCalendarOpen(v => !v)}
+              className="text-xs font-medium text-gray-600 min-w-[90px] text-center select-none
+                         py-0.5 px-1.5 rounded-lg hover:bg-gray-100 transition-colors"
+              title="点击选择日期"
+            >
               {formatDateFriendly(selectedDate)}
-            </span>
+              <svg className={`inline-block w-2.5 h-2.5 ml-0.5 transition-transform ${reflCalendarOpen ? 'rotate-180' : ''}`}
+                fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+
+            {/* 日历弹窗 */}
+            {reflCalendarOpen && (
+              <MiniCalendar
+                selectedDate={selectedDate}
+                onSelect={(date) => {
+                  const todayStr = getToday()
+                  setSelectedDate(date > todayStr ? todayStr : date)
+                  setReflCalendarOpen(false)
+                  // 切到历史日期时关闭 AI 侧边栏
+                  if (date !== todayStr && chatOpen) {
+                    setChatOpen(false)
+                    window.electronAPI.resizeMainWindow(MAIN_WIDTH, MAIN_HEIGHT)
+                  }
+                }}
+                onClose={() => setReflCalendarOpen(false)}
+              />
+            )}
 
             {/* 后一天 */}
             <button
