@@ -32,9 +32,11 @@ export default function CarryOverBanner({ fromDate, tasks, onCarryOver, onDismis
 
   // 格式化来源日期为友好文字
   const fromLabel = useMemo(() => {
-    const today = new Date()
+    // ★ 两端都归零到凌晨 0 点，避免当前时刻影响天数计算（下午时"昨天"被误算为"前天"）
+    const now = new Date()
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
     const from = new Date(fromDate + 'T00:00:00')
-    const diffDays = Math.round((today.getTime() - from.getTime()) / (86400000))
+    const diffDays = Math.round((today.getTime() - from.getTime()) / 86400000)
     if (diffDays === 1) return '昨天'
     if (diffDays === 2) return '前天'
     // 显示月日

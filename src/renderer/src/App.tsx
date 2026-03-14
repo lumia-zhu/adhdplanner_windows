@@ -176,7 +176,9 @@ export default function App() {
                   const loadedTasks = savedTasks as Task[]
                   const task = loadedTasks.find(t => t.id === restored.taskId)
                   if (task && !task.completed) {
-                    restored.startTime = Date.now()
+                    const now = Date.now()
+                    restored.startTime = now
+                    restored.sessionStartTime = now  // ★ 恢复后重新开始计时
                     setSession(restored)
                     if (savedSessionId) sessionIdRef.current = savedSessionId
                     console.log('[App] 从 localStorage 恢复专注会话 ✓', restored.taskTitle)
@@ -237,7 +239,9 @@ export default function App() {
         if (savedSession) {
           try {
             const restored = JSON.parse(savedSession) as FocusSession
-            restored.startTime = Date.now()
+            const now = Date.now()
+            restored.startTime = now
+            restored.sessionStartTime = now  // ★ 恢复后重新开始计时
             // 只在当前没有 session 时才恢复（不覆盖正常运行中的 session）
             setSession(prev => prev || restored)
           } catch { /* ignore */ }
@@ -390,12 +394,14 @@ export default function App() {
     const activeSubtask = subtasks.find(s => !s.completed) ?? null
 
     // 创建 FocusSession
+    const now = Date.now()
     const newSession: FocusSession = {
       sessionId: sid,
       taskId: task.id,
       taskTitle: task.title,
       currentMicroTask: microTask,
-      startTime: Date.now(),
+      startTime: now,
+      sessionStartTime: now,    // ★ 整个会话的计时起点，不会被 stuck/relay 重置
       isFlowMode: false,
       phase: 'executing',
       microHistory: [],
@@ -774,12 +780,14 @@ export default function App() {
     sessionIdRef.current = sid
 
     // 重建 FocusSession
+    const now = Date.now()
     const restored: FocusSession = {
       sessionId: sid,
       taskId: task.id,
       taskTitle: task.title,
       currentMicroTask: snap.currentMicroTask,
-      startTime: Date.now(),   // 重新开始计时
+      startTime: now,             // 重新开始计时
+      sessionStartTime: now,      // ★ 新会话，计时器从零开始
       isFlowMode: false,
       phase: 'executing',
       microHistory: [...snap.microHistory],

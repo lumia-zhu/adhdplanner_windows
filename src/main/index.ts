@@ -685,10 +685,130 @@ function createTray(): void {
 
 // ===================== 小组件模式核心逻辑 =====================
 
+/**
+ * 安全窗口操作：所有对 mainWindow 的操作都走这个包装器
+ * 防止窗口被销毁后操作抛异常导致后续逻辑全部中断
+ */
+function safeWinOp(label: string, fn: (win: BrowserWindow) => void): void {
+  try {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      fn(mainWindow)
+    }
+  } catch (e) {
+    console.error(`[safeWinOp:${label}]`, e)
+  }
+}
+
+// ===================== Widget 心跳守护 =====================
+// 每 3 秒检查一次：如果处于 widget 模式，确保窗口可见、置顶、在屏幕内
+// 防止 Windows DWM 重置、Win+D 最小化、系统事件导致 widget 消失
+
+let widgetHeartbeatTimer: ReturnType<typeof setInterval> | null = null
+
+/**
+ * 通知渲染进程刷新 -webkit-app-region 拖拽区域
+ * ★ Windows/Chromium bug: setAlwaysOnTop / setSize / restore 等操作
+ *   会使 Chromium 缓存的拖拽命中区域失效，必须延迟触发重算
+ */
+function refreshDragRegion(): void {
+  setTimeout(() => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('widget:refreshDrag')
+    }
+  }, 80)
+}
+
+function startWidgetHeartbeat(): void {
+  stopWidgetHeartbeat()
+  widgetHeartbeatTimer = setInterval(() => {
+    if (!mainWindow || mainWindow.isDestroyed() || !isWidgetMode) return
+
+    try {
+      // ① 如果被最小化了 → 恢复
+      if (mainWindow.isMinimized()) {
+        console.log('[Heartbeat] widget 被最小化，自动恢复')
+        mainWindow.restore()
+        refreshDragRegion()  // 恢复后刷新拖拽区域
+      }
+
+      // ② 如果不可见了 → 重新显示
+      if (!mainWindow.isVisible()) {
+        console.log('[Heartbeat] widget 不可见，自动显示')
+        mainWindow.show()
+        refreshDragRegion()
+      }
+
+      // ③ 仅在 alwaysOnTop 真正丢失时才重新设置
+      //    ★ 不能无条件调用 setAlwaysOnTop —— Windows/Chromium 会使 -webkit-app-region
+      //      的拖拽命中区域缓存失效，导致 widget 完全无法拖动
+      if (!mainWindow.isAlwaysOnTop()) {
+        console.log('[Heartbeat] alwaysOnTop 丢失，重新设置')
+        mainWindow.setAlwaysOnTop(true, 'floating')
+        refreshDragRegion()  // setAlwaysOnTop 后也需要刷新拖拽区域
+      }
+
+      // ★ 注意：不在心跳中做 validateWidgetBounds()
+      //   边界校验只在 显示器变化/系统唤醒/锁屏解锁 时触发
+      //   避免在用户拖拽过程中干扰窗口位置
+    } catch (e) {
+      console.error('[Heartbeat] 异常:', e)
+    }
+  }, 3000)
+}
+
+function stopWidgetHeartbeat(): void {
+  if (widgetHeartbeatTimer) {
+    clearInterval(widgetHeartbeatTimer)
+    widgetHeartbeatTimer = null
+  }
+}
+
+/**
+ * 校验当前 widget 位置是否在可见屏幕范围内
+ * 如果不在（比如外接显示器断了），自动重置到主屏幕顶部居中
+ */
+function validateWidgetBounds(): void {
+  if (!mainWindow || mainWindow.isDestroyed() || !isWidgetMode) return
+
+  try {
+    const { screen } = require('electron')
+    const { width: sw, height: sh } = screen.getPrimaryDisplay().workAreaSize
+    const [x, y] = mainWindow.getPosition()
+    const [w, h] = mainWindow.getSize()
+
+    const halfW = Math.round(w / 2)
+    if (x < -halfW || x > sw - halfW || y < -10 || y > sh - 10) {
+      // 跑到屏幕外了 → 重置到屏幕顶部居中
+      const defaultX = Math.round((sw - w) / 2)
+      const defaultY = 8
+      console.log(`[BoundsCheck] widget 超出屏幕 (${x},${y}), 重置到 (${defaultX},${defaultY})`)
+      mainWindow.setPosition(defaultX, defaultY)
+      saveWidgetPos(defaultX, defaultY)
+    }
+  } catch (e) {
+    console.error('[BoundsCheck] 异常:', e)
+  }
+}
+
 function onWidgetMoved(): void {
   if (!mainWindow || !isWidgetMode) return
   const [x, y] = mainWindow.getPosition()
   saveWidgetPos(x, y)
+}
+
+/** widget 模式下拦截最小化：立刻恢复，不让 widget 消失 */
+function onWidgetMinimize(): void {
+  if (!mainWindow || mainWindow.isDestroyed() || !isWidgetMode) return
+  // 延迟一帧恢复，避免与系统动画冲突
+  setTimeout(() => {
+    safeWinOp('anti-minimize', (win) => {
+      if (isWidgetMode && win.isMinimized()) {
+        win.restore()
+        win.setAlwaysOnTop(true, 'floating')
+        refreshDragRegion()  // ★ 恢复后刷新拖拽区域
+      }
+    })
+  }, 50)
 }
 
 function enterWidget(): void {
@@ -696,38 +816,70 @@ function enterWidget(): void {
   isWidgetMode = true
 
   const { screen } = require('electron')
-  const { width: sw } = screen.getPrimaryDisplay().workAreaSize
+  const { width: sw, height: sh } = screen.getPrimaryDisplay().workAreaSize
   const saved = loadWidgetPos()
-  const x = saved ? saved.x : Math.round((sw - WIDGET_WIDTH) / 2)
-  const y = saved ? saved.y : 8
 
-  mainWindow.setMinimumSize(WIDGET_WIDTH, WIDGET_HEIGHT)
-  mainWindow.setMaximumSize(WIDGET_WIDTH, WIDGET_HEIGHT)  // 固定小组件大小，防止用户拖拽缩放
-  mainWindow.setAlwaysOnTop(true, 'floating')
-  mainWindow.setVisibleOnAllWorkspaces(true)
-  mainWindow.setSize(WIDGET_WIDTH, WIDGET_HEIGHT)
-  mainWindow.setPosition(x, y)
-  mainWindow.show()
+  // ★ 默认位置：屏幕顶部水平居中
+  const defaultX = Math.round((sw - WIDGET_WIDTH) / 2)
+  const defaultY = 8
+
+  let x = saved ? saved.x : defaultX
+  let y = saved ? saved.y : defaultY
+
+  // ★ 边界校验：确保 widget 在可见屏幕范围内（至少露出一半宽度 + 完整高度）
+  const halfW = Math.round(WIDGET_WIDTH / 2)
+  if (x < -halfW || x > sw - halfW || y < 0 || y > sh - WIDGET_HEIGHT) {
+    // 保存的位置跑到屏幕外了 → 重置到默认位置
+    x = defaultX
+    y = defaultY
+    saveWidgetPos(x, y) // 覆盖掉错误的保存值
+  }
+
+  // ★ 先放开约束 → 设置新尺寸 → 再锁定，避免 min>max 冲突导致 Windows 上窗口消失
+  safeWinOp('enterWidget', (win) => {
+    win.setMinimumSize(1, 1)
+    win.setMaximumSize(9999, 9999)
+    win.setAlwaysOnTop(true, 'floating')
+    win.setVisibleOnAllWorkspaces(true)
+    win.setSize(WIDGET_WIDTH, WIDGET_HEIGHT)
+    win.setMinimumSize(WIDGET_WIDTH, WIDGET_HEIGHT)
+    win.setMaximumSize(WIDGET_WIDTH, WIDGET_HEIGHT)
+    win.setPosition(x, y)
+    win.show()
+  })
+
   mainWindow.on('moved', onWidgetMoved)
+  mainWindow.on('minimize', onWidgetMinimize)   // ★ 拦截最小化
+
+  // ★ 启动心跳守护
+  startWidgetHeartbeat()
 }
 
 function exitWidget(): void {
   if (!mainWindow || !isWidgetMode) return
   isWidgetMode = false
 
+  // ★ 停止心跳守护
+  stopWidgetHeartbeat()
+
   const [cx, cy] = mainWindow.getPosition()
   saveWidgetPos(cx, cy)
   mainWindow.off('moved', onWidgetMoved)
+  mainWindow.off('minimize', onWidgetMinimize)  // ★ 移除最小化拦截
 
   const { screen } = require('electron')
   const { width: sw, height: sh } = screen.getPrimaryDisplay().workAreaSize
 
-  mainWindow.setMaximumSize(0, 0)    // 0,0 表示取消最大尺寸限制
-  mainWindow.setMinimumSize(MAIN_WIDTH, MAIN_HEIGHT)
-  mainWindow.setAlwaysOnTop(false)
-  mainWindow.setVisibleOnAllWorkspaces(false)
-  mainWindow.setSize(MAIN_WIDTH, MAIN_HEIGHT)
-  mainWindow.setPosition(Math.round((sw - MAIN_WIDTH) / 2), Math.round((sh - MAIN_HEIGHT) / 2))
+  // ★ 先放开约束 → 设置新尺寸 → 再锁定，避免 min>max 冲突
+  safeWinOp('exitWidget', (win) => {
+    win.setMinimumSize(1, 1)
+    win.setMaximumSize(0, 0)    // 0,0 表示取消最大尺寸限制
+    win.setAlwaysOnTop(false)
+    win.setVisibleOnAllWorkspaces(false)
+    win.setSize(MAIN_WIDTH, MAIN_HEIGHT)
+    win.setMinimumSize(MAIN_WIDTH, MAIN_HEIGHT)
+    win.setPosition(Math.round((sw - MAIN_WIDTH) / 2), Math.round((sh - MAIN_HEIGHT) / 2))
+  })
 }
 
 // ===================== IPC 通信 =====================
@@ -766,10 +918,19 @@ function setupIPC(): void {
 
   // -------- 小组件动态调整大小 --------
   ipcMain.on('window:resizeWidget', (_, width: number, height: number) => {
-    if (!mainWindow || !isWidgetMode) return
-    mainWindow.setMinimumSize(width, height)
-    mainWindow.setMaximumSize(width, height)
-    mainWindow.setSize(width, height)
+    if (!mainWindow || mainWindow.isDestroyed() || !isWidgetMode) return
+
+    safeWinOp('resizeWidget', (win) => {
+      // ★ 先放开约束，再设置新尺寸，最后锁定 —— 避免 min>max 冲突导致 Windows 上窗口消失
+      win.setMinimumSize(1, 1)
+      win.setMaximumSize(9999, 9999)
+      win.setSize(width, height)
+      win.setMinimumSize(width, height)
+      win.setMaximumSize(width, height)
+
+      // ★ 每次 resize 后都刷新 alwaysOnTop（防止 Windows 在调整大小时丢失置顶）
+      win.setAlwaysOnTop(true, 'floating')
+    })
 
     // ★ Workaround: Chromium 在 Windows 上有 bug，-webkit-app-region 的命中区域
     // 在窗口 setSize 后不会自动重算，导致拖不动。这里延迟通知渲染进程刷新。
@@ -778,6 +939,25 @@ function setupIPC(): void {
         mainWindow.webContents.send('widget:refreshDrag')
       }
     }, 80)
+
+    // ★ 延迟验证窗口可见性（有些 Windows 版本会在 resize 后让窗口消失）
+    setTimeout(() => {
+      safeWinOp('resizeWidget:verify', (win) => {
+        if (isWidgetMode) {
+          let needRefresh = false
+          if (!win.isVisible()) {
+            console.log('[resizeWidget] 窗口不可见，自动恢复')
+            win.show()
+            needRefresh = true
+          }
+          if (win.isMinimized()) {
+            win.restore()
+            needRefresh = true
+          }
+          if (needRefresh) refreshDragRegion()
+        }
+      })
+    }, 200)
   })
 
   // -------- 主窗口动态调整大小（反思侧边栏展开/收起） --------
@@ -861,28 +1041,54 @@ app.whenReady().then(() => {
   // 启动活跃度采样
   activitySampler.start()
 
+  // ---- 显示器变化时重新校验 widget 位置 ----
+  // 比如外接显示器断开，widget 飞到屏幕外
+  const { screen } = require('electron')
+  screen.on('display-removed', () => {
+    console.log('[Display] 显示器移除，校验 widget 位置')
+    validateWidgetBounds()
+  })
+  screen.on('display-metrics-changed', () => {
+    console.log('[Display] 显示器参数变化，校验 widget 位置')
+    validateWidgetBounds()
+  })
+
   // ---- 系统唤醒后重新同步窗口状态 ----
   powerMonitor.on('resume', () => {
     if (!mainWindow) return
-    if (isWidgetMode) {
-      // ★ 只恢复置顶和可见性，不强制重置尺寸
-      // 因为 FocusDynamicBar 有自己的 phase 尺寸管理（executing=66, relay=自适应, stuck=340）
-      // 强制锁死 380×66 会导致 relay/stuck 面板被截断
-      mainWindow.setAlwaysOnTop(true, 'floating')
-      mainWindow.show()
-    }
-    // 通知渲染进程重新同步模式（触发前端 session 恢复）
-    mainWindow.webContents.send('window:modeSync', { isWidgetMode })
+    safeWinOp('resume', (win) => {
+      if (isWidgetMode) {
+        // ★ 只恢复置顶和可见性，不强制重置尺寸
+        // 因为 FocusDynamicBar 有自己的 phase 尺寸管理（executing=66, relay=自适应, stuck=340）
+        // 强制锁死 380×66 会导致 relay/stuck 面板被截断
+        win.setAlwaysOnTop(true, 'floating')
+        if (win.isMinimized()) win.restore()
+        win.show()
+        refreshDragRegion()  // ★ 唤醒后刷新拖拽区域
+        // ★ 唤醒后重启心跳守护（可能因休眠而暂停）
+        startWidgetHeartbeat()
+      }
+      // 通知渲染进程重新同步模式（触发前端 session 恢复）
+      win.webContents.send('window:modeSync', { isWidgetMode })
+    })
+    // 唤醒后校验 widget 位置
+    validateWidgetBounds()
   })
 
   // ---- 锁屏解锁后也同步一次（Windows 按电源键可能只锁屏不睡眠） ----
   powerMonitor.on('unlock-screen', () => {
     if (!mainWindow) return
-    if (isWidgetMode) {
-      mainWindow.setAlwaysOnTop(true, 'floating')
-      mainWindow.show()
-    }
-    mainWindow.webContents.send('window:modeSync', { isWidgetMode })
+    safeWinOp('unlock-screen', (win) => {
+      if (isWidgetMode) {
+        win.setAlwaysOnTop(true, 'floating')
+        if (win.isMinimized()) win.restore()
+        win.show()
+        refreshDragRegion()  // ★ 解锁后刷新拖拽区域
+        startWidgetHeartbeat()
+      }
+      win.webContents.send('window:modeSync', { isWidgetMode })
+    })
+    validateWidgetBounds()
   })
 
   app.on('activate', () => {
@@ -890,8 +1096,9 @@ app.whenReady().then(() => {
   })
 })
 
-// 退出前停止活跃度采样，确保数据落盘
+// 退出前停止活跃度采样，确保数据落盘；停止心跳守护
 app.on('before-quit', () => {
+  stopWidgetHeartbeat()
   activitySampler.stop()
 })
 

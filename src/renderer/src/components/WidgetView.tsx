@@ -50,7 +50,8 @@ export interface FocusSession {
   taskId: string
   taskTitle: string
   currentMicroTask: string
-  startTime: number          // 当前微任务开始时间戳（ms）
+  startTime: number          // 当前微任务开始时间戳（ms）—— 用于分析、埋点
+  sessionStartTime: number   // ★ 整个会话的开始时间戳 —— 用于显示计时器，不因 stuck/relay/flow 切换而重置
   isFlowMode: boolean        // 用户已进入心流
   phase: 'executing' | 'relay' | 'stuck_a' | 'stuck_b'
   microHistory: string[]     // 已完成微任务列表
@@ -153,13 +154,16 @@ function FocusDynamicBar({
   } = session
 
   // ---- 计时器（精确到秒）----
+  // ★ 使用 sessionStartTime 作为计时基准 —— 不因 stuck/relay/flow 切换而重置
+  // 向后兼容：如果旧 session 没有 sessionStartTime，则 fallback 到 startTime
+  const timerBase = session.sessionStartTime || startTime
   const [elapsed, setElapsed] = useState(0)
   useEffect(() => {
-    const tick = () => setElapsed(Math.floor((Date.now() - startTime) / 1000))
+    const tick = () => setElapsed(Math.floor((Date.now() - timerBase) / 1000))
     tick()
     const timer = setInterval(tick, 1000)
     return () => clearInterval(timer)
-  }, [startTime])
+  }, [timerBase])
 
   const minutes = Math.floor(elapsed / 60)
   const seconds = elapsed % 60
@@ -464,8 +468,8 @@ function FocusDynamicBar({
                         border border-gray-200/60 rounded-2xl
                         shadow-[0_4px_24px_rgba(0,0,0,0.08)] select-none overflow-hidden">
 
-          {/* 顶部：主任务名 + 计时器 */}
-          <div className="no-drag px-4 pt-3 pb-2 border-b border-gray-100/60">
+          {/* 顶部：主任务名 + 计时器 —— ★ 这是拖拽手柄区域，不加 no-drag */}
+          <div className="px-4 pt-3 pb-2 border-b border-gray-100/60">
             <div className="flex items-center justify-between">
               <span className="text-[10px] text-gray-400 font-medium tracking-wide">📋 当前任务</span>
               <span className="text-[11px] text-gray-400 font-mono
@@ -654,16 +658,16 @@ function FocusDynamicBar({
                       border border-gray-200/60 rounded-2xl
                       shadow-[0_4px_24px_rgba(0,0,0,0.08)] select-none overflow-hidden">
 
-        {/* 顶部条 */}
+        {/* 顶部条 —— ★ 文字区域可拖拽，只有按钮需要 no-drag */}
         <div className="flex items-center px-4 py-2.5 gap-2.5 border-b border-gray-100/80">
-          <div className="no-drag w-6 h-6 rounded-full bg-gradient-to-br from-orange-400 to-orange-500
+          <div className="w-6 h-6 rounded-full bg-gradient-to-br from-orange-400 to-orange-500
                           flex items-center justify-center flex-shrink-0 shadow-sm">
             <span className="text-white text-[10px]">🆘</span>
           </div>
-          <span className="no-drag text-xs text-orange-600 font-medium flex-1 truncate">
+          <span className="text-xs text-orange-600 font-medium flex-1 truncate">
             卡住了：{currentMicroTask}
           </span>
-          <span className="no-drag text-xs text-gray-500 font-mono flex-shrink-0
+          <span className="text-xs text-gray-500 font-mono flex-shrink-0
                            bg-gray-100/80 px-2 py-0.5 rounded-md">{timeStr}</span>
           <button
             onClick={() => onResume(currentMicroTask)}
@@ -768,16 +772,16 @@ function FocusDynamicBar({
                       border border-gray-200/60 rounded-2xl
                       shadow-[0_4px_24px_rgba(0,0,0,0.08)] select-none overflow-hidden">
 
-        {/* 顶部条 */}
+        {/* 顶部条 —— ★ 文字区域可拖拽，只有按钮需要 no-drag */}
         <div className="flex items-center px-4 py-2.5 gap-2.5 border-b border-gray-100/80">
-          <div className="no-drag w-6 h-6 rounded-full bg-gradient-to-br from-amber-400 to-amber-500
+          <div className="w-6 h-6 rounded-full bg-gradient-to-br from-amber-400 to-amber-500
                           flex items-center justify-center flex-shrink-0 shadow-sm">
             <span className="text-white text-[10px]">💡</span>
           </div>
-          <span className="no-drag text-xs text-amber-700 font-medium flex-1 truncate">
+          <span className="text-xs text-amber-700 font-medium flex-1 truncate">
             反思提示
           </span>
-          <span className="no-drag text-xs text-gray-500 font-mono flex-shrink-0
+          <span className="text-xs text-gray-500 font-mono flex-shrink-0
                            bg-gray-100/80 px-2 py-0.5 rounded-md">{timeStr}</span>
           <button
             onClick={() => onResume(currentMicroTask)}
@@ -850,14 +854,15 @@ function FocusDynamicBar({
                       border border-gray-200/60 rounded-2xl
                       shadow-[0_4px_24px_rgba(0,0,0,0.08)] select-none overflow-hidden">
 
+        {/* ★ 顶部条文字区域可拖拽 */}
         <div className="flex items-center px-4 py-2.5 gap-2.5 border-b border-gray-100/80">
-          <div className="no-drag w-6 h-6 rounded-full bg-gradient-to-br from-emerald-500 to-emerald-600
+          <div className="w-6 h-6 rounded-full bg-gradient-to-br from-emerald-500 to-emerald-600
                           flex items-center justify-center flex-shrink-0 shadow-sm">
             <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
             </svg>
           </div>
-          <span className="no-drag text-xs text-emerald-600 font-medium flex-1 truncate">
+          <span className="text-xs text-emerald-600 font-medium flex-1 truncate">
             所有子任务都搞定了！
           </span>
           <button
@@ -912,8 +917,8 @@ function FocusDynamicBar({
                     border border-gray-200/60 rounded-2xl
                     shadow-[0_4px_24px_rgba(0,0,0,0.08)] select-none overflow-hidden">
 
-      {/* ① 顶部：任务方向锚点 —— 让用户一眼知道"我在推进哪件事" */}
-      <div className="no-drag px-4 pt-3 pb-2.5 border-b border-gray-100/60">
+      {/* ① 顶部：任务方向锚点 —— ★ 可拖拽区域（只有 × 按钮是 no-drag） */}
+      <div className="px-4 pt-3 pb-2.5 border-b border-gray-100/60">
         <div className="flex items-center justify-between">
           <span className="text-[10px] text-gray-400 font-medium tracking-wide">正在推进</span>
           <div className="flex items-center gap-1.5">
