@@ -37,8 +37,8 @@ export default function TaskDurationChart({ data }: TaskDurationChartProps) {
             {item.title}
           </span>
 
-          {/* 中间：条形 */}
-          <div className="flex-1 h-[22px] bg-gray-100/80 rounded-lg overflow-hidden relative">
+          {/* 中间：条形（无灰色背景，仅显示蓝色/琥珀色条） */}
+          <div className="flex-1 h-[22px] rounded-lg overflow-hidden relative">
             <div
               className={`h-full rounded-lg transition-all duration-700 ease-out ${
                 item.completed

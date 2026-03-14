@@ -468,71 +468,29 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
               </div>
             )}
 
-            {/* 生产力指标（基于使用时长模型） */}
-            <div>
-              <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
-                📊 生产力概览
-              </h3>
-              <div className={`grid gap-3 w-full ${
-                chatOpen ? 'grid-cols-2' : 'grid-cols-4'
-              }`}>
-                <div className="text-center bg-blue-50 rounded-xl py-2.5 px-2">
-                  <p className="text-lg font-bold text-blue-600">
-                    {usageDurationStr.value}
-                    <span className="text-xs font-normal ml-0.5">{usageDurationStr.unit}</span>
-                  </p>
-                  <p className="text-[10px] text-blue-500 mt-0.5">💻 电脑使用</p>
-                </div>
-                <div className="text-center bg-indigo-50 rounded-xl py-2.5 px-2">
-                  <p className="text-lg font-bold text-indigo-600">
-                    {summary?.stats.totalFocusMinutes ?? 0}
-                    <span className="text-xs font-normal ml-0.5">分钟</span>
-                  </p>
-                  <p className="text-[10px] text-indigo-500 mt-0.5">🎯 专注时长</p>
-                </div>
-                <div className="text-center bg-emerald-50 rounded-xl py-2.5 px-2">
-                  <p className="text-lg font-bold text-emerald-600">
-                    {productivityRatio}
-                    <span className="text-xs font-normal ml-0.5">%</span>
-                  </p>
-                  <p className="text-[10px] text-emerald-500 mt-0.5">⚡ 生产力比率</p>
-                </div>
-                <div className="text-center bg-violet-50 rounded-xl py-2.5 px-2">
-                  <p className="text-lg font-bold text-violet-600">
-                    {flowRatio}
-                    <span className="text-xs font-normal ml-0.5">%</span>
-                  </p>
-                  <p className="text-[10px] text-violet-500 mt-0.5">🔥 心流占比</p>
-                </div>
-              </div>
-            </div>
-
-            {/* 分隔线 */}
-            <div className="border-t border-gray-100" />
-
-            {/* 执行统计 */}
-            <div className={`grid gap-3 w-full transition-all duration-400 ${
+            {/* 核心指标卡片 */}
+            <div className={`grid gap-3 w-full ${
               chatOpen ? 'grid-cols-2' : 'grid-cols-3'
             }`}>
               <div className="text-center bg-emerald-50 rounded-xl py-2.5 px-2">
                 <p className="text-lg font-bold text-emerald-600">
                   {summary?.stats.completedMicroSteps ?? 0}
                 </p>
-                <p className="text-[10px] text-emerald-500 mt-0.5">微步完成</p>
+                <p className="text-[10px] text-emerald-500 mt-0.5">完成任务数</p>
               </div>
-              <div className="text-center bg-violet-50 rounded-xl py-2.5 px-2">
-                <p className="text-lg font-bold text-violet-600">
-                  {summary?.stats.totalFlowMinutes ?? 0}
+              <div className="text-center bg-blue-50 rounded-xl py-2.5 px-2">
+                <p className="text-lg font-bold text-blue-600">
+                  {usageDurationStr.value}
+                  <span className="text-xs font-normal ml-0.5">{usageDurationStr.unit}</span>
+                </p>
+                <p className="text-[10px] text-blue-500 mt-0.5">电脑使用时长</p>
+              </div>
+              <div className="text-center bg-indigo-50 rounded-xl py-2.5 px-2">
+                <p className="text-lg font-bold text-indigo-600">
+                  {summary?.stats.totalFocusMinutes ?? 0}
                   <span className="text-xs font-normal ml-0.5">分钟</span>
                 </p>
-                <p className="text-[10px] text-violet-500 mt-0.5">心流时长</p>
-              </div>
-              <div className="text-center bg-orange-50 rounded-xl py-2.5 px-2">
-                <p className="text-lg font-bold text-orange-600">
-                  {summary?.stats.totalStuckCount ?? 0}
-                  <span className="text-xs font-normal ml-0.5">次</span>
-                </p>
-                <p className="text-[10px] text-orange-500 mt-0.5">卡顿次数</p>
+                <p className="text-[10px] text-indigo-500 mt-0.5">任务时长</p>
               </div>
             </div>
 
@@ -571,16 +529,14 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
               <ActivityRhythmChart data={activityData} />
             </div>
 
-            {/* 分隔线 */}
-            <div className="border-t border-gray-100" />
-
-            {/* 时间轴 */}
+            {/* 一日轨迹（暂时隐藏） */}
+            {/* <div className="border-t border-gray-100" />
             <div>
               <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
                 📅 一日轨迹
               </h3>
               <DayTimeline entries={timelineEntries} />
-            </div>
+            </div> */}
 
             {/* 遗留任务（仅今天显示，历史日期没有任务快照） */}
             {isToday && summary && summary.leftoverTasks.length > 0 && (
