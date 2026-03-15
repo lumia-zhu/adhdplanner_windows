@@ -2,6 +2,23 @@ import { app, shell, BrowserWindow, ipcMain, Tray, Menu, nativeImage, net, Notif
 import { join } from 'path'
 import fs from 'fs'
 
+// ===================== Chromium flags (must be set before app.whenReady) =====================
+
+// Disable GPU shader disk cache to avoid "Unable to create cache" errors on Windows
+// Our app doesn't need heavy 3D rendering, so shader caching is unnecessary
+app.commandLine.appendSwitch('disable-gpu-shader-disk-cache')
+
+// ===================== Single Instance Lock =====================
+
+// Ensure only one instance of the app is running at a time
+// This prevents cache file conflicts when multiple processes try to access the same data
+const gotTheLock = app.requestSingleInstanceLock()
+
+if (!gotTheLock) {
+  // Another instance is already running → quit this one immediately
+  app.quit()
+}
+
 // ===================== 数据存储相关 =====================
 
 const getAIConfigPath = (): string => join(app.getPath('userData'), 'ai-config.json')
@@ -30,17 +47,17 @@ function migrateTasksIfNeeded(): void {
       // 只在今天的文件不存在时才迁移（避免重复）
       if (!fs.existsSync(todayPath)) {
         fs.writeFileSync(todayPath, JSON.stringify(data, null, 2), 'utf-8')
-        console.log(`[Migration] 已将 tasks.json (${data.length} 条) 迁移到 tasks-${today}.json`)
+        console.log(`[Migration] Migrated tasks.json (${data.length} items) to tasks-${today}.json`)
       }
     }
     // 重命名旧文件为备份
     const backupPath = legacyPath + '.bak'
     if (!fs.existsSync(backupPath)) {
       fs.renameSync(legacyPath, backupPath)
-      console.log('[Migration] 旧 tasks.json 已备份为 tasks.json.bak')
+      console.log('[Migration] Old tasks.json backed up as tasks.json.bak')
     }
   } catch (e) {
-    console.error('[Migration] 迁移失败:', e)
+    console.error('[Migration] Migration failed:', e)
   }
 }
 
@@ -136,11 +153,11 @@ function executeCarryOver(fromDate: string, taskIds: string[], today: string): b
 
     if (addedCount > 0) {
       saveTasks(today, todayTasks)
-      console.log(`[CarryOver] 从 ${fromDate} 搬迁 ${addedCount} 个任务到 ${today}`)
+      console.log(`[CarryOver] Carried over ${addedCount} tasks from ${fromDate} to ${today}`)
     }
     return true
   } catch (e) {
-    console.error('[CarryOver] 搬迁失败:', e)
+    console.error('[CarryOver] Carry-over failed:', e)
     return false
   }
 }
@@ -194,7 +211,7 @@ function appendActivityRecords(date: string, records: ActivityRecord[]): boolean
     fs.writeFileSync(p, JSON.stringify(merged), 'utf-8') // 不缩进，节省磁盘
     return true
   } catch (e) {
-    console.error('[Activity] 追加记录失败:', e)
+    console.error('[Activity] Failed to append records:', e)
     return false
   }
 }
@@ -243,7 +260,7 @@ function loadActivityData(date: string): ActivityRecord[] {
       const raw = JSON.parse(fs.readFileSync(p, 'utf-8')) as unknown[]
       return raw.map(normalizeActivityRecord).filter((r): r is ActivityRecord => r !== null)
     }
-  } catch (e) { console.error('[Activity] 读取数据失败:', e) }
+  } catch (e) { console.error('[Activity] Failed to load data:', e) }
   return []
 }
 
@@ -268,7 +285,7 @@ function appendTrackerEvents(date: string, events: unknown[]): boolean {
     fs.writeFileSync(p, JSON.stringify(merged, null, 2), 'utf-8')
     return true
   } catch (e) {
-    console.error('[Tracker] 追加事件失败:', e)
+    console.error('[Tracker] Failed to append events:', e)
     return false
   }
 }
@@ -280,7 +297,7 @@ function loadTrackerEvents(date: string): unknown[] {
   try {
     const p = getTrackerPath(date)
     if (fs.existsSync(p)) return JSON.parse(fs.readFileSync(p, 'utf-8'))
-  } catch (e) { console.error('[Tracker] 读取事件失败:', e) }
+  } catch (e) { console.error('[Tracker] Failed to load events:', e) }
   return []
 }
 
@@ -343,7 +360,7 @@ const activitySampler = {
     // 每 5 分钟落盘一次
     this.flushTimer = setInterval(() => this.flush(), this.FLUSH_INTERVAL)
 
-    console.log('[ActivitySampler] 启动，采样间隔', this.SAMPLE_INTERVAL, 'ms')
+    console.log('[ActivitySampler] Started, interval', this.SAMPLE_INTERVAL, 'ms')
   },
 
   /** 停止采样 */
@@ -351,7 +368,7 @@ const activitySampler = {
     if (this.fastTimer) { clearInterval(this.fastTimer); this.fastTimer = null }
     if (this.flushTimer) { clearInterval(this.flushTimer); this.flushTimer = null }
     this.flush() // 退出前写入残余数据
-    console.log('[ActivitySampler] 已停止')
+    console.log('[ActivitySampler] Stopped')
   },
 
   /** 单次采样（每 2 秒调用） */
@@ -729,14 +746,14 @@ function startWidgetHeartbeat(): void {
     try {
       // ① 如果被最小化了 → 恢复
       if (mainWindow.isMinimized()) {
-        console.log('[Heartbeat] widget 被最小化，自动恢复')
+        console.log('[Heartbeat] Widget was minimized, restoring')
         mainWindow.restore()
         refreshDragRegion()  // 恢复后刷新拖拽区域
       }
 
       // ② 如果不可见了 → 重新显示
       if (!mainWindow.isVisible()) {
-        console.log('[Heartbeat] widget 不可见，自动显示')
+        console.log('[Heartbeat] Widget not visible, showing')
         mainWindow.show()
         refreshDragRegion()
       }
@@ -745,7 +762,7 @@ function startWidgetHeartbeat(): void {
       //    ★ 不能无条件调用 setAlwaysOnTop —— Windows/Chromium 会使 -webkit-app-region
       //      的拖拽命中区域缓存失效，导致 widget 完全无法拖动
       if (!mainWindow.isAlwaysOnTop()) {
-        console.log('[Heartbeat] alwaysOnTop 丢失，重新设置')
+        console.log('[Heartbeat] alwaysOnTop lost, re-applying')
         mainWindow.setAlwaysOnTop(true, 'floating')
         refreshDragRegion()  // setAlwaysOnTop 后也需要刷新拖拽区域
       }
@@ -754,7 +771,7 @@ function startWidgetHeartbeat(): void {
       //   边界校验只在 显示器变化/系统唤醒/锁屏解锁 时触发
       //   避免在用户拖拽过程中干扰窗口位置
     } catch (e) {
-      console.error('[Heartbeat] 异常:', e)
+      console.error('[Heartbeat] Error:', e)
     }
   }, 3000)
 }
@@ -784,12 +801,12 @@ function validateWidgetBounds(): void {
       // 跑到屏幕外了 → 重置到屏幕顶部居中
       const defaultX = Math.round((sw - w) / 2)
       const defaultY = 8
-      console.log(`[BoundsCheck] widget 超出屏幕 (${x},${y}), 重置到 (${defaultX},${defaultY})`)
+      console.log(`[BoundsCheck] Widget out of screen (${x},${y}), resetting to (${defaultX},${defaultY})`)
       mainWindow.setPosition(defaultX, defaultY)
       saveWidgetPos(defaultX, defaultY)
     }
   } catch (e) {
-    console.error('[BoundsCheck] 异常:', e)
+    console.error('[BoundsCheck] Error:', e)
   }
 }
 
@@ -949,7 +966,7 @@ function setupIPC(): void {
         if (isWidgetMode) {
           let needRefresh = false
           if (!win.isVisible()) {
-            console.log('[resizeWidget] 窗口不可见，自动恢复')
+            console.log('[resizeWidget] Window not visible, restoring')
             win.show()
             needRefresh = true
           }
@@ -1024,6 +1041,15 @@ function setupIPC(): void {
 
 // ===================== 应用生命周期 =====================
 
+// When a second instance is launched, focus the existing window instead
+app.on('second-instance', () => {
+  if (mainWindow) {
+    if (mainWindow.isMinimized()) mainWindow.restore()
+    mainWindow.show()
+    mainWindow.focus()
+  }
+})
+
 app.whenReady().then(() => {
   app.setAppUserModelId('com.taskmanager.app')
 
@@ -1048,11 +1074,11 @@ app.whenReady().then(() => {
   // 比如外接显示器断开，widget 飞到屏幕外
   const { screen } = require('electron')
   screen.on('display-removed', () => {
-    console.log('[Display] 显示器移除，校验 widget 位置')
+    console.log('[Display] Display removed, validating widget bounds')
     validateWidgetBounds()
   })
   screen.on('display-metrics-changed', () => {
-    console.log('[Display] 显示器参数变化，校验 widget 位置')
+    console.log('[Display] Display metrics changed, validating widget bounds')
     validateWidgetBounds()
   })
 
