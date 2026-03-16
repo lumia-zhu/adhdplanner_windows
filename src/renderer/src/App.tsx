@@ -14,6 +14,7 @@ import FocusFlow from './components/FocusFlow'
 import AISettings from './components/AISettings'
 import ProfileSettings from './components/ProfileSettings'
 import ReflectionView from './components/ReflectionView'
+import QuickFocusEndDialog from './components/QuickFocusEndDialog'
 
 /**
  * 主应用组件
@@ -98,6 +99,11 @@ export default function App() {
   // -------- 每日反思 --------
   const [showReflection, setShowReflection] = useState(false)
 
+  // -------- 快速专注结束弹窗 --------
+  const [quickFocusEnd, setQuickFocusEnd] = useState<{
+    durationSeconds: number   // 本次专注时长（秒）
+  } | null>(null)
+
   // -------- 会话 ID（用于关联同一次专注的所有事件）--------
   const sessionIdRef = useRef<string>('')
 
@@ -180,18 +186,26 @@ export default function App() {
               if (savedSession) {
                 try {
                   const restored = JSON.parse(savedSession) as FocusSession
-                  const loadedTasks = savedTasks as Task[]
-                  const task = loadedTasks.find(t => t.id === restored.taskId)
-                  if (task && !task.completed) {
-                    const now = Date.now()
-                    restored.startTime = now
-                    restored.sessionStartTime = now  // ★ 恢复后重新开始计时
+                  const now = Date.now()
+                  restored.startTime = now
+                  restored.sessionStartTime = now  // ★ 恢复后重新开始计时
+
+                  // ★ 快速专注模式：不需要关联任务，直接恢复
+                  if (restored.isQuickFocus) {
                     setSession(restored)
                     if (savedSessionId) sessionIdRef.current = savedSessionId
-                    console.log('[App] 从 localStorage 恢复专注会话 ✓', restored.taskTitle)
+                    console.log('[App] 从 localStorage 恢复快速专注会话 ✓')
                   } else {
-                    localStorage.removeItem('focusSession')
-                    localStorage.removeItem('focusSessionId')
+                    const loadedTasks = savedTasks as Task[]
+                    const task = loadedTasks.find(t => t.id === restored.taskId)
+                    if (task && !task.completed) {
+                      setSession(restored)
+                      if (savedSessionId) sessionIdRef.current = savedSessionId
+                      console.log('[App] 从 localStorage 恢复专注会话 ✓', restored.taskTitle)
+                    } else {
+                      localStorage.removeItem('focusSession')
+                      localStorage.removeItem('focusSessionId')
+                    }
                   }
                 } catch {
                   localStorage.removeItem('focusSession')
@@ -630,9 +644,15 @@ export default function App() {
     } : s)
   }
 
-  /** 心流模式下完成整个任务 */
+  /** 心流模式下完成整个任务（或快速专注模式点击"做完了"） */
   const handleTaskDone = () => {
     if (!session) return
+
+    // ★ 快速专注模式：走专门的结束流程（弹窗收集任务名）
+    if (session.isQuickFocus) {
+      handleQuickFocusEnd()
+      return
+    }
 
     // 📊 埋点：心流结束 + 宏观任务完成 + 会话结束
     const flowDuration = Math.floor((Date.now() - session.startTime) / 1000)
@@ -826,6 +846,105 @@ export default function App() {
     setIsWidgetMode(true)
   }
 
+  // ===================== 快速专注（无需先选任务） =====================
+
+  /**
+   * 一键开启专注模式
+   * 不绑定任何任务，创建一个 isQuickFocus 的 FocusSession
+   * 直接进入 widget 小组件模式
+   */
+  const handleQuickFocus = () => {
+    const sid = `qf-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+    sessionIdRef.current = sid
+
+    const now = Date.now()
+    const newSession: FocusSession = {
+      sessionId: sid,
+      taskId: '',              // 快速专注没有绑定任务
+      taskTitle: '',
+      currentMicroTask: '',
+      startTime: now,
+      sessionStartTime: now,
+      isFlowMode: false,
+      phase: 'executing',
+      microHistory: [],
+      isQuickFocus: true,      // ★ 标记为快速专注模式
+    }
+    setSession(newSession)
+    setFocusTaskId(null)
+
+    // 📊 埋点
+    tracker.track('session.started', {
+      sessionId: sid,
+      taskId: '',
+      taskTitle: '',
+      isQuickFocus: true,
+    })
+
+    // 进入小组件模式
+    window.electronAPI.enterWidget()
+    setIsWidgetMode(true)
+  }
+
+  /**
+   * 快速专注点击"做完了" → 退出 widget → 弹出结束弹窗
+   * 弹窗会在主界面上显示，让用户输入任务名称
+   */
+  const handleQuickFocusEnd = () => {
+    if (!session || !session.isQuickFocus) return
+
+    const duration = Math.floor((Date.now() - session.sessionStartTime) / 1000)
+
+    // ★ 不在这里埋点 session.ended，延迟到用户填写任务名称后再发送
+    //   这样 tracker 里的 taskTitle 才是用户实际填的名字
+
+    // 退出 widget 模式
+    window.electronAPI.exitWidget()
+    setIsWidgetMode(false)
+    setSession(null)
+
+    // 弹出结束弹窗（在主界面上显示）
+    setQuickFocusEnd({ durationSeconds: duration })
+  }
+
+  /**
+   * 快速专注结束弹窗确认：创建一个已完成的任务，并补发 tracker 埋点
+   */
+  const handleQuickFocusConfirm = (taskTitle: string) => {
+    if (!quickFocusEnd) return
+
+    const newTask: Task = {
+      id: `t-${Date.now()}`,
+      title: taskTitle,
+      note: '',
+      priority: 'medium',
+      completed: true,
+      createdAt: Date.now(),
+      focusDuration: quickFocusEnd.durationSeconds,
+    }
+    setTasks(prev => [...prev, newTask])
+
+    // 📊 埋点：在用户填写任务名后再记录 session.ended
+    //   endReason 用 'task_done' 以便反思页图表识别为已完成（蓝色）
+    tracker.track('session.ended', {
+      sessionId: sessionIdRef.current,
+      taskId: newTask.id,
+      taskTitle: taskTitle,
+      totalDurationSeconds: quickFocusEnd.durationSeconds,
+      endReason: 'task_done',
+      isQuickFocus: true,
+    })
+
+    setQuickFocusEnd(null)
+  }
+
+  /**
+   * 快速专注结束弹窗跳过：用默认名称保存
+   */
+  const handleQuickFocusSkip = () => {
+    handleQuickFocusConfirm('专注时段')
+  }
+
   /** 小组件模式下的任务勾选（旧版小组件用） */
   const handleWidgetToggle = (id: string) => {
     setTasks(prev => prev.map(t => {
@@ -992,23 +1111,37 @@ export default function App() {
 
       {/* 底部区域 */}
       <div className="flex-shrink-0 select-none">
-        {/* 开启任务按钮（仅今天显示；辅助入口，默认指向第一个待办） */}
-        {isToday && pendingTasks.length > 0 && (
-          <div className="flex justify-center -mt-4 mb-2 relative z-10">
+        {/* 底部操作按钮区（仅今天显示） */}
+        {isToday && (
+          <div className="flex justify-center items-center gap-3 -mt-4 mb-2 relative z-10">
+            {/* ★ 「开启专注」按钮 —— 始终显示，点击直接进入专注模式 */}
             <button
-              onClick={() => handleFocusTask(pendingTasks[0].id)}
+              onClick={handleQuickFocus}
               className="flex items-center gap-2 px-5 py-2 rounded-full
-                         bg-white hover:bg-emerald-50 active:scale-95
-                         text-emerald-600 text-sm font-medium
-                         border border-emerald-200 hover:border-emerald-400
-                         shadow-sm hover:shadow-md hover:shadow-emerald-100/50
+                         bg-emerald-500 hover:bg-emerald-600 active:scale-95
+                         text-white text-sm font-medium
+                         shadow-sm shadow-emerald-200/50 hover:shadow-md hover:shadow-emerald-200/80
                          transition-all duration-200"
             >
               <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
                 <path d="M8 5v14l11-7z" />
               </svg>
-              开始第一个待办
+              开启专注
             </button>
+            {/* 有待办任务时额外显示「开始第一个待办」 */}
+            {pendingTasks.length > 0 && (
+              <button
+                onClick={() => handleFocusTask(pendingTasks[0].id)}
+                className="flex items-center gap-2 px-4 py-2 rounded-full
+                           bg-white hover:bg-emerald-50 active:scale-95
+                           text-emerald-600 text-xs font-medium
+                           border border-emerald-200 hover:border-emerald-400
+                           shadow-sm hover:shadow-md hover:shadow-emerald-100/50
+                           transition-all duration-200"
+              >
+                开始第一个待办
+              </button>
+            )}
           </div>
         )}
 
@@ -1080,6 +1213,15 @@ export default function App() {
         onSave={handleSaveProfile}
         onClose={() => setShowProfile(false)}
       />
+
+      {/* ★ 快速专注结束弹窗：退出 widget 后在主界面上显示 */}
+      {quickFocusEnd && (
+        <QuickFocusEndDialog
+          durationSeconds={quickFocusEnd.durationSeconds}
+          onConfirm={handleQuickFocusConfirm}
+          onSkip={handleQuickFocusSkip}
+        />
+      )}
     </div>
   )
 }

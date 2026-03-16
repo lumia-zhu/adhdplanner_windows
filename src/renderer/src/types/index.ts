@@ -25,6 +25,8 @@ export interface Task {
   pausedSession?: PausedSession | null
   /** 从哪天搬迁来的（格式 YYYY-MM-DD），仅搬迁的任务有此字段 */
   carriedFrom?: string
+  /** 快速专注记录的专注时长（秒），仅通过「开启专注」创建的已完成任务有此字段 */
+  focusDuration?: number
 }
 
 /** 暂停的专注会话快照 */

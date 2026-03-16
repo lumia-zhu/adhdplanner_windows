@@ -60,7 +60,12 @@ export interface FocusSession {
   currentSubtaskTitle?: string    // 当前正在做的子任务标题
   isSubtaskTransition?: boolean   // true = 刚切到新子任务，relay 显示子任务入口提示
   allSubtasksDone?: boolean       // true = 所有子任务完成，提供宏观任务完成选项
+  // ---- 快速专注模式 ----
+  isQuickFocus?: boolean          // true = 一键专注模式，无绑定任务，结束时再填写任务名称
 }
+
+/** 快速专注模式下的薄条高度 */
+const BAR_H_QUICK = 66
 
 interface WidgetViewProps {
   tasks: Task[]
@@ -96,6 +101,17 @@ export default function WidgetView({
   // 如果没有 session → 走旧的普通小组件模式
   if (!session) {
     return <LegacyWidget tasks={tasks} focusTaskId={focusTaskId} onToggle={onToggle} onExit={onExit} />
+  }
+
+  // ★ 快速专注模式：简化 widget，只显示计时器和完成按钮
+  if (session.isQuickFocus) {
+    return (
+      <QuickFocusWidget
+        session={session}
+        onTaskDone={onTaskDone}
+        onExit={onExit}
+      />
+    )
   }
 
   // ★ 简化模式：从 tasks 中获取当前任务的子任务（任务结构视图用）
@@ -1066,6 +1082,75 @@ function FocusDynamicBar({
         >
           这个任务做完了
         </button>
+      </div>
+    </div>
+  )
+}
+
+// ===================== 快速专注模式小组件 =====================
+
+interface QuickFocusWidgetProps {
+  session: FocusSession
+  onTaskDone: () => void    // 点击"做完了" → 触发结束弹窗
+  onExit: () => void        // 退出专注（不保存）
+}
+
+/**
+ * 快速专注模式下的简化 Widget
+ * 只显示"专注中..."文字 + 计时器 + 做完了/退出 两个按钮
+ */
+function QuickFocusWidget({ session, onTaskDone, onExit }: QuickFocusWidgetProps) {
+  const { sessionStartTime } = session
+  const [elapsed, setElapsed] = useState(0)
+
+  // 每秒更新计时
+  useEffect(() => {
+    const tick = () => setElapsed(Math.floor((Date.now() - sessionStartTime) / 1000))
+    tick()
+    const timer = setInterval(tick, 1000)
+    return () => clearInterval(timer)
+  }, [sessionStartTime])
+
+  const minutes = Math.floor(elapsed / 60)
+  const seconds = elapsed % 60
+  const timeStr = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+
+  return (
+    <div className="drag-region w-full h-full flex flex-col justify-center bg-white/95 backdrop-blur-sm
+                    border border-gray-200/60 rounded-2xl shadow-[0_4px_24px_rgba(0,0,0,0.08)]
+                    px-4 py-2 select-none overflow-hidden">
+      {/* 第一行：专注中 + 计时器 */}
+      <div className="flex items-center">
+        <div className="w-[48px] flex-shrink-0" />
+        <p className="flex-1 text-[14px] text-emerald-600 font-semibold text-center leading-snug">
+          🟢 专注中...
+        </p>
+        <span className="w-[48px] text-[11px] text-gray-400 font-mono text-right flex-shrink-0
+                         bg-gray-100/80 px-1.5 py-0.5 rounded-md">{timeStr}</span>
+      </div>
+      {/* 第二行：做完了 + 退出 */}
+      <div className="flex items-center mt-2">
+        <div className="w-[60px] flex-shrink-0" />
+        <div className="flex-1 flex justify-center">
+          <button
+            onClick={onTaskDone}
+            className="no-drag px-6 py-1.5 rounded-xl
+                       text-xs font-semibold transition-all
+                       bg-emerald-500 text-white shadow-sm shadow-emerald-200/50 hover:bg-emerald-600 active:scale-95"
+          >
+            做完了
+          </button>
+        </div>
+        <div className="w-[60px] flex items-center justify-end flex-shrink-0">
+          <button
+            onClick={onExit}
+            className="no-drag text-[11px] text-gray-400
+                       hover:text-red-500 active:scale-95 transition-all whitespace-nowrap"
+            title="退出专注"
+          >
+            退出
+          </button>
+        </div>
       </div>
     </div>
   )
