@@ -21,6 +21,7 @@ import ActivityHeatmap from './ActivityHeatmap'
 import type { ActivityRecord } from './ActivityHeatmap'
 import { getActiveRatio } from './ActivityHeatmap'
 import ActivityRhythmChart from './ActivityRhythmChart'
+import InteractiveActivityHeatmap from './InteractiveActivityHeatmap'
 import ReflectionChat from './ReflectionChat'
 import MiniCalendar from './MiniCalendar'
 import { tracker } from '../services/tracker'
@@ -545,6 +546,17 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
                 🟩 使用时长热力图
               </h3>
               <ActivityHeatmap data={activityData} />
+            </div>
+
+            {/* 分隔线 */}
+            <div className="border-t border-gray-100" />
+
+            {/* 任务活动分布（交互式热力图 + 任务时间轴） */}
+            <div>
+              <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
+                🔍 任务活动分布
+              </h3>
+              <InteractiveActivityHeatmap data={activityData} events={events} />
             </div>
 
             {/* 分隔线 */}
