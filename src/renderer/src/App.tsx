@@ -354,14 +354,11 @@ export default function App() {
       })
     }
     if (session) {
-      const sessionStart = session.microHistory.length > 0
-        ? session.startTime
-        : Date.now()
       tracker.track('session.ended', {
         sessionId: sessionIdRef.current,
         taskId: session.taskId,
         taskTitle: session.taskTitle,
-        totalDurationSeconds: Math.floor((Date.now() - sessionStart) / 1000),
+        totalDurationSeconds: Math.floor((Date.now() - session.sessionStartTime) / 1000),
         completedMicroSteps: session.microHistory.length,
         endReason: 'exit',
       })
@@ -656,6 +653,7 @@ export default function App() {
 
     // 📊 埋点：心流结束 + 宏观任务完成 + 会话结束
     const flowDuration = Math.floor((Date.now() - session.startTime) / 1000)
+    const sessionDuration = Math.floor((Date.now() - session.sessionStartTime) / 1000)
     tracker.track('exec.flow_ended', {
       sessionId: sessionIdRef.current,
       taskId: session.taskId,
@@ -672,7 +670,7 @@ export default function App() {
       sessionId: sessionIdRef.current,
       taskId: session.taskId,
       taskTitle: session.taskTitle,
-      totalDurationSeconds: flowDuration,
+      totalDurationSeconds: sessionDuration,
       completedMicroSteps: session.microHistory.length,
       endReason: 'task_done',
     })
@@ -758,7 +756,7 @@ export default function App() {
   const handlePause = () => {
     if (!session) return
 
-    const elapsed = Math.floor((Date.now() - session.startTime) / 1000)
+    const totalElapsed = Math.floor((Date.now() - session.sessionStartTime) / 1000)
 
     // 构造暂停快照
     const snapshot: PausedSession = {
@@ -768,7 +766,7 @@ export default function App() {
       currentSubtaskId: session.currentSubtaskId,
       currentSubtaskTitle: session.currentSubtaskTitle,
       pausedAt: Date.now(),
-      elapsedBeforePause: elapsed,
+      elapsedBeforePause: totalElapsed,
     }
 
     // 📊 埋点：暂停事件
@@ -777,8 +775,18 @@ export default function App() {
       taskId: session.taskId,
       taskTitle: session.taskTitle,
       microAction: session.currentMicroTask,
-      elapsedSeconds: elapsed,
+      elapsedSeconds: totalElapsed,
       completedMicroSteps: session.microHistory.length,
+    })
+
+    // 📊 埋点：补发 session.ended（endReason='pause'），让热力图正确截断这段时间
+    tracker.track('session.ended', {
+      sessionId: sessionIdRef.current,
+      taskId: session.taskId,
+      taskTitle: session.taskTitle,
+      totalDurationSeconds: totalElapsed,
+      completedMicroSteps: session.microHistory.length,
+      endReason: 'pause',
     })
 
     // 写入 task.pausedSession
@@ -831,6 +839,13 @@ export default function App() {
       microAction: snap.currentMicroTask,
       pausedDurationSeconds: Math.floor((Date.now() - snap.pausedAt) / 1000),
       completedMicroSteps: snap.microHistory.length,
+    })
+
+    // 📊 埋点：补发 session.started（新 sessionId），让热力图正确记录恢复后的时间段
+    tracker.track('session.started', {
+      sessionId: sid,
+      taskId: task.id,
+      taskTitle: task.title,
     })
 
     // 清除暂停状态

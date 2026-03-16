@@ -158,7 +158,28 @@ export interface SessionEndedPayload {
   taskTitle: string
   totalDurationSeconds: number
   completedMicroSteps: number
-  endReason: 'task_done' | 'exit' | 'abandon'
+  endReason: 'task_done' | 'exit' | 'abandon' | 'pause'
+}
+
+/** 专注会话暂停 */
+export interface SessionPausedPayload {
+  sessionId: string
+  taskId: string
+  taskTitle: string
+  microAction: string
+  elapsedSeconds: number
+  completedMicroSteps: number
+}
+
+/** 专注会话恢复 */
+export interface SessionResumedPayload {
+  sessionId: string
+  originalSessionId: string
+  taskId: string
+  taskTitle: string
+  microAction: string
+  pausedDurationSeconds: number
+  completedMicroSteps: number
 }
 
 /** 宏观任务被标记为完成 */
@@ -205,6 +226,8 @@ export interface TrackEventMap {
   // 会话生命周期
   'session.started':        SessionStartedPayload
   'session.ended':          SessionEndedPayload
+  'session.paused':         SessionPausedPayload
+  'session.resumed':        SessionResumedPayload
   'session.macro_completed': MacroTaskCompletedPayload
 
   // 每日快照
