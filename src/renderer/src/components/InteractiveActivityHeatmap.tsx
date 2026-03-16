@@ -332,19 +332,6 @@ export default function InteractiveActivityHeatmap({ data, events }: Props) {
         })}
       </div>
 
-      {/* ======== 选区提示 ======== */}
-      {selectionLabel && (
-        <div className="flex items-center gap-2 mt-1 text-xs">
-          <span className="text-emerald-600 font-medium">已选择: {selectionLabel}</span>
-          <button
-            className="text-gray-400 hover:text-gray-600 underline underline-offset-2 text-[11px]"
-            onClick={clearSelection}
-          >
-            清除
-          </button>
-        </div>
-      )}
-
       {/* ======== 任务时间分布 ======== */}
       {filteredTasks.length > 0 && (
         <div className="mt-3 space-y-2">
@@ -376,7 +363,7 @@ export default function InteractiveActivityHeatmap({ data, events }: Props) {
                   </span>
                 </div>
                 {/* 第二行：24 格时间条，全宽，和热力条对齐 */}
-                <div className="flex gap-[2px] w-full">
+                <div className="relative flex gap-[2px] w-full">
                   {Array.from({ length: TOTAL_BLOCKS }, (_, h) => {
                     const ratio = task.hourMap.get(h) || 0
                     const hasActivity = ratio > 0
@@ -396,7 +383,8 @@ export default function InteractiveActivityHeatmap({ data, events }: Props) {
                     return (
                       <div
                         key={h}
-                        className="h-[14px] flex-1 rounded-[2px] bg-gray-50 overflow-hidden relative group"
+                        className={`h-[14px] flex-1 rounded-[2px] overflow-hidden relative group
+                                    ${selection && inSel ? 'bg-emerald-50' : 'bg-gray-50'}`}
                         title={hasActivity ? `${fmtHour(h)}–${fmtHour(h + 1 === 24 ? 0 : h + 1)}：${ratioToMinuteStr(ratio)}` : ''}
                       >
                         {hasActivity && (
@@ -410,10 +398,34 @@ export default function InteractiveActivityHeatmap({ data, events }: Props) {
                       </div>
                     )
                   })}
+
+                  {/* 选区范围高亮遮罩（浅绿色底色标识选中列） */}
+                  {selection && (
+                    <div
+                      className="absolute top-0 h-full rounded-[3px] bg-emerald-400/10 border border-emerald-300/40 pointer-events-none"
+                      style={{
+                        left: `calc(${selLo / 24 * 100}% - 1px)`,
+                        width: `calc(${(selHi - selLo + 1) / 24 * 100}% + 1px)`,
+                      }}
+                    />
+                  )}
                 </div>
               </div>
             )
           })}
+        </div>
+      )}
+
+      {/* ======== 选区提示（放在所有任务下方） ======== */}
+      {selectionLabel && (
+        <div className="flex items-center gap-2 mt-3 text-xs">
+          <span className="text-emerald-600 font-medium">已选择: {selectionLabel}</span>
+          <button
+            className="text-gray-400 hover:text-gray-600 underline underline-offset-2 text-[11px]"
+            onClick={clearSelection}
+          >
+            清除
+          </button>
         </div>
       )}
 
