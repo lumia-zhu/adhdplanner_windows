@@ -136,6 +136,24 @@ function ratioToMinuteStr(ratio: number): string {
   return `${min} 分钟`
 }
 
+/**
+ * 精确计算选区覆盖框的 left / width
+ * flex gap-[2px] 布局中，24 个格子之间有 23 个 2px 间隙（共 46px）
+ *   cellWidth = (100% - 46px) / 24
+ *   cell[i] left = i * cellWidth + i * 2px
+ *   span(lo→hi) width = count * cellWidth + (count-1) * 2px
+ * padding: 在左右各多包一小段，让边框视觉上刚好贴住格子外缘
+ */
+function selOverlayStyle(lo: number, hi: number, pad = 0) {
+  const GAP = 2          // gap-[2px]
+  const TOTAL_GAP = (TOTAL_BLOCKS - 1) * GAP  // 46px
+  const count = hi - lo + 1
+  return {
+    left:  `calc(${lo} * (100% - ${TOTAL_GAP}px) / ${TOTAL_BLOCKS} + ${lo * GAP - pad}px)`,
+    width: `calc(${count} * (100% - ${TOTAL_GAP}px) / ${TOTAL_BLOCKS} + ${(count - 1) * GAP + pad * 2}px)`,
+  }
+}
+
 // ===================== 主组件 =====================
 
 export default function InteractiveActivityHeatmap({ data, events }: Props) {
@@ -298,17 +316,11 @@ export default function InteractiveActivityHeatmap({ data, events }: Props) {
           )
         })}
 
-        {/* 整体选区高亮框：一个连续的圆角边框覆盖所有选中格子 */}
+        {/* 整体选区高亮框：精确对齐 flex gap 布局 */}
         {selection && (
           <div
             className="absolute top-0 h-full border-2 border-emerald-500/70 rounded-lg pointer-events-none"
-            style={{
-              /* 每个格子宽度 = (100% - 23*2px) / 24，第 i 个格子左边缘 = i * (格宽 + 2px)
-                 用百分比近似：left ≈ selLo/24 * 100%，width ≈ (count/24) * 100%
-                 微调 -2px/+4px 让边框刚好包住格子外缘 */
-              left: `calc(${selLo / 24 * 100}% - 3px)`,
-              width: `calc(${(selHi - selLo + 1) / 24 * 100}% + 4px)`,
-            }}
+            style={selOverlayStyle(selLo, selHi, 3)}
           />
         )}
       </div>
@@ -399,14 +411,11 @@ export default function InteractiveActivityHeatmap({ data, events }: Props) {
                     )
                   })}
 
-                  {/* 选区范围高亮遮罩（浅绿色底色标识选中列） */}
+                  {/* 选区范围高亮遮罩：精确对齐 flex gap 布局 */}
                   {selection && (
                     <div
                       className="absolute top-0 h-full rounded-[3px] bg-emerald-400/10 border border-emerald-300/40 pointer-events-none"
-                      style={{
-                        left: `calc(${selLo / 24 * 100}% - 1px)`,
-                        width: `calc(${(selHi - selLo + 1) / 24 * 100}% + 1px)`,
-                      }}
+                      style={selOverlayStyle(selLo, selHi, 1)}
                     />
                   )}
                 </div>
