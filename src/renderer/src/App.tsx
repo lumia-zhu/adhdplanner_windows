@@ -186,9 +186,8 @@ export default function App() {
               if (savedSession) {
                 try {
                   const restored = JSON.parse(savedSession) as FocusSession
-                  const now = Date.now()
-                  restored.startTime = now
-                  restored.sessionStartTime = now  // ★ 恢复后重新开始计时
+                  restored.startTime = Date.now()
+                  // ★ 保留原始 sessionStartTime，计时器从真实起点继续而非归零
 
                   // ★ 快速专注模式：不需要关联任务，直接恢复
                   if (restored.isQuickFocus) {
@@ -260,9 +259,8 @@ export default function App() {
         if (savedSession) {
           try {
             const restored = JSON.parse(savedSession) as FocusSession
-            const now = Date.now()
-            restored.startTime = now
-            restored.sessionStartTime = now  // ★ 恢复后重新开始计时
+            restored.startTime = Date.now()
+            // ★ 保留原始 sessionStartTime，计时器从真实起点继续而非归零
             // 只在当前没有 session 时才恢复（不覆盖正常运行中的 session）
             setSession(prev => prev || restored)
           } catch { /* ignore */ }
@@ -411,18 +409,19 @@ export default function App() {
     const subtasks = task.subtasks ?? []
     const activeSubtask = subtasks.find(s => !s.completed) ?? null
 
-    // 创建 FocusSession
+    // 创建 FocusSession —— 直接进入主任务视图（flow mode），第一步作为提示展示
     const now = Date.now()
     const newSession: FocusSession = {
       sessionId: sid,
       taskId: task.id,
       taskTitle: task.title,
-      currentMicroTask: microTask,
+      currentMicroTask: task.title,   // flow 模式下显示主任务名
       startTime: now,
-      sessionStartTime: now,    // ★ 整个会话的计时起点，不会被 stuck/relay 重置
-      isFlowMode: false,
+      sessionStartTime: now,
+      isFlowMode: true,               // ★ 直接进入任务结构视图，跳过第一步确认
       phase: 'executing',
       microHistory: [],
+      firstStepHint: microTask,       // ★ AI 第一步保存为提示，不作为强制执行步骤
       // 子任务信息
       currentSubtaskId: activeSubtask?.id,
       currentSubtaskTitle: activeSubtask?.title,
@@ -439,7 +438,7 @@ export default function App() {
       })
     }
 
-    // 📊 埋点：破冰第一步 + 会话开始 + 微任务开始
+    // 📊 埋点：破冰第一步 + 会话开始
     tracker.track('plan.first_micro', {
       taskId: task.id,
       taskTitle: task.title,
@@ -450,12 +449,6 @@ export default function App() {
       sessionId: sid,
       taskId: task.id,
       taskTitle: task.title,
-    })
-    tracker.track('exec.micro_started', {
-      sessionId: sid,
-      taskId: task.id,
-      taskTitle: task.title,
-      microAction: microTask,
     })
 
     // 进入小组件模式
@@ -477,15 +470,17 @@ export default function App() {
       actualSeconds: elapsed,
     })
 
-    // ★ 简化模式：第一步完成 → 进入整个任务执行（flow mode），而不是退出
+    // ★ 简化模式下此分支已不再触发：session 创建时直接 isFlowMode=true，
+    //   跳过了第一步执行状态，用户不会点到"完成这一步"。
+    //   保留代码以备 ENABLE_STEP_BY_STEP 切回 true 时恢复原流程。
     if (!ENABLE_STEP_BY_STEP) {
       setSession(s => s ? {
         ...s,
         phase: 'executing',
         isFlowMode: true,
-        currentMicroTask: s.taskTitle,   // 切回宏观任务名
+        currentMicroTask: s.taskTitle,
         microHistory: [...s.microHistory, s.currentMicroTask],
-        startTime: Date.now(),           // 重置计时器
+        startTime: Date.now(),
       } : s)
       return
     }
@@ -814,16 +809,16 @@ export default function App() {
     const sid = `${snap.sessionId}-r${Date.now().toString(36).slice(-4)}`
     sessionIdRef.current = sid
 
-    // 重建 FocusSession
+    // 重建 FocusSession —— 直接进入任务结构视图
     const now = Date.now()
     const restored: FocusSession = {
       sessionId: sid,
       taskId: task.id,
       taskTitle: task.title,
-      currentMicroTask: snap.currentMicroTask,
-      startTime: now,             // 重新开始计时
-      sessionStartTime: now,      // ★ 新会话，计时器从零开始
-      isFlowMode: false,
+      currentMicroTask: task.title,   // flow 模式下显示主任务名
+      startTime: now,
+      sessionStartTime: now,
+      isFlowMode: true,               // ★ 恢复后直接进入任务结构视图
       phase: 'executing',
       microHistory: [...snap.microHistory],
       currentSubtaskId: snap.currentSubtaskId,
@@ -1127,9 +1122,9 @@ export default function App() {
       {/* 底部区域 */}
       <div className="flex-shrink-0 select-none">
         {/* 底部操作按钮区（仅今天显示） */}
-        {isToday && (
+        {/* ★ 「开启专注」按钮 —— 暂时隐藏 */}
+        {/* {isToday && (
           <div className="flex justify-center items-center gap-3 -mt-4 mb-2 relative z-10">
-            {/* ★ 「开启专注」按钮 —— 始终显示，点击直接进入专注模式 */}
             <button
               onClick={handleQuickFocus}
               className="flex items-center gap-2 px-5 py-2 rounded-full
@@ -1143,22 +1138,8 @@ export default function App() {
               </svg>
               开启专注
             </button>
-            {/* 有待办任务时额外显示「开始第一个待办」 */}
-            {pendingTasks.length > 0 && (
-              <button
-                onClick={() => handleFocusTask(pendingTasks[0].id)}
-                className="flex items-center gap-2 px-4 py-2 rounded-full
-                           bg-white hover:bg-emerald-50 active:scale-95
-                           text-emerald-600 text-xs font-medium
-                           border border-emerald-200 hover:border-emerald-400
-                           shadow-sm hover:shadow-md hover:shadow-emerald-100/50
-                           transition-all duration-200"
-              >
-                开始第一个待办
-              </button>
-            )}
           </div>
-        )}
+        )} */}
 
         {/* 状态栏 */}
         {tasks.length > 0 && (

@@ -582,6 +582,7 @@ function createMainWindow(): void {
     transparent: false,
     backgroundColor: '#ffffff',
     autoHideMenuBar: true,
+    alwaysOnTop: true,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false,
@@ -894,7 +895,7 @@ function exitWidget(): void {
   safeWinOp('exitWidget', (win) => {
     win.setMinimumSize(1, 1)
     win.setMaximumSize(0, 0)    // 0,0 表示取消最大尺寸限制
-    win.setAlwaysOnTop(false)
+    win.setAlwaysOnTop(true, 'floating')
     win.setVisibleOnAllWorkspaces(false)
     win.setSize(MAIN_WIDTH, MAIN_HEIGHT)
     win.setMinimumSize(MAIN_WIDTH, MAIN_HEIGHT)

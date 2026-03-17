@@ -14,7 +14,7 @@ import type { TrackEvent, DailySummary } from '../services/tracker'
 import { buildDailySummary, summaryToLLMContext } from '../services/tracker'
 import DonutChart from './DonutChart'
 import TaskDurationChart from './TaskDurationChart'
-import type { TaskDurationItem } from './TaskDurationChart'
+import type { TaskDurationItem, StuckMark } from './TaskDurationChart'
 import DayTimeline from './DayTimeline'
 import type { TimelineEntry } from './DayTimeline'
 import ActivityHeatmap from './ActivityHeatmap'
@@ -226,31 +226,120 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
   // 构建时间轴条目
   const timelineEntries = useMemo(() => buildTimelineEntries(events), [events])
 
-  // 构建任务用时数据（从 session.ended 事件聚合）
+  // 构建任务用时数据（从 session.ended 事件聚合），同时附带卡顿标记
   const taskDurations: TaskDurationItem[] = useMemo(() => {
-    // 按任务名聚合所有 session 的总时长
+    // ---- 1. 按任务名聚合所有 session 的总时长 ----
+    // 注意：同一任务可能有多个 session（暂停→恢复），只统计 endReason 不是 'pause' 的时长
+    // 来避免 pause 和 resume 后重复计时
     const durationMap = new Map<string, number>()
-    const endReasonMap = new Map<string, string>()
+
+    // ---- 2. 判断任务是否已完成（三重判断，任意一个成立即可） ----
+    //   a. session.ended 的 endReason 中出现过 'task_done'
+    //   b. 存在 session.macro_completed 事件
+    //   c. tasks 列表中标记为 completed
+    const everTaskDone = new Set<string>()         // 曾出现 endReason='task_done'
+    const macroCompleted = new Set<string>()        // 有 macro_completed 事件
+
+    // ---- 3. 记录每个 sessionId 的起始时间和所属任务名 ----
+    const sessionStartMap = new Map<string, { timestamp: number; taskTitle: string }>()
+
+    // ---- 4. 记录每个任务下各 session 的排列顺序和时长（用于计算卡顿点的累计偏移） ----
+    // taskTitle → [{sessionId, durationSec}]（按时间顺序排列）
+    const sessionOrderByTask = new Map<string, { sessionId: string; durationSec: number }[]>()
 
     for (const e of events) {
+      if (e.type === 'session.started') {
+        const p = e.payload as { sessionId: string; taskTitle: string }
+        sessionStartMap.set(p.sessionId, { timestamp: e.timestamp, taskTitle: p.taskTitle })
+      }
       if (e.type === 'session.ended') {
-        const p = e.payload as { taskTitle: string; totalDurationSeconds: number; endReason: string }
+        const p = e.payload as { sessionId: string; taskTitle: string; totalDurationSeconds: number; endReason: string }
         durationMap.set(p.taskTitle, (durationMap.get(p.taskTitle) || 0) + p.totalDurationSeconds)
-        // 记录最终结束原因（最后一个 session 的 endReason 为准）
-        endReasonMap.set(p.taskTitle, p.endReason)
+
+        // 记录该 session 的时长（按顺序追加）
+        if (!sessionOrderByTask.has(p.taskTitle)) {
+          sessionOrderByTask.set(p.taskTitle, [])
+        }
+        sessionOrderByTask.get(p.taskTitle)!.push({
+          sessionId: p.sessionId,
+          durationSec: p.totalDurationSeconds,
+        })
+
+        // 只要曾经出现过 task_done，就标记
+        if (p.endReason === 'task_done') {
+          everTaskDone.add(p.taskTitle)
+        }
+      }
+      if (e.type === 'session.macro_completed') {
+        const p = e.payload as { taskTitle: string }
+        macroCompleted.add(p.taskTitle)
       }
     }
 
-    // 转为数组，按时长降序排列
+    // 建立 tasks 中已完成的任务名集合
+    const completedTaskTitles = new Set(tasks.filter(t => t.completed).map(t => t.title))
+
+    // ---- 5. 收集卡顿标记，并计算正确的累计偏移 ----
+    const stuckMarksByTask = new Map<string, StuckMark[]>()
+
+    for (const e of events) {
+      if (e.type === 'stuck.triggered') {
+        const p = e.payload as { sessionId: string; microAction: string; elapsedSeconds: number }
+        const sessionInfo = sessionStartMap.get(p.sessionId)
+        if (!sessionInfo) continue
+
+        const taskTitle = sessionInfo.taskTitle
+        const sessionsOfTask = sessionOrderByTask.get(taskTitle) || []
+
+        // 计算该 session 之前所有 session 的累计时长
+        let cumulativeBefore = 0
+        for (const s of sessionsOfTask) {
+          if (s.sessionId === p.sessionId) break
+          cumulativeBefore += s.durationSec
+        }
+
+        // 卡顿在整条任务时间线上的真实偏移 = 前面的累计 + 本 session 内的已过秒数
+        const offsetSeconds = Math.round(cumulativeBefore + p.elapsedSeconds)
+
+        // 找对应的 stuck.reason：同 sessionId，且时间在此事件之后最近的一条
+        let reason = ''
+        for (const re of events) {
+          if (re.type === 'stuck.reason') {
+            const rp = re.payload as { sessionId: string; reason: string }
+            if (rp.sessionId === p.sessionId && re.timestamp >= e.timestamp) {
+              reason = rp.reason
+              break
+            }
+          }
+        }
+
+        const mark: StuckMark = {
+          offsetSeconds,
+          microAction: p.microAction,
+          reason,
+        }
+
+        if (!stuckMarksByTask.has(taskTitle)) {
+          stuckMarksByTask.set(taskTitle, [])
+        }
+        stuckMarksByTask.get(taskTitle)!.push(mark)
+      }
+    }
+
+    // ---- 6. 转为数组，按时长降序排列 ----
     return Array.from(durationMap.entries())
       .map(([title, sec]) => ({
         title,
         durationMin: Math.round(sec / 60),
-        completed: endReasonMap.get(title) === 'task_done',
+        // 三重判断：只要有一个成立就认为已完成（蓝色）
+        completed: everTaskDone.has(title)
+                || macroCompleted.has(title)
+                || completedTaskTitles.has(title),
+        stuckMarks: stuckMarksByTask.get(title) || [],
       }))
       .filter(d => d.durationMin > 0)
       .sort((a, b) => b.durationMin - a.durationMin)
-  }, [events])
+  }, [events, tasks])
 
   // ---- 生产力指标（基于使用时长模型：1 分钟无操作 → 未使用） ----
 
@@ -284,14 +373,43 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
     return { value: hours, unit: '小时' }
   }, [totalUsageMinutes])
 
+  /**
+   * 将 activityData 按小时聚合为精力分布描述。
+   * 例如："9点-10点 活跃、14点-16点 基本空闲"
+   */
+  const activityTimeDistribution = useMemo(() => {
+    if (activityData.length === 0) return ''
+    const hourBuckets: Record<number, { active: number; total: number }> = {}
+    for (const r of activityData) {
+      const h = new Date(r.ts).getHours()
+      if (!hourBuckets[h]) hourBuckets[h] = { active: 0, total: 0 }
+      hourBuckets[h].total++
+      hourBuckets[h].active += getActiveRatio(r)
+    }
+    const hours = Object.keys(hourBuckets).map(Number).sort((a, b) => a - b)
+    if (hours.length === 0) return ''
+
+    const segments: string[] = []
+    for (const h of hours) {
+      const b = hourBuckets[h]
+      const ratio = Math.round((b.active / b.total) * 100)
+      const label = ratio >= 70 ? '活跃' : ratio >= 30 ? '一般' : '基本空闲'
+      segments.push(`${h}:00 ${label}(${ratio}%)`)
+    }
+    return segments.join('、')
+  }, [activityData])
+
   // 构建 AI system prompt
   const systemPrompt = useMemo(() => {
     if (!summary) return ''
     const context = summaryToLLMContext(summary)
     const taskInfo = `\n\n额外信息：\n- 当前任务总数：${tasks.length}\n- 已完成任务：${tasks.filter(t => t.completed).length}\n- 完成率：${completionRate}%\n- 待办任务：${tasks.filter(t => !t.completed).map(t => t.title).join('、') || '无'}`
     const productivityInfo = `\n\n生产力指标：\n- 电脑使用时长：${totalUsageMinutes}分钟\n- 专注时长：${summary.stats.totalFocusMinutes}分钟\n- 生产力比率：${productivityRatio}%（专注/使用）\n- 心流占比：${flowRatio}%（心流/专注）`
-    return buildReflectionSystemPrompt(context + taskInfo + productivityInfo)
-  }, [summary, tasks, completionRate, totalUsageMinutes, productivityRatio, flowRatio])
+    const activityInfo = activityTimeDistribution
+      ? `\n\n精力时间分布（每小时电脑活跃度）：\n${activityTimeDistribution}`
+      : ''
+    return buildReflectionSystemPrompt(context + taskInfo + productivityInfo + activityInfo)
+  }, [summary, tasks, completionRate, totalUsageMinutes, productivityRatio, flowRatio, activityTimeDistribution])
 
   // 反思完成回调
   const handleReflectionComplete = (summaryText: string) => {
@@ -380,15 +498,18 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
   return (
     <div className="h-full flex flex-col bg-white overflow-hidden">
       {/* ====== 顶部标题栏 ====== */}
-      <div className="drag-region flex items-center justify-between px-5 py-3 border-b border-gray-100 flex-shrink-0">
-        <div className="flex items-center gap-2.5 no-drag">
+      <div className="drag-region flex items-center px-5 py-3 border-b border-gray-100 flex-shrink-0">
+        {/* 左侧：图标 + 标题 */}
+        <div className="flex items-center gap-2.5 no-drag w-28 flex-shrink-0">
           <div className="w-7 h-7 rounded-lg bg-amber-400 flex items-center justify-center">
             <span className="text-sm">💡</span>
           </div>
           <h1 className="font-semibold text-gray-800 text-sm">每日反思</h1>
+        </div>
 
-          {/* ---- 日期导航 ---- */}
-          <div className="flex items-center gap-1 ml-1 relative">
+        {/* 中间：日期导航（居中） */}
+        <div className="flex-1 flex justify-center">
+          <div className="flex items-center gap-1 relative no-drag">
             {/* 前一天 */}
             <button
               onClick={goPrev}
@@ -461,15 +582,19 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
             )}
           </div>
         </div>
-        <button
-          onClick={handleClose}
-          className="no-drag w-7 h-7 rounded-md hover:bg-gray-100 flex items-center justify-center text-gray-400 hover:text-gray-600 transition-colors"
-          title="返回主界面"
-        >
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-          </svg>
-        </button>
+
+        {/* 右侧：关闭按钮（与左侧等宽保持居中） */}
+        <div className="w-28 flex-shrink-0 flex justify-end">
+          <button
+            onClick={handleClose}
+            className="no-drag w-7 h-7 rounded-md hover:bg-gray-100 flex items-center justify-center text-gray-400 hover:text-gray-600 transition-colors"
+            title="返回主界面"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
       </div>
 
       {/* ====== 主内容区 ====== */}
@@ -540,16 +665,15 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
             {/* 分隔线 */}
             {taskDurations.length > 0 && <div className="border-t border-gray-100" />}
 
-            {/* 使用时长热力图 */}
-            <div>
+            {/* 使用时长热力图 —— 暂时隐藏 */}
+            {/* <div>
               <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
                 🟩 使用时长热力图
               </h3>
               <ActivityHeatmap data={activityData} />
             </div>
 
-            {/* 分隔线 */}
-            <div className="border-t border-gray-100" />
+            <div className="border-t border-gray-100" /> */}
 
             {/* 任务活动分布（交互式热力图 + 任务时间轴） */}
             <div>

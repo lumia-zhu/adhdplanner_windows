@@ -294,6 +294,21 @@ export interface DailySummary {
     rescueSucceeded: boolean | null   // 绕路后是否完成
   }[]
 
+  /** 中断与恢复记录（session.paused + session.resumed） */
+  interruptions: {
+    taskTitle: string
+    microAction: string
+    pausedAt: string                  // ISO 时间
+    pausedAfterSeconds: number        // 暂停时已执行多久
+    resumedAfterSeconds: number | null // 暂停了多久后恢复（null = 未恢复）
+  }[]
+
+  /** AI 即时反思记录（stuck.reflection_shown）—— 卡住时 AI 给过的提示 */
+  reflectionHints: {
+    difficulty: string                // 用户描述的困难
+    reflection: string               // AI 当时给的反思提示
+  }[]
+
   /** 中断放弃事件 */
   abandonments: {
     microAction: string

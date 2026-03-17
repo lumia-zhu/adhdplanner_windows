@@ -137,6 +137,33 @@ export function buildDailySummary(date: string, events: TrackEvent[]): DailySumm
     }
   })
 
+  // -------- 4b. 中断与恢复记录 --------
+  const sessionPaused = filterByType(events, 'session.paused')
+  const sessionResumed = filterByType(events, 'session.resumed')
+
+  const interruptions: DailySummary['interruptions'] = sessionPaused.map(p => {
+    const resumed = sessionResumed.find(
+      r => r.payload.originalSessionId === p.payload.sessionId &&
+           r.timestamp > p.timestamp
+    )
+    return {
+      taskTitle: p.payload.taskTitle,
+      microAction: p.payload.microAction,
+      pausedAt: toISO(p.timestamp),
+      pausedAfterSeconds: p.payload.elapsedSeconds,
+      resumedAfterSeconds: resumed
+        ? Math.round((resumed.timestamp - p.timestamp) / 1000)
+        : null,
+    }
+  })
+
+  // -------- 4c. AI 即时反思记录 --------
+  const reflectionShown = filterByType(events, 'stuck.reflection_shown')
+  const reflectionHints: DailySummary['reflectionHints'] = reflectionShown.map(e => ({
+    difficulty: e.payload.difficulty,
+    reflection: e.payload.reflection,
+  }))
+
   // -------- 5. 中断放弃 --------
   const abandonments: DailySummary['abandonments'] = abandonExits.map(e => ({
     microAction: e.payload.microAction,
@@ -192,6 +219,8 @@ export function buildDailySummary(date: string, events: TrackEvent[]): DailySumm
     microStepTrail,
     flowEvents,
     stuckEvents,
+    interruptions,
+    reflectionHints,
     abandonments,
     macroTask,
     leftoverTasks,
@@ -240,6 +269,26 @@ export function summaryToLLMContext(summary: DailySummary): string {
     }
   }
 
+  // 中断与恢复
+  if (summary.interruptions.length > 0) {
+    lines.push(`\n### 中断与恢复（共 ${summary.interruptions.length} 次暂停）`)
+    for (const i of summary.interruptions) {
+      const pausedMins = Math.round(i.pausedAfterSeconds / 60)
+      const resumeStr = i.resumedAfterSeconds != null
+        ? `暂停了${Math.round(i.resumedAfterSeconds / 60)}分钟后恢复`
+        : '未恢复'
+      lines.push(`- 做"${i.taskTitle}"的"${i.microAction}"${pausedMins}分钟后暂停 → ${resumeStr}`)
+    }
+  }
+
+  // AI 即时反思提示
+  if (summary.reflectionHints.length > 0) {
+    lines.push(`\n### 卡住时 AI 给过的即时反思`)
+    for (const r of summary.reflectionHints) {
+      lines.push(`- 用户困难：「${r.difficulty}」→ AI提示：「${r.reflection}」`)
+    }
+  }
+
   // 放弃
   if (summary.abandonments.length > 0) {
     lines.push(`\n### 中途放弃`)
@@ -263,6 +312,7 @@ export function summaryToLLMContext(summary: DailySummary): string {
   lines.push(`- 总专注 ${summary.stats.totalFocusMinutes} 分钟`)
   lines.push(`- 心流 ${summary.stats.totalFlowMinutes} 分钟`)
   lines.push(`- 卡顿 ${summary.stats.totalStuckCount} 次`)
+  lines.push(`- 中断暂停 ${summary.interruptions.length} 次`)
   if (summary.stats.averageTimeDeltaSeconds != null) {
     const avg = summary.stats.averageTimeDeltaSeconds
     lines.push(`- 平均时间感知偏差：${avg > 0 ? '高估' : '低估'} ${Math.abs(Math.round(avg / 60))} 分钟`)

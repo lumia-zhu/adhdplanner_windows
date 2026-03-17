@@ -62,6 +62,8 @@ export interface FocusSession {
   allSubtasksDone?: boolean       // true = 所有子任务完成，提供宏观任务完成选项
   // ---- 快速专注模式 ----
   isQuickFocus?: boolean          // true = 一键专注模式，无绑定任务，结束时再填写任务名称
+  // ---- AI 第一步提示（非强制，仅展示） ----
+  firstStepHint?: string          // FocusFlow 中确认的第一步，在任务结构视图中作为提示行显示
 }
 
 /** 快速专注模式下的薄条高度 */
@@ -291,8 +293,9 @@ function FocusDynamicBar({
       let execHeight = BAR_H_THIN
       if (!ENABLE_STEP_BY_STEP) {
         if (isFlowMode) {
-          // 任务结构视图：基础高度 + 每个子任务 36px，上限 300px
-          const baseH = 110  // 顶部任务名 + 底部按钮
+          // 任务结构视图：基础高度 + 每个子任务 36px + 可选第一步提示行，上限 300px
+          const hintH = session.firstStepHint ? 28 : 0
+          const baseH = 110 + hintH  // 顶部任务名 + 提示行 + 底部按钮
           const subsH = taskSubtasks.length * 36
           execHeight = Math.min(baseH + subsH, 300)
         } else {
@@ -476,7 +479,7 @@ function FocusDynamicBar({
         )
       }
 
-      // —— 状态 B：第一步已完成 → 任务结构视图（主任务 + 子任务 checkbox） ——
+      // —— 任务结构视图（主任务 + AI 第一步提示 + 子任务 checkbox） ——
       const taskStructureRef = taskStructurePanelRef
       return (
         <div ref={taskStructureRef}
@@ -493,6 +496,15 @@ function FocusDynamicBar({
             </div>
             <p className="text-[14px] text-gray-800 font-semibold mt-1 leading-snug text-center">{taskTitle}</p>
           </div>
+
+          {/* AI 第一步提示行（非强制，仅展示） */}
+          {session.firstStepHint && (
+            <div className="px-4 pt-0.5 pb-1">
+              <p className="text-[11px] text-gray-400 leading-snug truncate text-center">
+                第一步：{session.firstStepHint}
+              </p>
+            </div>
+          )}
 
           {/* 中间：子任务列表（有子任务时显示） */}
           {taskSubtasks.length > 0 && (

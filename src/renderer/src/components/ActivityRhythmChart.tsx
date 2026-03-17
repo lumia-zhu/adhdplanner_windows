@@ -9,7 +9,7 @@
  * 使用"1 分钟无操作 → 未使用"的判定模型。
  */
 
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import type { ActivityRecord } from './ActivityHeatmap'
 import { getActiveRatio } from './ActivityHeatmap'
 
@@ -89,6 +89,8 @@ export default function ActivityRhythmChart({ data }: Props) {
     return { hour: peak, val: peakVal }
   }, [hourlyUsage])
 
+  const [hovered, setHovered] = useState<number | null>(null)
+
   if (data.length === 0) {
     return (
       <div className="text-center py-6 text-gray-400 text-xs">
@@ -153,31 +155,55 @@ export default function ActivityRhythmChart({ data }: Props) {
         {/* 折线 */}
         <path d={linePath} fill="none" stroke="#10b981" strokeWidth={1.5} strokeLinejoin="round" />
 
-        {/* 数据点 */}
-        {points.map(p => (
-          <circle
-            key={p.hour}
-            cx={p.x} cy={p.y} r={p.val > 0 ? 2.5 : 1.5}
-            fill={p.val > 0 ? '#10b981' : '#d1d5db'}
-            stroke="white" strokeWidth={1}
-          />
-        ))}
-
-        {/* 高峰标记 */}
-        {peakHour.val > 0 && points.find(p => p.hour === peakHour.hour) && (() => {
-          const peakPt = points.find(p => p.hour === peakHour.hour)!
+        {/* 数据点 + 悬停区域 */}
+        {points.map(p => {
+          const isHovered = hovered === p.hour
+          const isPeak = peakHour.val > 0 && p.hour === peakHour.hour
           return (
-            <g>
-              <circle cx={peakPt.x} cy={peakPt.y} r={4} fill="#10b981" stroke="white" strokeWidth={1.5} />
-              <text
-                x={peakPt.x} y={peakPt.y - 7}
-                textAnchor="middle" fontSize={7} fill="#059669" fontWeight="bold"
-              >
-                ★ {Math.round(peakHour.val)}min
-              </text>
+            <g key={p.hour}>
+              {/* 可见数据点 */}
+              <circle
+                cx={p.x} cy={p.y}
+                r={isHovered ? 3.5 : isPeak ? 4 : p.val > 0 ? 2.5 : 1.5}
+                fill={p.val > 0 ? '#10b981' : '#d1d5db'}
+                stroke="white" strokeWidth={isHovered ? 2 : 1}
+                style={{ transition: 'r 0.15s, stroke-width 0.15s' }}
+              />
+              {/* 放大的透明悬停热区 */}
+              <circle
+                cx={p.x} cy={p.y} r={8}
+                fill="transparent"
+                style={{ cursor: 'pointer' }}
+                onMouseEnter={() => setHovered(p.hour)}
+                onMouseLeave={() => setHovered(null)}
+              />
+              {/* 悬停 tooltip */}
+              {isHovered && !isPeak && (
+                <g>
+                  <rect
+                    x={p.x - 24} y={p.y - 20} width={48} height={14}
+                    rx={3} fill="#1f2937" opacity={0.85}
+                  />
+                  <text
+                    x={p.x} y={p.y - 10.5}
+                    textAnchor="middle" fontSize={7} fill="white" fontWeight="500"
+                  >
+                    {p.hour}:00 · {Math.round(p.val)}min
+                  </text>
+                </g>
+              )}
+              {/* 高峰标记（始终显示） */}
+              {isPeak && (
+                <text
+                  x={p.x} y={p.y - 7}
+                  textAnchor="middle" fontSize={7} fill="#059669" fontWeight="bold"
+                >
+                  {isHovered ? `${p.hour}:00 · ${Math.round(p.val)}min` : `★ ${Math.round(peakHour.val)}min`}
+                </text>
+              )}
             </g>
           )
-        })()}
+        })}
       </svg>
 
       {/* y 轴说明 */}
