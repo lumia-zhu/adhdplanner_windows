@@ -19,6 +19,8 @@ interface StuckMark {
   microAction: string
   /** 卡顿原因（用户填写 / AI 预测 / 常见标签） */
   reason: string
+  /** 卡顿是否已解决（后续有继续执行或选择了绕路方案） */
+  resolved: boolean
 }
 
 interface TaskDurationItem {
@@ -67,29 +69,32 @@ export default function TaskDurationChart({ data }: TaskDurationChartProps) {
                 {item.title}
               </span>
 
-              {/* 中间：条形 + 卡顿标记点 */}
-              <div className="flex-1 h-[22px] rounded-lg overflow-visible relative">
+              {/* 中间：条形 + 卡顿标记段（与条形融为一体） */}
+              <div className="flex-1 h-[22px] rounded-lg overflow-hidden relative">
                 {/* 彩色条形 */}
                 <div
-                  className={`h-full rounded-lg transition-all duration-700 ease-out relative ${
+                  className={`h-full rounded-lg transition-all duration-700 ease-out relative overflow-hidden ${
                     item.completed
-                      ? 'bg-blue-400/80'        // 已完成：蓝色
-                      : 'bg-amber-400/70'        // 进行中：琥珀色
+                      ? 'bg-blue-400/80'
+                      : 'bg-amber-400/70'
                   }`}
                   style={{ width: `${barWidthPct}%` }}
                 >
-                  {/* 卡顿标记点：红色小圆点，位于条上对应的时间位置 */}
+                  {/* 卡顿段：和条形一样高，像条形中间的一小截变了色 */}
                   {hasStuck && item.stuckMarks!.map((mark, mi) => {
-                    // 标记位置 = (卡顿发生时间 / 总时间) * 100%
                     const pct = totalSec > 0
-                      ? Math.min(Math.max((mark.offsetSeconds / totalSec) * 100, 2), 98)
+                      ? Math.min(Math.max((mark.offsetSeconds / totalSec) * 100, 1), 97)
                       : 50
                     return (
                       <span
                         key={mi}
-                        className="absolute top-1/2 -translate-y-1/2 w-2 h-2 rounded-full bg-red-500 border border-white shadow-sm z-10"
-                        style={{ left: `${pct}%`, transform: `translate(-50%, -50%)` }}
-                        title={`卡在：${mark.microAction}\n原因：${mark.reason}`}
+                        className={`absolute top-0 h-full w-[8px] z-10 ${
+                          mark.resolved
+                            ? 'bg-red-400/90'
+                            : 'bg-gray-400/90'
+                        }`}
+                        style={{ left: `${pct}%`, transform: 'translateX(-50%)' }}
+                        title={`卡在：${mark.microAction}\n原因：${mark.reason}\n状态：${mark.resolved ? '已解决' : '未解决'}`}
                       />
                     )
                   })}
@@ -115,10 +120,14 @@ export default function TaskDurationChart({ data }: TaskDurationChartProps) {
                 {item.stuckMarks!.map((mark, mi) => (
                   <div
                     key={mi}
-                    className="flex items-start gap-2 bg-red-50/60 rounded-md px-2.5 py-1.5 text-[11px]"
+                    className={`flex items-start gap-2 rounded-md px-2.5 py-1.5 text-[11px] ${
+                      mark.resolved ? 'bg-red-50/60' : 'bg-gray-50/80'
+                    }`}
                   >
-                    {/* 时间标签 */}
-                    <span className="text-red-400 font-mono flex-shrink-0 mt-px">
+                    {/* 时间标签 + 解决状态 */}
+                    <span className={`font-mono flex-shrink-0 mt-px ${
+                      mark.resolved ? 'text-red-400' : 'text-gray-400'
+                    }`}>
                       {formatOffset(mark.offsetSeconds)}
                     </span>
                     {/* 详情 */}
@@ -151,9 +160,15 @@ export default function TaskDurationChart({ data }: TaskDurationChartProps) {
           </>
         )}
         {data.some(d => d.stuckMarks && d.stuckMarks.length > 0) && (
-          <span className="flex items-center gap-1.5 text-[10px] text-gray-400">
-            <span className="w-2 h-2 rounded-full bg-red-500" /> 卡顿点（点击条形查看）
-          </span>
+          <>
+            <span className="flex items-center gap-1.5 text-[10px] text-gray-400">
+              <span className="w-[8px] h-3 rounded-[2px] bg-red-400/90" /> 已解决卡顿
+            </span>
+            <span className="flex items-center gap-1.5 text-[10px] text-gray-400">
+              <span className="w-[8px] h-3 rounded-[2px] bg-gray-400/90" /> 未解决卡顿
+            </span>
+            <span className="text-[10px] text-gray-300">（点击条形查看）</span>
+          </>
         )}
       </div>
     </div>

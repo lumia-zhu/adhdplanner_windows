@@ -282,6 +282,21 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
     // ---- 5. 收集卡顿标记，并计算正确的累计偏移 ----
     const stuckMarksByTask = new Map<string, StuckMark[]>()
 
+    // 预构建"恢复事件"索引：同 sessionId 下在 stuck.triggered 之后出现的恢复性事件
+    // 有这些事件说明卡顿已解决：stuck.pivot_chosen / exec.micro_started / exec.micro_completed / exec.flow_entered
+    const resolvedSessionSet = new Set<string>()
+    for (const e of events) {
+      if (
+        e.type === 'stuck.pivot_chosen' ||
+        e.type === 'exec.micro_started' ||
+        e.type === 'exec.micro_completed' ||
+        e.type === 'exec.flow_entered'
+      ) {
+        const p = e.payload as { sessionId: string }
+        resolvedSessionSet.add(p.sessionId)
+      }
+    }
+
     for (const e of events) {
       if (e.type === 'stuck.triggered') {
         const p = e.payload as { sessionId: string; microAction: string; elapsedSeconds: number }
@@ -313,10 +328,28 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
           }
         }
 
+        // 判断卡顿是否已解决：同 session 中在卡顿之后是否有恢复性事件
+        let resolved = false
+        for (const re of events) {
+          if (re.timestamp <= e.timestamp) continue
+          const rp = re.payload as { sessionId?: string }
+          if (rp.sessionId !== p.sessionId) continue
+          if (
+            re.type === 'stuck.pivot_chosen' ||
+            re.type === 'exec.micro_started' ||
+            re.type === 'exec.micro_completed' ||
+            re.type === 'exec.flow_entered'
+          ) {
+            resolved = true
+            break
+          }
+        }
+
         const mark: StuckMark = {
           offsetSeconds,
           microAction: p.microAction,
           reason,
+          resolved,
         }
 
         if (!stuckMarksByTask.has(taskTitle)) {
