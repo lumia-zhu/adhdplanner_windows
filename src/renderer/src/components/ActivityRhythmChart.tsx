@@ -22,7 +22,7 @@ const W = 400      // SVG viewBox 宽度
 const H = 120      // SVG viewBox 高度
 const PAD_L = 32   // 左侧留白（y 轴标签）
 const PAD_R = 8    // 右侧留白
-const PAD_T = 8    // 顶部留白
+const PAD_T = 18   // 顶部留白（需容纳高峰标记和 tooltip）
 const PAD_B = 20   // 底部留白（x 轴标签）
 
 const CHART_W = W - PAD_L - PAD_R
@@ -177,30 +177,39 @@ export default function ActivityRhythmChart({ data }: Props) {
                 onMouseEnter={() => setHovered(p.hour)}
                 onMouseLeave={() => setHovered(null)}
               />
-              {/* 悬停 tooltip */}
-              {isHovered && !isPeak && (
-                <g>
-                  <rect
-                    x={p.x - 24} y={p.y - 20} width={48} height={14}
-                    rx={3} fill="#1f2937" opacity={0.85}
-                  />
+              {/* 悬停 tooltip —— 靠近顶部时显示在点下方 */}
+              {isHovered && !isPeak && (() => {
+                const showBelow = p.y - PAD_T < 20
+                const ty = showBelow ? p.y + 10 : p.y - 20
+                const textY = showBelow ? p.y + 19.5 : p.y - 10.5
+                return (
+                  <g>
+                    <rect
+                      x={p.x - 24} y={ty} width={48} height={14}
+                      rx={3} fill="#1f2937" opacity={0.85}
+                    />
+                    <text
+                      x={p.x} y={textY}
+                      textAnchor="middle" fontSize={7} fill="white" fontWeight="500"
+                    >
+                      {p.hour}:00 · {Math.round(p.val)}min
+                    </text>
+                  </g>
+                )
+              })()}
+              {/* 高峰标记 —— 靠近顶部时显示在点下方 */}
+              {isPeak && (() => {
+                const showBelow = p.y - PAD_T < 14
+                const labelY = showBelow ? p.y + 14 : p.y - 7
+                return (
                   <text
-                    x={p.x} y={p.y - 10.5}
-                    textAnchor="middle" fontSize={7} fill="white" fontWeight="500"
+                    x={p.x} y={labelY}
+                    textAnchor="middle" fontSize={7} fill="#059669" fontWeight="bold"
                   >
-                    {p.hour}:00 · {Math.round(p.val)}min
+                    {isHovered ? `${p.hour}:00 · ${Math.round(p.val)}min` : `★ ${Math.round(peakHour.val)}min`}
                   </text>
-                </g>
-              )}
-              {/* 高峰标记（始终显示） */}
-              {isPeak && (
-                <text
-                  x={p.x} y={p.y - 7}
-                  textAnchor="middle" fontSize={7} fill="#059669" fontWeight="bold"
-                >
-                  {isHovered ? `${p.hour}:00 · ${Math.round(p.val)}min` : `★ ${Math.round(peakHour.val)}min`}
-                </text>
-              )}
+                )
+              })()}
             </g>
           )
         })}

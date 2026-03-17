@@ -729,25 +729,18 @@ function TaskBlock({
           <span className="text-[11px] text-gray-400 italic leading-tight">{task.note}</span>
         </div>
       )}
-      {/* 暂停态指示器（仅今天显示恢复按钮） */}
+      {/* 暂停态：点击恢复 */}
       {task.pausedSession && !task.completed && isToday && (
-        <div className="ml-[52px] mb-1.5 flex items-center gap-2">
-          <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-blue-50/80 border border-blue-100">
-            <span className="text-[11px] text-blue-400">⏸</span>
-            <span className="text-[11px] text-blue-500">
-              已暂停 · {task.pausedSession.microHistory.length} 步
-              {task.pausedSession.currentSubtaskTitle && (
-                <> · {task.pausedSession.currentSubtaskTitle}</>
-              )}
-            </span>
-            <button
-              onClick={() => onResumePaused(task.id)}
-              className="ml-1 px-2 py-0.5 rounded-md bg-blue-500 text-white text-[10px] font-semibold
-                         hover:bg-blue-600 active:scale-95 transition-all"
-            >
-              ▶ 继续
-            </button>
-          </div>
+        <div className="ml-[52px] mb-1.5">
+          <button
+            onClick={() => onResumePaused(task.id)}
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg
+                       bg-blue-50/80 border border-blue-100
+                       hover:bg-blue-100 active:scale-95 transition-all cursor-pointer"
+          >
+            <span className="text-[11px]">▶</span>
+            <span className="text-[11px] text-blue-500 font-medium">已暂停，点击继续</span>
+          </button>
         </div>
       )}
       {/* 子任务区域 */}

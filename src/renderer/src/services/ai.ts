@@ -107,7 +107,10 @@ async function callLLM(
 
     if (!res.ok) {
       console.warn('[AI] HTTP', res.status, res.body)
-      return { content: '', error: `接口错误 ${res.status}` }
+      const detail = res.status === 0
+        ? `网络异常：${(res.body || '无法连接到 AI 服务').slice(0, 80)}`
+        : `接口错误 ${res.status}：${(res.body || '').slice(0, 80)}`
+      return { content: '', error: detail }
     }
 
     const content = extractContent(res.body, useResponses)
@@ -116,7 +119,7 @@ async function callLLM(
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
     console.warn('[AI] 请求失败:', msg)
-    return { content: '', error: `请求异常：${msg.slice(0, 60)}` }
+    return { content: '', error: `请求异常：${msg.slice(0, 80)}` }
   }
 }
 
@@ -531,14 +534,17 @@ export async function chatReflection(
 
     if (!res.ok) {
       console.warn('[AI Reflection] HTTP', res.status, res.body)
-      return { content: '', error: `接口错误 ${res.status}` }
+      const detail = res.status === 0
+        ? `网络异常：${(res.body || '无法连接到 AI 服务').slice(0, 80)}`
+        : `接口错误 ${res.status}：${(res.body || '').slice(0, 80)}`
+      return { content: '', error: detail }
     }
 
     const content = extractContent(res.body, useResponses)
     return { content }
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
-    return { content: '', error: `请求异常：${msg.slice(0, 60)}` }
+    return { content: '', error: `请求异常：${msg.slice(0, 80)}` }
   }
 }
 
@@ -604,12 +610,17 @@ export function buildReflectionSystemPrompt(summaryContext: string): string {
 
 ## 规则
 - 第一条消息直接开始聊，不要自我介绍
-- 每个问题只问一件事，不要一次塞两三个问题
+- 【严格】每条消息只聊一个任务、一个时刻。绝对不要把多个任务名列在一起问。如果有多个亮点，只挑最突出的那一个
 - 必须引用具体的任务名、时长、时间段等数字，不泛泛而谈
 - 用户回答得短没关系，根据他的回答自然追问，不要机械进入下一步
 - 如果数据中有"中断与恢复"记录，在第 2 步优先使用——中断频率是 ADHD 用户最值得觉察的模式之一
 - 如果数据中有"AI 即时反思"记录，可以引用当时的场景帮用户回忆
 - 如果有"精力时间分布"数据，帮用户发现自己的高效和低谷时段
+
+## 数据解读注意
+- 耗时 0 分钟或 1 分钟的任务，通常是用户直接勾选完成的（没有实际进入专注计时），不要说"0分钟就完成了"，这不是效率高，只是没走计时流程。对这类任务不要当作亮点来夸
+- 只有通过专注会话（session）且耗时 ≥ 2 分钟的记录，才值得作为反思话题引用
+- 如果今天数据很少（比如只有直接勾选、没有 session 记录），聊天语气更轻松，不要硬凑问题。可以简单问问今天整体状态怎么样
 
 ========== 今日数据 ==========
 ${summaryContext}

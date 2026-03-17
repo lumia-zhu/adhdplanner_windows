@@ -247,10 +247,12 @@ export function summaryToLLMContext(summary: DailySummary): string {
   lines.push(`\n### 执行轨迹（共 ${summary.stats.totalMicroSteps} 步，完成 ${summary.stats.completedMicroSteps} 步）`)
   for (const step of summary.microStepTrail) {
     const mins = Math.round(step.actualSeconds / 60)
+    const quickTag = step.status === 'completed' && mins < 2 ? '⚡直接勾选' : ''
     const deltaStr = step.timeDeltaSeconds != null
       ? `（偏差：${step.timeDeltaSeconds > 0 ? '+' : ''}${Math.round(step.timeDeltaSeconds / 60)}分钟）`
       : ''
-    lines.push(`- [${step.status === 'completed' ? '✅' : step.status === 'stuck' ? '🆘' : '❌'}] ${step.microAction}（耗时${mins}分钟${deltaStr}）`)
+    const statusIcon = step.status === 'completed' ? '✅' : step.status === 'stuck' ? '🆘' : '❌'
+    lines.push(`- [${statusIcon}${quickTag ? ' ' + quickTag : ''}] ${step.microAction}（耗时${mins}分钟${deltaStr}）`)
   }
 
   // 心流
