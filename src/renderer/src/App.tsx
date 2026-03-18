@@ -409,19 +409,19 @@ export default function App() {
     const subtasks = task.subtasks ?? []
     const activeSubtask = subtasks.find(s => !s.completed) ?? null
 
-    // 创建 FocusSession —— 直接进入主任务视图（flow mode），第一步作为提示展示
+    // 创建 FocusSession —— 先执行用户确认的第一步，完成后再进入主任务视图
     const now = Date.now()
     const newSession: FocusSession = {
       sessionId: sid,
       taskId: task.id,
       taskTitle: task.title,
-      currentMicroTask: task.title,   // flow 模式下显示主任务名
+      currentMicroTask: microTask,    // 先执行确认的第一步
       startTime: now,
       sessionStartTime: now,
-      isFlowMode: true,               // ★ 直接进入任务结构视图，跳过第一步确认
+      isFlowMode: false,              // ★ 先进入第一步执行态，完成后再进入主任务视图
       phase: 'executing',
       microHistory: [],
-      firstStepHint: microTask,       // ★ AI 第一步保存为提示，不作为强制执行步骤
+      firstStepHint: microTask,       // 保留首步提示，便于暂停恢复时保留上下文
       // 子任务信息
       currentSubtaskId: activeSubtask?.id,
       currentSubtaskTitle: activeSubtask?.title,
@@ -438,7 +438,7 @@ export default function App() {
       })
     }
 
-    // 📊 埋点：破冰第一步 + 会话开始
+    // 📊 埋点：破冰第一步 + 会话开始 + 第一步真正进入执行
     tracker.track('plan.first_micro', {
       taskId: task.id,
       taskTitle: task.title,
@@ -449,6 +449,12 @@ export default function App() {
       sessionId: sid,
       taskId: task.id,
       taskTitle: task.title,
+    })
+    tracker.track('exec.micro_started', {
+      sessionId: sid,
+      taskId: task.id,
+      taskTitle: task.title,
+      microAction: microTask,
     })
 
     // 进入小组件模式
@@ -470,9 +476,7 @@ export default function App() {
       actualSeconds: elapsed,
     })
 
-    // ★ 简化模式下此分支已不再触发：session 创建时直接 isFlowMode=true，
-    //   跳过了第一步执行状态，用户不会点到"完成这一步"。
-    //   保留代码以备 ENABLE_STEP_BY_STEP 切回 true 时恢复原流程。
+    // 简化模式：完成第一步后切换到主任务视图，继续后续执行。
     if (!ENABLE_STEP_BY_STEP) {
       setSession(s => s ? {
         ...s,
@@ -481,6 +485,7 @@ export default function App() {
         currentMicroTask: s.taskTitle,
         microHistory: [...s.microHistory, s.currentMicroTask],
         startTime: Date.now(),
+        firstStepHint: undefined,
       } : s)
       return
     }
@@ -519,8 +524,8 @@ export default function App() {
   const handleStuck = () => {
     if (!session) return
 
-    // 📊 埋点：卡住事件
-    const elapsed = Math.floor((Date.now() - session.startTime) / 1000)
+    // 📊 埋点：卡住事件（用 sessionStartTime 而非 startTime，与 session.ended 的计算基准一致）
+    const elapsed = Math.floor((Date.now() - session.sessionStartTime) / 1000)
     tracker.track('stuck.triggered', {
       sessionId: sessionIdRef.current,
       taskId: session.taskId,
@@ -758,6 +763,8 @@ export default function App() {
       sessionId: session.sessionId,
       currentMicroTask: session.currentMicroTask,
       microHistory: [...session.microHistory],
+      isFlowMode: session.isFlowMode,
+      firstStepHint: session.firstStepHint,
       currentSubtaskId: session.currentSubtaskId,
       currentSubtaskTitle: session.currentSubtaskTitle,
       pausedAt: Date.now(),
@@ -809,18 +816,19 @@ export default function App() {
     const sid = `${snap.sessionId}-r${Date.now().toString(36).slice(-4)}`
     sessionIdRef.current = sid
 
-    // 重建 FocusSession —— 直接进入任务结构视图
+    // 重建 FocusSession —— 恢复到暂停前所在阶段（第一步执行态 / 主任务视图）
     const now = Date.now()
     const restored: FocusSession = {
       sessionId: sid,
       taskId: task.id,
       taskTitle: task.title,
-      currentMicroTask: task.title,   // flow 模式下显示主任务名
+      currentMicroTask: snap.currentMicroTask,
       startTime: now,
       sessionStartTime: now,
-      isFlowMode: true,               // ★ 恢复后直接进入任务结构视图
+      isFlowMode: snap.isFlowMode ?? true,
       phase: 'executing',
       microHistory: [...snap.microHistory],
+      firstStepHint: snap.firstStepHint,
       currentSubtaskId: snap.currentSubtaskId,
       currentSubtaskTitle: snap.currentSubtaskTitle,
     }

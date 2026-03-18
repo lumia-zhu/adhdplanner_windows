@@ -14,7 +14,7 @@ interface TaskItemProps {
   onFocus: (id: string) => void                           // 专注模式
 }
 
-export default function TaskItem({ task, onToggle, onToggleSubtask, onEdit, onDelete, onFocus }: TaskItemProps) {
+export default function TaskItem({ task, onToggleSubtask, onEdit, onDelete, onFocus }: TaskItemProps) {
   const [isEditing, setIsEditing] = useState(false)
   const [editTitle, setEditTitle] = useState(task.title)
   const [editNote, setEditNote] = useState(task.note)
@@ -266,23 +266,6 @@ export default function TaskItem({ task, onToggle, onToggleSubtask, onEdit, onDe
 
         {/* 主内容区 */}
         <div className="flex flex-1 items-start gap-2 py-2.5 pr-2 min-w-0">
-          {/* 完成勾选按钮 */}
-          <button
-            onClick={(e) => {
-              onToggle(task.id)
-              if (!task.completed) triggerEffect(e.currentTarget)
-            }}
-            className={`mt-0.5 w-5 h-5 rounded-full border-2 flex-shrink-0 flex items-center justify-center transition-all ${
-              task.completed ? 'bg-green-500 border-green-500' : 'border-gray-300 hover:border-indigo-400'
-            }`}
-          >
-            {task.completed && (
-              <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-              </svg>
-            )}
-          </button>
-
           {/* 标题 + 备注 */}
           <div className="flex-1 min-w-0">
             {editingTitle ? (

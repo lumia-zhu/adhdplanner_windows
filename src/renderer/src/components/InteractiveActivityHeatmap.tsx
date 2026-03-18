@@ -8,7 +8,7 @@
  *   - 色块宽度按实际活跃比例显示
  */
 
-import { useMemo, useState, useCallback, useRef } from 'react'
+import { useMemo, useState } from 'react'
 import type { ActivityRecord } from './ActivityHeatmap'
 import { getActiveRatio } from './ActivityHeatmap'
 import type { TrackEvent } from '../services/tracker'
@@ -33,13 +33,6 @@ const LEVEL_COLORS = [
 ]
 const LEVEL_LABELS = ['未使用', '< 20 分钟', '20~40 分钟', '> 40 分钟']
 const TIME_TICKS = [0, 3, 6, 9, 12, 15, 18, 21, 24]
-
-// ===================== 类型 =====================
-
-interface Selection {
-  start: number
-  end: number
-}
 
 interface Props {
   data: ActivityRecord[]
@@ -119,13 +112,6 @@ function buildTaskHourRatioMap(events: TrackEvent[]): Map<string, Map<number, nu
   return result
 }
 
-function isInSelection(hour: number, sel: Selection | null): boolean {
-  if (!sel) return false
-  const lo = Math.min(sel.start, sel.end)
-  const hi = Math.max(sel.start, sel.end)
-  return hour >= lo && hour <= hi
-}
-
 function fmtHour(h: number): string {
   return `${String(h).padStart(2, '0')}:00`
 }
@@ -136,31 +122,9 @@ function ratioToMinuteStr(ratio: number): string {
   return `${min} 分钟`
 }
 
-/**
- * 精确计算选区覆盖框的 left / width
- * flex gap-[2px] 布局中，24 个格子之间有 23 个 2px 间隙（共 46px）
- *   cellWidth = (100% - 46px) / 24
- *   cell[i] left = i * cellWidth + i * 2px
- *   span(lo→hi) width = count * cellWidth + (count-1) * 2px
- * padding: 在左右各多包一小段，让边框视觉上刚好贴住格子外缘
- */
-function selOverlayStyle(lo: number, hi: number, pad = 0) {
-  const GAP = 2          // gap-[2px]
-  const TOTAL_GAP = (TOTAL_BLOCKS - 1) * GAP  // 46px
-  const count = hi - lo + 1
-  return {
-    left:  `calc(${lo} * (100% - ${TOTAL_GAP}px) / ${TOTAL_BLOCKS} + ${lo * GAP - pad}px)`,
-    width: `calc(${count} * (100% - ${TOTAL_GAP}px) / ${TOTAL_BLOCKS} + ${(count - 1) * GAP + pad * 2}px)`,
-  }
-}
-
 // ===================== 主组件 =====================
 
 export default function InteractiveActivityHeatmap({ data, events }: Props) {
-  const [selection, setSelection] = useState<Selection | null>(null)
-  const [isDragging, setIsDragging] = useState(false)
-  const dragStartRef = useRef<number | null>(null)
-
   const [tooltip, setTooltip] = useState<{
     x: number; y: number; label: string; usageMinutes: number; level: number
   } | null>(null)
@@ -204,57 +168,7 @@ export default function InteractiveActivityHeatmap({ data, events }: Props) {
       .sort((a, b) => b.totalMinutes - a.totalMinutes)
   }, [taskHourRatioMap])
 
-  const filteredTasks = useMemo(() => {
-    if (!selection) return taskEntries
-    const lo = Math.min(selection.start, selection.end)
-    const hi = Math.max(selection.start, selection.end)
-    return taskEntries.filter(t => {
-      for (let h = lo; h <= hi; h++) {
-        if (t.hourMap.has(h)) return true
-      }
-      return false
-    })
-  }, [taskEntries, selection])
-
-  // ---- 选区交互 ----
-  const handleBlockMouseDown = useCallback((hourIdx: number) => {
-    if (selection && isInSelection(hourIdx, selection)) {
-      setSelection(null)
-      return
-    }
-    if (selection) {
-      setSelection({
-        start: Math.min(selection.start, hourIdx),
-        end: Math.max(selection.end, hourIdx),
-      })
-      return
-    }
-    dragStartRef.current = hourIdx
-    setIsDragging(true)
-    setSelection({ start: hourIdx, end: hourIdx })
-  }, [selection])
-
-  const handleBlockMouseEnter = useCallback((hourIdx: number) => {
-    if (isDragging && dragStartRef.current !== null) {
-      setSelection({ start: dragStartRef.current, end: hourIdx })
-    }
-  }, [isDragging])
-
-  const handleMouseUp = useCallback(() => {
-    setIsDragging(false)
-    dragStartRef.current = null
-  }, [])
-
-  const clearSelection = useCallback(() => {
-    setSelection(null)
-  }, [])
-
-  const selectionLabel = useMemo(() => {
-    if (!selection) return null
-    const lo = Math.min(selection.start, selection.end)
-    const hi = Math.max(selection.start, selection.end)
-    return `${fmtHour(lo)} – ${fmtHour(hi + 1 === 24 ? 0 : hi + 1)}`
-  }, [selection])
+  const filteredTasks = taskEntries
 
   if (data.length === 0) {
     return (
@@ -264,11 +178,8 @@ export default function InteractiveActivityHeatmap({ data, events }: Props) {
     )
   }
 
-  const selLo = selection ? Math.min(selection.start, selection.end) : -1
-  const selHi = selection ? Math.max(selection.start, selection.end) : -1
-
   return (
-    <div className="relative select-none" onMouseUp={handleMouseUp} onMouseLeave={handleMouseUp}>
+    <div className="relative select-none">
 
       {/* ======== 图例 ======== */}
       <div className="flex items-center gap-3 mb-2.5 text-[10px] text-gray-400">
@@ -281,48 +192,29 @@ export default function InteractiveActivityHeatmap({ data, events }: Props) {
         ))}
       </div>
 
-      {/* ======== 热力条：全宽 24 格 + 整体选区框 ======== */}
+      {/* ======== 热力条：全宽 24 格（仅展示，不再支持时间选区筛选） ======== */}
       <div className="relative flex gap-[2px] w-full">
         {blocks.map((block) => {
           const level = ratioToLevel(block.avgUsageRatio)
-          const inSel = isInSelection(block.index, selection)
-
-          // 有选区时，未选中的格子变淡
-          const dimmed = selection && !inSel
 
           return (
             <div
               key={block.index}
-              className={`h-7 flex-1 rounded-[3px] cursor-pointer transition-all
-                          ${!isDragging ? 'hover:scale-y-110' : ''}
-                          ${LEVEL_COLORS[level]}
-                          ${dimmed ? 'opacity-30' : ''}`}
-              onMouseDown={() => handleBlockMouseDown(block.index)}
+              className={`h-7 flex-1 rounded-[3px] transition-all hover:scale-y-110 ${LEVEL_COLORS[level]}`}
               onMouseEnter={(e) => {
-                handleBlockMouseEnter(block.index)
-                if (!isDragging) {
-                  const rect = e.currentTarget.getBoundingClientRect()
-                  setTooltip({
-                    x: rect.left + rect.width / 2,
-                    y: rect.top,
-                    label: block.label,
-                    usageMinutes: block.usageMinutes,
-                    level,
-                  })
-                }
+                const rect = e.currentTarget.getBoundingClientRect()
+                setTooltip({
+                  x: rect.left + rect.width / 2,
+                  y: rect.top,
+                  label: block.label,
+                  usageMinutes: block.usageMinutes,
+                  level,
+                })
               }}
-              onMouseLeave={() => { if (!isDragging) setTooltip(null) }}
+              onMouseLeave={() => setTooltip(null)}
             />
           )
         })}
-
-        {/* 整体选区高亮框：精确对齐 flex gap 布局 */}
-        {selection && (
-          <div
-            className="absolute top-0 h-full border-2 border-emerald-500/70 rounded-lg pointer-events-none"
-            style={selOverlayStyle(selLo, selHi, 3)}
-          />
-        )}
       </div>
 
       {/* ======== 底部时间刻度 ======== */}
@@ -348,18 +240,6 @@ export default function InteractiveActivityHeatmap({ data, events }: Props) {
       {filteredTasks.length > 0 && (
         <div className="mt-3 space-y-2">
           {filteredTasks.map((task) => {
-            // 计算选区内的时长
-            let selectedMinutes = 0
-            if (selection) {
-              const lo = Math.min(selection.start, selection.end)
-              const hi = Math.max(selection.start, selection.end)
-              for (let h = lo; h <= hi; h++) {
-                const r = task.hourMap.get(h) || 0
-                selectedMinutes += r * 60
-              }
-              selectedMinutes = Math.round(selectedMinutes)
-            }
-
             return (
               <div key={task.title}>
                 {/* 第一行：任务名 + 时长 */}
@@ -368,10 +248,7 @@ export default function InteractiveActivityHeatmap({ data, events }: Props) {
                     {task.title}
                   </span>
                   <span className="text-[10px] text-gray-400 tabular-nums flex-shrink-0 ml-2">
-                    {selection
-                      ? `${selectedMinutes} 分钟（选区内）/ 共 ${task.totalMinutes} 分钟`
-                      : `共 ${task.totalMinutes} 分钟`
-                    }
+                    {`共 ${task.totalMinutes} 分钟`}
                   </span>
                 </div>
                 {/* 第二行：24 格时间条，全宽，和热力条对齐 */}
@@ -379,29 +256,16 @@ export default function InteractiveActivityHeatmap({ data, events }: Props) {
                   {Array.from({ length: TOTAL_BLOCKS }, (_, h) => {
                     const ratio = task.hourMap.get(h) || 0
                     const hasActivity = ratio > 0
-                    const inSel = isInSelection(h, selection)
-
-                    let barColor: string
-                    if (!hasActivity) {
-                      barColor = ''
-                    } else if (!selection) {
-                      barColor = 'bg-emerald-400'
-                    } else if (inSel) {
-                      barColor = 'bg-emerald-400'
-                    } else {
-                      barColor = 'bg-gray-200'
-                    }
 
                     return (
                       <div
                         key={h}
-                        className={`h-[14px] flex-1 rounded-[2px] overflow-hidden relative group
-                                    ${selection && inSel ? 'bg-emerald-50' : 'bg-gray-50'}`}
+                        className="h-[14px] flex-1 rounded-[2px] overflow-hidden relative group bg-gray-50"
                         title={hasActivity ? `${fmtHour(h)}–${fmtHour(h + 1 === 24 ? 0 : h + 1)}：${ratioToMinuteStr(ratio)}` : ''}
                       >
                         {hasActivity && (
                           <div
-                            className={`h-full rounded-[2px] transition-all duration-300 ${barColor}`}
+                            className="h-full rounded-[2px] transition-all duration-300 bg-emerald-400"
                             style={{
                               width: `${Math.max(ratio * 100, 10)}%`,  // 最小 10% 保证可见
                             }}
@@ -410,31 +274,10 @@ export default function InteractiveActivityHeatmap({ data, events }: Props) {
                       </div>
                     )
                   })}
-
-                  {/* 选区范围高亮遮罩：精确对齐 flex gap 布局 */}
-                  {selection && (
-                    <div
-                      className="absolute top-0 h-full rounded-[3px] bg-emerald-400/10 border border-emerald-300/40 pointer-events-none"
-                      style={selOverlayStyle(selLo, selHi, 1)}
-                    />
-                  )}
                 </div>
               </div>
             )
           })}
-        </div>
-      )}
-
-      {/* ======== 选区提示（放在所有任务下方） ======== */}
-      {selectionLabel && (
-        <div className="flex items-center gap-2 mt-3 text-xs">
-          <span className="text-emerald-600 font-medium">已选择: {selectionLabel}</span>
-          <button
-            className="text-gray-400 hover:text-gray-600 underline underline-offset-2 text-[11px]"
-            onClick={clearSelection}
-          >
-            清除
-          </button>
         </div>
       )}
 

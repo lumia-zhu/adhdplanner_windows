@@ -34,6 +34,8 @@ export interface PausedSession {
   sessionId: string
   currentMicroTask: string
   microHistory: string[]       // 已完成的微步骤列表
+  isFlowMode?: boolean         // 暂停时是否已进入主任务视图（兼容旧快照可选）
+  firstStepHint?: string       // 首步提示，用于恢复后保留上下文
   currentSubtaskId?: string
   currentSubtaskTitle?: string
   pausedAt: number             // 暂停时间戳（ms）

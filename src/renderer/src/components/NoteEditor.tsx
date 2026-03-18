@@ -559,15 +559,10 @@ export default function NoteEditor({
             {/* ===== 底部新行输入（仅今天显示）===== */}
             {isToday && (
               <div className={`mt-4 transition-all ${
-                newLineIndented ? 'ml-[54px]' : 'ml-[26px]'
+                // 与上方任务文本列对齐：普通任务约 52px，子任务约 74px
+                newLineIndented ? 'ml-[74px]' : 'ml-[52px]'
               }`}>
-                <div className="flex items-center gap-2 py-[5px] px-1">
-                  {/* 虚线空心圆（缩进模式时变小，表示子任务） */}
-                  <div className={`border-dashed flex-shrink-0 transition-all ${
-                    newLineIndented
-                      ? 'w-[14px] h-[14px] rounded-[3px] border-[1.5px] border-gray-300/60'
-                      : 'w-[18px] h-[18px] rounded-full border-2 border-gray-200'
-                  }`} />
+                <div className="flex items-center py-[5px]">
                   <input
                     ref={newLineRef}
                     type="text"
@@ -822,33 +817,28 @@ function LineRow({
         </div>
       ) : null}
 
-      {/* ---- 勾选按钮 ---- */}
-      <button
-        onClick={(e) => {
-          onToggle(line)
-          if (!completed) triggerEffect(e.currentTarget)
-        }}
-        className={`flex-shrink-0 flex items-center justify-center transition-all duration-200 ${
-          isSub
-            ? `w-[14px] h-[14px] rounded-[3px] border-[1.5px] ${
-                completed
-                  ? 'bg-emerald-400 border-emerald-400 shadow-sm shadow-emerald-200'
-                  : 'border-gray-300 hover:border-indigo-400 hover:shadow-sm hover:shadow-indigo-100'
-              }`
-            : `w-[18px] h-[18px] rounded-full border-2 ${
-                completed
-                  ? 'bg-emerald-500 border-emerald-500 shadow-sm shadow-emerald-200'
-                  : 'border-gray-300 hover:border-indigo-500 hover:shadow-sm hover:shadow-indigo-100'
-              }`
-        }`}
-      >
-        {completed && (
-          <svg className={`${isSub ? 'w-2 h-2' : 'w-2.5 h-2.5'} text-white`}
-            fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-          </svg>
-        )}
-      </button>
+      {/* ---- 勾选按钮：父任务圆圈先隐藏；子任务勾选保持不变 ---- */}
+      {isSub ? (
+        <button
+          onClick={(e) => {
+            onToggle(line)
+            if (!completed) triggerEffect(e.currentTarget)
+          }}
+          className={`w-[14px] h-[14px] rounded-[3px] border-[1.5px] flex-shrink-0 flex items-center justify-center transition-all duration-200 ${
+            completed
+              ? 'bg-emerald-400 border-emerald-400 shadow-sm shadow-emerald-200'
+              : 'border-gray-300 hover:border-indigo-400 hover:shadow-sm hover:shadow-indigo-100'
+          }`}
+        >
+          {completed && (
+            <svg className="w-2 h-2 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+            </svg>
+          )}
+        </button>
+      ) : (
+        <div className="w-[18px] h-[18px] flex-shrink-0" aria-hidden="true" />
+      )}
 
       {/* ---- 文本输入 ---- */}
       <input
