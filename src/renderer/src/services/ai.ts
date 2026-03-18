@@ -479,11 +479,23 @@ export async function generateStuckReflection(
 // ===================== 每日反思对话 =====================
 
 /**
+ * 多模态消息内容片段（文字 / 图片）
+ * 兼容 OpenAI Chat Completions vision 格式
+ */
+export type MessageContentPart =
+  | { type: 'text'; text: string }
+  | { type: 'image_url'; image_url: { url: string } }
+
+/**
  * 反思对话的多轮消息
+ *
+ * content 可以是纯文本（string），也可以是多模态数组（含图片）
+ * - 纯文本：普通对话轮次
+ * - 数组：第一条 user 消息附带仪表板截图时使用
  */
 export interface ReflectionMessage {
   role: 'system' | 'user' | 'assistant'
-  content: string
+  content: string | MessageContentPart[]
 }
 
 /**
@@ -505,11 +517,19 @@ export async function chatReflection(
 
   let body: string
   if (useResponses) {
-    // Responses API —— 把 messages 转为 input 数组格式
-    const input = messages.map(m => ({
-      role: m.role,
-      content: [{ type: 'input_text' as const, text: m.content }],
-    }))
+    // Responses API —— 把 messages 转为 input 数组格式，处理多模态 content
+    const input = messages.map(m => {
+      if (typeof m.content === 'string') {
+        return { role: m.role, content: [{ type: 'input_text' as const, text: m.content }] }
+      }
+      // content 是数组（多模态）：转换为 Responses API 格式
+      const parts = m.content.map(part => {
+        if (part.type === 'text') return { type: 'input_text' as const, text: part.text }
+        // image_url → input_image
+        return { type: 'input_image' as const, image_url: part.image_url.url }
+      })
+      return { role: m.role, content: parts }
+    })
     body = JSON.stringify({
       model: config.modelId,
       input,
@@ -517,6 +537,7 @@ export async function chatReflection(
     })
   } else {
     // Chat Completions —— 直接用 messages 格式
+    // content 为 string 或 array 均被 OpenAI 兼容格式原生支持
     body = JSON.stringify({
       model: config.modelId,
       messages,
@@ -552,8 +573,35 @@ export async function chatReflection(
  * 构建反思对话的 system prompt
  *
  * @param summaryContext 由 summaryToLLMContext 生成的今日行为摘要
+ * @param hasScreenshot  是否附带了仪表板截图（启用视觉理解模式）
  */
-export function buildReflectionSystemPrompt(summaryContext: string): string {
+export function buildReflectionSystemPrompt(
+  summaryContext: string,
+  hasScreenshot = false,
+): string {
+  // ★ 视觉理解引导段（仅在有截图时注入）
+  const visionGuide = hasScreenshot
+    ? `
+## 视觉数据
+用户的下一条消息会附带一张"今日数据仪表板"截图，包含以下图表（从上到下）：
+1. **任务完成率** —— 中间圆环图，百分比
+2. **核心指标卡片** —— 三张小卡片：完成任务数、电脑使用时长、任务时长
+3. **任务实际用时** —— 横向条形图，每个条代表一个任务，蓝色=已完成，灰色=未完成；条形旁标注分钟或秒数
+4. **任务活动分布** —— 交互式热力图，显示一天中各时段的活动密度
+5. **使用节奏曲线** —— 折线图，显示全天的使用节奏波动
+
+请在对话中结合截图中的直观视觉特征来聊——比如"我看到条形图里有一个特别长的蓝色条"、"热力图上午那一块颜色很深"。这样用户能直接对照图表找到你说的地方。
+
+当你提到某个图表区域时，请用【】标签包裹图表名称，方便用户点击跳转：
+- 【完成率】—— 指圆环图
+- 【指标卡片】—— 三张核心指标小卡片
+- 【任务用时】—— 任务用时条形图
+- 【活动分布】—— 活动热力图
+- 【节奏曲线】—— 使用节奏折线图
+例如："【任务用时】里你做'写报告'花了最长的时间，条形明显比其他任务长一截。"
+`
+    : ''
+
   return `你是用户的一个朋友，帮他做每日复盘。你的核心目标是通过具体数据帮用户"看见自己"——觉察行为模式、时间感知、精力波动。
 
 ## 语气要求
@@ -561,12 +609,12 @@ export function buildReflectionSystemPrompt(summaryContext: string): string {
 - emoji 最多每条消息用1个，大部分时候不用。
 - 不用游戏化比喻。不列清单、不加粗、不用标题。用连贯的段落写。
 - 每条消息 2-4 句话，简洁。
-
+${visionGuide}
 ## 对话流程
 严格按以下 3 步提问 + 1 步总结进行，每次只发一条消息，等用户回复再继续：
 
 ### 第 1 步：用数据聊亮点
-从数据中挑一个具体的正面发现，用数字说话，引出用户的感受。
+从数据中挑一个具体的正面发现，用数字说话，引出用户的感受。${hasScreenshot ? '可以引用截图中的视觉特征（如条形长度、颜色深浅）让用户直观对照。' : ''}
 
 好的问法——用"什么/怎么"开头，引导用户描述而非判断：
 - "你做'整理文献'的时候连续专注了 25 分钟然后进了心流，当时是什么状态让你这么顺？"
@@ -577,7 +625,7 @@ export function buildReflectionSystemPrompt(summaryContext: string): string {
 - ❌ "今天心流 15 分钟，你满意吗？"（二元判断，没有反思深度）
 
 ### 第 2 步：用数据聊困难
-从卡顿、中断、放弃、精力低谷中选最突出的一个点，不评价地把数据摆出来，问"发生了什么"或"当时的感觉"。
+从卡顿、中断、放弃、精力低谷中选最突出的一个点，不评价地把数据摆出来，问"发生了什么"或"当时的感觉"。${hasScreenshot ? '可以指出截图中节奏曲线的低谷区域或热力图的空白段。' : ''}
 
 好的问法——聚焦具体时刻，帮用户回忆当时情境：
 - "你在'写代码'上做了 8 分钟后暂停了，过了 20 分钟才回来。那 20 分钟里大概在忙什么？"

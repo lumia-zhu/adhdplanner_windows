@@ -7,6 +7,7 @@
  */
 
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
+import html2canvas from 'html2canvas'
 import type { Task } from '../types'
 import type { AIConfig } from '../services/ai'
 import { buildReflectionSystemPrompt } from '../services/ai'
@@ -139,6 +140,8 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
   // ---- 侧边栏状态 ----
   const [chatOpen, setChatOpen] = useState(false)
   const [chatWidth, setChatWidth] = useState(400) // 侧边栏初始宽度
+  const [screenshotBase64, setScreenshotBase64] = useState<string | null>(null) // 仪表板截图
+  const dataPanelRef = useRef<HTMLDivElement>(null) // 数据面板引用（用于截图）
 
   // ---- AI 浮标气泡 ----
   const [bubbleText] = useState(() =>
@@ -443,8 +446,8 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
     const activityInfo = activityTimeDistribution
       ? `\n\n精力时间分布（每小时电脑活跃度）：\n${activityTimeDistribution}`
       : ''
-    return buildReflectionSystemPrompt(context + taskInfo + productivityInfo + activityInfo)
-  }, [summary, tasks, completionRate, totalUsageMinutes, productivityRatio, flowRatio, activityTimeDistribution])
+    return buildReflectionSystemPrompt(context + taskInfo + productivityInfo + activityInfo, !!screenshotBase64)
+  }, [summary, tasks, completionRate, totalUsageMinutes, productivityRatio, flowRatio, activityTimeDistribution, screenshotBase64])
 
   // 反思完成回调
   const handleReflectionComplete = (summaryText: string) => {
@@ -457,11 +460,43 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
     console.log('[Reflection] 完成:', summaryText.slice(0, 100))
   }
 
+  // ---- 图表引用：滚动 + 高亮对应图表 ----
+  const handleChartRef = useCallback((chartId: string) => {
+    const el = document.getElementById(chartId)
+    if (!el) return
+
+    // 平滑滚动到目标图表
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+
+    // 添加高亮动画（闪烁 2 秒后自动移除）
+    el.classList.add('chart-highlight')
+    setTimeout(() => el.classList.remove('chart-highlight'), 2000)
+  }, [])
+
   // ---- 打开/关闭侧边栏时调整窗口大小 ----
-  const openChat = useCallback(() => {
+  const openChat = useCallback(async () => {
+    // ★ 先截图（此时面板是全宽 480px，图表最清晰）
+    if (dataPanelRef.current && !screenshotBase64) {
+      try {
+        const canvas = await html2canvas(dataPanelRef.current, {
+          scale: 1,                    // 1x 像素密度，够用且体积小
+          useCORS: true,
+          backgroundColor: '#ffffff',
+          height: dataPanelRef.current.scrollHeight,   // 捕获完整滚动内容
+          windowHeight: dataPanelRef.current.scrollHeight,
+        })
+        // 转 JPEG base64（quality 0.75，约 80-120KB）
+        const base64 = canvas.toDataURL('image/jpeg', 0.75)
+        setScreenshotBase64(base64)
+        console.log('[Reflection] 截图完成，大小:', Math.round(base64.length / 1024), 'KB')
+      } catch (e) {
+        console.warn('[Reflection] 截图失败:', e)
+        // 截图失败不阻塞，AI 依然可以用文本数据工作
+      }
+    }
     setChatOpen(true)
     window.electronAPI.resizeMainWindow(EXPANDED_WIDTH, MAIN_HEIGHT)
-  }, [])
+  }, [screenshotBase64])
 
   const closeChat = useCallback(() => {
     setChatOpen(false)
@@ -637,6 +672,7 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
 
         {/* ---- 数据可视化区域 ---- */}
         <div
+          ref={dataPanelRef}
           className="flex-1 overflow-y-auto transition-all duration-400"
           style={{ minWidth: MIN_DATA_WIDTH }}
         >
@@ -648,7 +684,7 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
           }`}>
             {/* 圆环图（仅今天显示，历史日期没有任务快照） */}
             {isToday && (
-              <div className="flex flex-col items-center">
+              <div id="chart-completion-rate" className="flex flex-col items-center">
                 <DonutChart
                   percentage={completionRate}
                   size={chatOpen ? 140 : 180}
@@ -659,7 +695,7 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
             )}
 
             {/* 核心指标卡片 */}
-            <div className={`grid gap-3 w-full ${
+            <div id="chart-key-metrics" className={`grid gap-3 w-full ${
               chatOpen ? 'grid-cols-2' : 'grid-cols-3'
             }`}>
               <div className="text-center bg-emerald-50 rounded-xl py-2.5 px-2">
@@ -689,7 +725,7 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
 
             {/* 任务用时条形图 */}
             {taskDurations.length > 0 && (
-              <div>
+              <div id="chart-task-duration">
                 <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
                   ⏱ 任务实际用时
                 </h3>
@@ -711,7 +747,7 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
             <div className="border-t border-gray-100" /> */}
 
             {/* 任务活动分布（交互式热力图 + 任务时间轴） */}
-            <div>
+            <div id="chart-activity-heatmap">
               <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
                 🔍 任务活动分布
               </h3>
@@ -722,7 +758,7 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
             <div className="border-t border-gray-100" />
 
             {/* 使用节奏曲线 */}
-            <div>
+            <div id="chart-rhythm">
               <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
                 📈 使用节奏曲线
               </h3>
@@ -820,6 +856,8 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
                 <ReflectionChat
                   systemPrompt={systemPrompt}
                   aiConfig={aiConfig}
+                  screenshotBase64={screenshotBase64}
+                  onChartRef={handleChartRef}
                   onComplete={handleReflectionComplete}
                 />
               ) : (

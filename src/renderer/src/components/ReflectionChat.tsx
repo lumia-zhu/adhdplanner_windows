@@ -6,7 +6,7 @@
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react'
-import type { AIConfig, ReflectionMessage } from '../services/ai'
+import type { AIConfig, ReflectionMessage, MessageContentPart } from '../services/ai'
 import { chatReflection } from '../services/ai'
 
 interface ChatBubble {
@@ -15,11 +15,56 @@ interface ChatBubble {
   timestamp: number
 }
 
+/** 图表引用标签 → 图表元素 id 的映射 */
+const CHART_REF_MAP: Record<string, string> = {
+  '完成率': 'chart-completion-rate',
+  '指标卡片': 'chart-key-metrics',
+  '任务用时': 'chart-task-duration',
+  '活动分布': 'chart-activity-heatmap',
+  '热力图': 'chart-activity-heatmap',
+  '节奏曲线': 'chart-rhythm',
+}
+
+/** 解析文本中的【xxx】标签，返回 React 节点数组 */
+function parseChartRefs(
+  text: string,
+  onRef: (chartId: string) => void,
+): React.ReactNode[] {
+  // 匹配 【xxx】 模式
+  const parts = text.split(/(【[^】]+】)/g)
+  return parts.map((part, i) => {
+    const match = part.match(/^【([^】]+)】$/)
+    if (match) {
+      const label = match[1]
+      const chartId = CHART_REF_MAP[label]
+      if (chartId) {
+        return (
+          <button
+            key={i}
+            onClick={() => onRef(chartId)}
+            className="inline-flex items-center gap-0.5 text-indigo-500 hover:text-indigo-700
+                       underline underline-offset-2 decoration-indigo-300 hover:decoration-indigo-500
+                       transition-colors cursor-pointer font-medium"
+            title={`点击查看${label}图表`}
+          >
+            📊 {label}
+          </button>
+        )
+      }
+    }
+    return <span key={i}>{part}</span>
+  })
+}
+
 interface ReflectionChatProps {
   /** 由 buildReflectionSystemPrompt 构建的系统提示词 */
   systemPrompt: string
   /** AI 配置 */
   aiConfig: AIConfig
+  /** 仪表板截图 base64（data:image/jpeg;base64,...） */
+  screenshotBase64?: string | null
+  /** 图表引用回调：当用户点击 AI 消息中的图表标签时触发 */
+  onChartRef?: (chartId: string) => void
   /** 反思完成回调（AI 生成总结后） */
   onComplete?: (summary: string) => void
 }
@@ -27,6 +72,8 @@ interface ReflectionChatProps {
 export default function ReflectionChat({
   systemPrompt,
   aiConfig,
+  screenshotBase64,
+  onChartRef,
   onComplete,
 }: ReflectionChatProps) {
   const [bubbles, setBubbles] = useState<ChatBubble[]>([])
@@ -78,6 +125,7 @@ export default function ReflectionChat({
   }, [aiConfig])
 
   // 初始化：发送第一条 AI 消息（Step 1 提问）
+  // 如果有截图，会在 user 消息中附带仪表板截图让 AI 先"看"一下
   useEffect(() => {
     if (initCalledRef.current || step > 0 || bubbles.length > 0) return
     if (!systemPrompt) return  // systemPrompt 为空时不发送
@@ -86,12 +134,22 @@ export default function ReflectionChat({
     const initMessages: ReflectionMessage[] = [
       { role: 'system', content: systemPrompt },
     ]
+
+    // ★ 有截图时：以多模态 user 消息附带图片
+    if (screenshotBase64) {
+      const multimodalContent: MessageContentPart[] = [
+        { type: 'image_url', image_url: { url: screenshotBase64 } },
+        { type: 'text', text: '上面是我今天的数据仪表板截图，包含任务完成率、核心指标卡片、任务用时条形图、活动热力图和使用节奏曲线。请结合这些可视化数据，开始我们的反思对话吧。' },
+      ]
+      initMessages.push({ role: 'user', content: multimodalContent })
+    }
+
     messagesRef.current = initMessages
 
     sendToAI(initMessages).then(content => {
       if (content) setStep(1) // 等待用户回答 Step 1
     })
-  }, [systemPrompt])
+  }, [systemPrompt, screenshotBase64])
 
   // bubbles 变化时滚动到底
   useEffect(() => {
@@ -197,7 +255,9 @@ export default function ReflectionChat({
                   : 'bg-gray-50 text-gray-800 border border-gray-100 rounded-bl-md'
               }`}
             >
-              {b.content}
+              {b.role === 'assistant' && onChartRef
+                ? parseChartRefs(b.content, onChartRef)
+                : b.content}
             </div>
           </div>
         ))}
