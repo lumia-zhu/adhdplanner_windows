@@ -22,6 +22,7 @@ import type { PivotResult, StuckReflectionResult } from '../services/ai'
 import { aiCache } from '../services/ai-cache'
 import { tracker } from '../services/tracker'
 import { triggerEffect } from '../effects'
+import AILoadingTips from './AILoadingTips'
 
 // ===================== 常量 =====================
 
@@ -42,6 +43,8 @@ const STUCK_COMMON_REASONS = [
   '不确定去哪找需要的信息',
   '总是被其他事情分心',
 ]
+
+type HintFeedback = 'up' | 'down' | null
 
 // ===================== 类型 =====================
 
@@ -209,6 +212,8 @@ function FocusDynamicBar({
   // ---- 卡住反思状态 ----
   const [reflectionData, setReflectionData] = useState<StuckReflectionResult | null>(null)
   const [loadingReflection, setLoadingReflection] = useState(false)
+  const [hintRatings, setHintRatings] = useState<HintFeedback[]>([])
+  const hintSummaryTrackedRef = useRef(false)
 
   // ---- ★ Workaround: Windows 下 Chromium 拖拽区域缓存 bug ----
   // 窗口 resize 后 -webkit-app-region 命中区域不会自动重算，
@@ -333,6 +338,78 @@ function FocusDynamicBar({
   const handleContinue = () => {
     const text = nextMicro.trim()
     if (text) onNextMicro(text)
+  }
+
+  // 反思提示内容变更后，重置建议反馈状态
+  useEffect(() => {
+    if (reflectionData?.hints?.length) {
+      setHintRatings(Array.from({ length: reflectionData.hints.length }, () => null))
+      hintSummaryTrackedRef.current = false
+    } else {
+      setHintRatings([])
+    }
+  }, [reflectionData])
+
+  // 记录单条建议反馈（👍 / 👎）
+  const handleHintFeedback = (hintIndex: number, feedback: 'up' | 'down') => {
+    const hintText = reflectionData?.hints?.[hintIndex]
+    if (!hintText) return
+    setHintRatings((prev) => {
+      const next = [...prev]
+      const current = next[hintIndex] ?? null
+      let action: 'select' | 'switch' | 'clear'
+
+      if (current === feedback) {
+        next[hintIndex] = null
+        action = 'clear'
+      } else if (current === null) {
+        next[hintIndex] = feedback
+        action = 'select'
+      } else {
+        next[hintIndex] = feedback
+        action = 'switch'
+      }
+
+      tracker.track('stuck.hint_feedback_clicked', {
+        sessionId: session.sessionId,
+        taskId: session.taskId,
+        hintIndex,
+        hintText,
+        feedback,
+        action,
+      })
+
+      return next
+    })
+  }
+
+  // 离开 stuck_b 时记录反馈汇总（允许不选）
+  const trackHintFeedbackSummary = () => {
+    if (hintSummaryTrackedRef.current) return
+    if (!reflectionData?.hints?.length) return
+
+    const ratings = reflectionData.hints
+      .map((hintText, hintIndex) => {
+        const feedback = hintRatings[hintIndex]
+        if (!feedback) return null
+        return { hintIndex, hintText, feedback }
+      })
+      .filter((r): r is { hintIndex: number; hintText: string; feedback: 'up' | 'down' } => !!r)
+
+    const upCount = ratings.filter((r) => r.feedback === 'up').length
+    const downCount = ratings.filter((r) => r.feedback === 'down').length
+
+    tracker.track('stuck.hint_feedback_summary', {
+      sessionId: session.sessionId,
+      taskId: session.taskId,
+      hintCount: reflectionData.hints.length,
+      ratedCount: ratings.length,
+      upCount,
+      downCount,
+      skipped: ratings.length === 0,
+      ratings,
+    })
+    hintSummaryTrackedRef.current = true
   }
 
   // stuck_a → stuck_b：用户点击 Reflect，提交困难描述并请求 AI 反思提示
@@ -698,7 +775,10 @@ function FocusDynamicBar({
           <span className="text-xs text-gray-500 font-mono flex-shrink-0
                            bg-gray-100/80 px-2 py-0.5 rounded-md">{timeStr}</span>
           <button
-            onClick={() => onResume(currentMicroTask)}
+            onClick={() => {
+              trackHintFeedbackSummary()
+              onResume(currentMicroTask)
+            }}
             className="no-drag w-6 h-6 rounded-xl flex items-center justify-center
                        text-gray-300 hover:text-gray-500 hover:bg-gray-100
                        transition-all flex-shrink-0"
@@ -829,10 +909,11 @@ function FocusDynamicBar({
 
           {/* 加载中 */}
           {loadingReflection && (
-            <div className="flex items-center gap-2 py-6 justify-center">
-              <span className="w-3.5 h-3.5 border-2 border-gray-300 border-t-amber-400 rounded-full animate-spin" />
-              <span className="text-xs text-gray-400">AI 正在帮你梳理思路…</span>
-            </div>
+            <AILoadingTips
+              variant="stuck"
+              title="AI 正在帮你梳理思路…"
+              compact
+            />
           )}
 
           {/* 反思卡片 —— 统一样式，分段但不分格式 */}
@@ -841,11 +922,40 @@ function FocusDynamicBar({
                             text-xs text-gray-700 leading-[1.85] flex flex-col gap-2">
               <p>{reflectionData.interpret}</p>
               {reflectionData.hints.length > 0 && (
-                <p>
-                  {reflectionData.hints.map((h, i) => (
-                    <span key={i}>{i > 0 && <br />}💡 {h}</span>
-                  ))}
-                </p>
+                <div className="flex flex-col gap-1.5">
+                  {reflectionData.hints.map((h, i) => {
+                    const current = hintRatings[i] ?? null
+                    return (
+                      <div key={i} className="flex items-start justify-between gap-2">
+                        <span className="flex-1">💡 {h}</span>
+                        <div className="flex items-center gap-1 flex-shrink-0">
+                          <button
+                            onClick={() => handleHintFeedback(i, 'up')}
+                            className={`w-6 h-6 rounded-md text-[12px] transition-all ${
+                              current === 'up'
+                                ? 'bg-emerald-100 text-emerald-600'
+                                : 'text-gray-300 hover:text-emerald-500 hover:bg-emerald-50'
+                            }`}
+                            title="这条建议有帮助"
+                          >
+                            👍
+                          </button>
+                          <button
+                            onClick={() => handleHintFeedback(i, 'down')}
+                            className={`w-6 h-6 rounded-md text-[12px] transition-all ${
+                              current === 'down'
+                                ? 'bg-rose-100 text-rose-600'
+                                : 'text-gray-300 hover:text-rose-500 hover:bg-rose-50'
+                            }`}
+                            title="这条建议不太合适"
+                          >
+                            👎
+                          </button>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
               )}
               <p>{reflectionData.cheer}</p>
             </div>
@@ -855,7 +965,10 @@ function FocusDynamicBar({
           {!loadingReflection && (
             <div className="flex justify-center pt-0.5">
               <button
-                onClick={() => onResume(currentMicroTask)}
+                onClick={() => {
+                  trackHintFeedbackSummary()
+                  onResume(currentMicroTask)
+                }}
                 className="px-6 py-2 rounded-xl bg-emerald-500 text-white text-xs font-semibold
                            shadow-sm shadow-emerald-200/50
                            hover:bg-emerald-600 hover:shadow-md hover:shadow-emerald-200/60

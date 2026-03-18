@@ -18,6 +18,7 @@ import type { Task } from '../types'
 import type { AIConfig, MicroActionChip } from '../services/ai'
 import { generateReflectionQuestion, generateFollowUpQuestion, getRandomFallbackQuestion } from '../services/ai'
 import { aiCache } from '../services/ai-cache'
+import AILoadingTips from './AILoadingTips'
 
 // ★ Feature Flag：关闭任务理解阶段，直接进入第一步选择
 // 设为 true 可恢复完整的 understanding → micro_action 流程
@@ -485,13 +486,10 @@ export default function FocusFlow({ task, aiConfig, onStart, onCancel }: FocusFl
             <div className="mt-3 flex flex-col gap-2 min-h-[28px]">
               {/* 骨架占位 */}
               {loadingChips && (
-                <div className="flex flex-col items-center gap-3 py-3">
-                  <div className="flex items-center gap-2 text-emerald-500">
-                    <span className="w-4 h-4 border-2 border-emerald-200 border-t-emerald-500 rounded-full animate-spin" />
-                    <span className="text-sm font-medium">AI 正在为你想第一步…</span>
-                  </div>
-                  <span className="text-[11px] text-gray-400">根据任务内容生成最小可执行动作</span>
-                </div>
+                <AILoadingTips
+                  variant="start"
+                  title="AI 正在为你想第一步…"
+                />
               )}
               {!loadingChips && chips.map((chip, i) => (
                 <button

@@ -114,6 +114,32 @@ export interface StuckReflectionShownPayload {
   reflection: string        // AI 生成的反思提示文本
 }
 
+/** 用户点击了反思提示中的建议反馈（👍 / 👎） */
+export interface StuckHintFeedbackClickedPayload {
+  sessionId: string
+  taskId: string
+  hintIndex: number
+  hintText: string
+  feedback: 'up' | 'down'
+  action: 'select' | 'switch' | 'clear'
+}
+
+/** 用户离开反思提示时的反馈汇总（可不选） */
+export interface StuckHintFeedbackSummaryPayload {
+  sessionId: string
+  taskId: string
+  hintCount: number
+  ratedCount: number
+  upCount: number
+  downCount: number
+  skipped: boolean
+  ratings: {
+    hintIndex: number
+    hintText: string
+    feedback: 'up' | 'down'
+  }[]
+}
+
 /** AI 生成了绕路建议 */
 export interface StuckPivotOfferedPayload {
   sessionId: string
@@ -217,6 +243,8 @@ export interface TrackEventMap {
   'stuck.triggered':          StuckTriggeredPayload
   'stuck.reason':             StuckReasonPayload
   'stuck.reflection_shown':   StuckReflectionShownPayload
+  'stuck.hint_feedback_clicked': StuckHintFeedbackClickedPayload
+  'stuck.hint_feedback_summary': StuckHintFeedbackSummaryPayload
   'stuck.pivot_offered':      StuckPivotOfferedPayload
   'stuck.pivot_chosen':       StuckPivotChosenPayload
 
