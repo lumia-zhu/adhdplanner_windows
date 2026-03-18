@@ -26,6 +26,7 @@ interface StuckMark {
 interface TaskDurationItem {
   title: string
   durationMin: number
+  durationSec: number      // 秒级精度的实际用时（用于短时长任务精确展示）
   completed: boolean       // 任务是否已完成（用于区分颜色）
   /** 该任务中所有的卡顿标记 */
   stuckMarks?: StuckMark[]
@@ -44,16 +45,17 @@ export default function TaskDurationChart({ data }: TaskDurationChartProps) {
   // 没有数据时不渲染
   if (data.length === 0) return null
 
-  // 找到最长的条作为 100% 基准
-  const maxMin = Math.max(...data.map(d => d.durationMin), 1)
+  // 找到最长的条作为 100% 基准（用秒级精度，保证短时长任务也能正确计算宽度）
+  const maxSec = Math.max(...data.map(d => d.durationSec), 1)
 
   return (
     <div className="space-y-2.5">
       {data.map((item, i) => {
         const hasStuck = item.stuckMarks && item.stuckMarks.length > 0
         const isExpanded = expandedIdx === i
-        const barWidthPct = Math.max((item.durationMin / maxMin) * 100, 4)
-        const totalSec = item.durationMin * 60
+        // 用秒级精度计算条形宽度，最小 4% 保证短时长任务也能看到
+        const barWidthPct = Math.max((item.durationSec / maxSec) * 100, 4)
+        const totalSec = item.durationSec
 
         return (
           <div key={i}>
@@ -108,9 +110,12 @@ export default function TaskDurationChart({ data }: TaskDurationChartProps) {
                 )}
               </div>
 
-              {/* 右侧：时长标注 */}
+              {/* 右侧：时长标注（≥60秒显示分钟，<60秒显示秒数） */}
               <span className="text-[11px] text-gray-500 w-[44px] flex-shrink-0 text-right font-mono">
-                {item.durationMin} min
+                {item.durationSec >= 60
+                  ? `${item.durationMin} min`
+                  : `${item.durationSec}s`
+                }
               </span>
             </div>
 

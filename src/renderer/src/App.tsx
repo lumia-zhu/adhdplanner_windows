@@ -718,7 +718,8 @@ export default function App() {
       // 延迟一下让 UI 更新 checkbox 状态，然后触发完成
       setTimeout(() => {
         // 📊 埋点
-        const elapsed = Math.floor((Date.now() - session.startTime) / 1000)
+        // 用 sessionStartTime 统计整段专注时长，避免只记录到最后一步导致时长过短
+        const elapsed = Math.floor((Date.now() - session.sessionStartTime) / 1000)
         tracker.track('session.macro_completed', {
           taskId: session.taskId,
           taskTitle: session.taskTitle,

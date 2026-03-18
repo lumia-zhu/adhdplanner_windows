@@ -360,18 +360,20 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
     }
 
     // ---- 6. 转为数组，按时长降序排列 ----
+    // ★ 用秒级精度：避免短时长任务（<30秒）被 Math.round 舍为 0 后过滤掉
     return Array.from(durationMap.entries())
       .map(([title, sec]) => ({
         title,
-        durationMin: Math.round(sec / 60),
+        durationSec: Math.round(sec),            // 保留秒级精度
+        durationMin: Math.round(sec / 60),        // 分钟级（仅用于 ≥60s 的显示）
         // 三重判断：只要有一个成立就认为已完成（蓝色）
         completed: everTaskDone.has(title)
                 || macroCompleted.has(title)
                 || completedTaskTitles.has(title),
         stuckMarks: stuckMarksByTask.get(title) || [],
       }))
-      .filter(d => d.durationMin > 0)
-      .sort((a, b) => b.durationMin - a.durationMin)
+      .filter(d => d.durationSec > 0)            // ★ 只过滤真正 0 秒的异常数据
+      .sort((a, b) => b.durationSec - a.durationSec)
   }, [events, tasks])
 
   // ---- 生产力指标（基于使用时长模型：1 分钟无操作 → 未使用） ----
