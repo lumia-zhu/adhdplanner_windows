@@ -63,6 +63,8 @@ interface ReflectionChatProps {
   aiConfig: AIConfig
   /** 仪表板截图 base64（data:image/jpeg;base64,...） */
   screenshotBase64?: string | null
+  /** 当前反思的日期 YYYY-MM-DD（用于截图消息中标注日期） */
+  selectedDate?: string
   /** 图表引用回调：当用户点击 AI 消息中的图表标签时触发 */
   onChartRef?: (chartId: string) => void
   /** 反思完成回调（AI 生成总结后） */
@@ -73,6 +75,7 @@ export default function ReflectionChat({
   systemPrompt,
   aiConfig,
   screenshotBase64,
+  selectedDate,
   onChartRef,
   onComplete,
 }: ReflectionChatProps) {
@@ -137,9 +140,12 @@ export default function ReflectionChat({
 
     // ★ 有截图时：以多模态 user 消息附带图片
     if (screenshotBase64) {
+      const todayStr = new Date().toISOString().slice(0, 10)
+      const dateIsToday = !selectedDate || selectedDate === todayStr
+      const dateLabel = dateIsToday ? '今天' : selectedDate!
       const multimodalContent: MessageContentPart[] = [
         { type: 'image_url', image_url: { url: screenshotBase64 } },
-        { type: 'text', text: '上面是我今天的数据仪表板截图，包含任务完成率、核心指标卡片、任务用时条形图、活动热力图和使用节奏曲线。请结合这些可视化数据，开始我们的反思对话吧。' },
+        { type: 'text', text: `上面是我${dateLabel}的数据仪表板截图，包含${dateIsToday ? '任务完成率、' : ''}核心指标卡片、任务用时条形图、活动热力图和使用节奏曲线。请结合这些可视化数据，开始我们的反思对话吧。` },
       ]
       initMessages.push({ role: 'user', content: multimodalContent })
     }

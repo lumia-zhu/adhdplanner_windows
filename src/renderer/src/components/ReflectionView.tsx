@@ -35,8 +35,8 @@ interface ReflectionViewProps {
 
 // ===================== 常量 =====================
 
-/** AI 浮标随机引导语 */
-const BUBBLE_HINTS = [
+/** AI 浮标随机引导语 —— 今天 */
+const BUBBLE_HINTS_TODAY = [
   '今天过得怎么样？来聊聊~',
   '点我开始反思，只需 3 个问题 ✨',
   '回顾一下今天，发现你的亮点 💡',
@@ -44,6 +44,15 @@ const BUBBLE_HINTS = [
   '数据已准备好，一起来看看吧！',
   '花 2 分钟回顾，明天更高效 🚀',
   '今天的你，值得被看见 🌟',
+]
+
+/** AI 浮标随机引导语 —— 历史日期 */
+const BUBBLE_HINTS_HISTORY = [
+  '回头看看这一天，会有新发现 🔍',
+  '历史数据也值得反思哦~',
+  '来复盘这天的表现吧 📊',
+  '看看过去的自己，聊聊感受？',
+  '翻翻老数据，找找规律 💡',
 ]
 
 /** 主窗口默认宽度（和 main/index.ts 里的 MAIN_WIDTH 一致） */
@@ -144,9 +153,6 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
   const dataPanelRef = useRef<HTMLDivElement>(null) // 数据面板引用（用于截图）
 
   // ---- AI 浮标气泡 ----
-  const [bubbleText] = useState(() =>
-    BUBBLE_HINTS[Math.floor(Math.random() * BUBBLE_HINTS.length)]
-  )
   const [showBubble, setShowBubble] = useState(false)
 
   // ---- 日期选择 & 日历弹窗 ----
@@ -155,18 +161,36 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
   const isToday = selectedDate === today
   const [reflCalendarOpen, setReflCalendarOpen] = useState(false)
 
+  // 浮标气泡文案：根据日期区分
+  const bubbleText = useMemo(() => {
+    const hints = isToday ? BUBBLE_HINTS_TODAY : BUBBLE_HINTS_HISTORY
+    return hints[Math.floor(Math.random() * hints.length)]
+  }, [isToday])
+
+  // 切换日期时：关闭 AI 侧边栏 + 清除截图缓存（每天数据不同需重新截图）
+  const resetChatOnDateChange = useCallback(() => {
+    setScreenshotBase64(null)
+    if (chatOpen) {
+      setChatOpen(false)
+      window.electronAPI.resizeMainWindow(MAIN_WIDTH, MAIN_HEIGHT)
+    }
+  }, [chatOpen])
+
   const goPrev = useCallback(() => {
     setSelectedDate(d => shiftDate(d, -1))
-    // 切到历史日期时关闭 AI 侧边栏
-    if (chatOpen) { setChatOpen(false); window.electronAPI.resizeMainWindow(MAIN_WIDTH, MAIN_HEIGHT) }
-  }, [chatOpen])
+    resetChatOnDateChange()
+  }, [resetChatOnDateChange])
   const goNext = useCallback(() => {
     setSelectedDate(d => {
       const next = shiftDate(d, 1)
       return next > getToday() ? d : next   // 不能超过今天
     })
-  }, [])
-  const goToday = useCallback(() => setSelectedDate(getToday()), [])
+    resetChatOnDateChange()
+  }, [resetChatOnDateChange])
+  const goToday = useCallback(() => {
+    setSelectedDate(getToday())
+    resetChatOnDateChange()
+  }, [resetChatOnDateChange])
 
   // ---- 拖拽分隔条 ----
   const isDragging = useRef(false)
@@ -446,8 +470,8 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
     const activityInfo = activityTimeDistribution
       ? `\n\n精力时间分布（每小时电脑活跃度）：\n${activityTimeDistribution}`
       : ''
-    return buildReflectionSystemPrompt(context + taskInfo + productivityInfo + activityInfo, !!screenshotBase64)
-  }, [summary, tasks, completionRate, totalUsageMinutes, productivityRatio, flowRatio, activityTimeDistribution, screenshotBase64])
+    return buildReflectionSystemPrompt(context + taskInfo + productivityInfo + activityInfo, !!screenshotBase64, isToday)
+  }, [summary, tasks, completionRate, totalUsageMinutes, productivityRatio, flowRatio, activityTimeDistribution, screenshotBase64, isToday])
 
   // 反思完成回调
   const handleReflectionComplete = (summaryText: string) => {
@@ -614,11 +638,8 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
                   const todayStr = getToday()
                   setSelectedDate(date > todayStr ? todayStr : date)
                   setReflCalendarOpen(false)
-                  // 切到历史日期时关闭 AI 侧边栏
-                  if (date !== todayStr && chatOpen) {
-                    setChatOpen(false)
-                    window.electronAPI.resizeMainWindow(MAIN_WIDTH, MAIN_HEIGHT)
-                  }
+                  // 切换日期时关闭 AI 侧边栏 + 清除截图
+                  resetChatOnDateChange()
                 }}
                 onClose={() => setReflCalendarOpen(false)}
               />
@@ -857,6 +878,7 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
                   systemPrompt={systemPrompt}
                   aiConfig={aiConfig}
                   screenshotBase64={screenshotBase64}
+                  selectedDate={selectedDate}
                   onChartRef={handleChartRef}
                   onComplete={handleReflectionComplete}
                 />
@@ -869,8 +891,8 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
           </div>
         </div>
 
-        {/* ---- 右下角 AI 机器人浮标（仅今天显示） ---- */}
-        {!chatOpen && isToday && (
+        {/* ---- 右下角 AI 机器人浮标（所有日期都显示，支持历史反思） ---- */}
+        {!chatOpen && (
           <div className="absolute bottom-5 right-5 flex flex-col items-end gap-2 z-20">
             {/* 气泡提示 */}
             <div
