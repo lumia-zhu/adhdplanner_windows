@@ -374,18 +374,63 @@ export default function App() {
     setIsStandbyMode(false)
   }
 
-  /** 待命 widget 中点击"开始"→ 先恢复主窗口显示 FocusFlow，确认后进入执行 widget */
-  const handleStandbyFocus = (taskId: string) => {
-    // 先退出 widget 模式恢复主窗口大小（FocusFlow 覆盖层需要完整窗口）
-    window.electronAPI.exitWidget()
-    setIsWidgetMode(false)
-    setIsStandbyMode(false)
-    // 触发 FocusFlow（确认微任务后会自动进入执行 widget）
-    setScaffoldTaskId(taskId)
-    if (aiConfig.apiKey) {
-      const task = tasks.find(t => t.id === taskId)
-      if (task) aiCache.prefetch(taskId, task.title, aiConfig)
+  /** 待命 widget 中确认第一步 → 直接创建 session 进入执行（不离开 widget） */
+  const handleStandbyStartMicro = (taskId: string, microTask: string, source: 'self' | 'ai_chip' | 'skip') => {
+    const task = tasks.find(t => t.id === taskId)
+    if (!task) return
+
+    const sid = `s-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+    sessionIdRef.current = sid
+
+    const subtasks = task.subtasks ?? []
+    const activeSubtask = subtasks.find(s => !s.completed) ?? null
+
+    const now = Date.now()
+    const newSession: FocusSession = {
+      sessionId: sid,
+      taskId: task.id,
+      taskTitle: task.title,
+      currentMicroTask: microTask,
+      startTime: now,
+      sessionStartTime: now,
+      isFlowMode: false,
+      phase: 'executing',
+      microHistory: [],
+      firstStepHint: microTask,
+      currentSubtaskId: activeSubtask?.id,
+      currentSubtaskTitle: activeSubtask?.title,
     }
+    setSession(newSession)
+    setFocusTaskId(task.id)
+    setIsStandbyMode(false)
+
+    // 📊 埋点
+    const pendingSnap = tasks.filter(t => !t.completed)
+    tracker.track('plan.brain_dump', {
+      tasks: pendingSnap.map(t => ({ id: t.id, title: t.title })),
+      taskCount: pendingSnap.length,
+    })
+    tracker.track('plan.focus_selected', {
+      taskId: task.id,
+      taskTitle: task.title,
+    })
+    tracker.track('plan.first_micro', {
+      taskId: task.id,
+      taskTitle: task.title,
+      microAction: microTask,
+      source,
+    })
+    tracker.track('session.started', {
+      sessionId: sid,
+      taskId: task.id,
+      taskTitle: task.title,
+    })
+    tracker.track('exec.micro_started', {
+      sessionId: sid,
+      taskId: task.id,
+      taskTitle: task.title,
+      microAction: microTask,
+    })
   }
 
   /** 待命 widget 中点击"继续"→ 恢复暂停的 session */
@@ -1213,7 +1258,8 @@ export default function App() {
       <div className="w-full h-full overflow-hidden">
         <StandbyWidget
           tasks={tasks}
-          onFocusTask={handleStandbyFocus}
+          aiConfig={aiConfig}
+          onStartMicro={handleStandbyStartMicro}
           onResumePaused={handleStandbyResume}
           onExpand={handleExpandFromStandby}
         />
@@ -1294,25 +1340,27 @@ export default function App() {
 
       {/* 底部区域 */}
       <div className="flex-shrink-0 select-none">
-        {/* 底部操作按钮区（仅今天显示） */}
-        {/* ★ 「开启专注」按钮 —— 暂时隐藏 */}
-        {/* {isToday && (
-          <div className="flex justify-center items-center gap-3 -mt-4 mb-2 relative z-10">
+        {/* 收起为小组件按钮（仅今天 + 有待办任务时显示） */}
+        {isToday && pendingTasks.length > 0 && (
+          <div className="flex justify-center -mt-3 mb-1.5 relative z-10">
             <button
-              onClick={handleQuickFocus}
-              className="flex items-center gap-2 px-5 py-2 rounded-full
-                         bg-emerald-500 hover:bg-emerald-600 active:scale-95
-                         text-white text-sm font-medium
+              onClick={handleEnterStandby}
+              className="flex items-center gap-1.5 px-5 py-2 rounded-full
+                         bg-emerald-500 hover:bg-emerald-600
+                         active:scale-95
+                         text-white
+                         text-xs font-semibold
                          shadow-sm shadow-emerald-200/50 hover:shadow-md hover:shadow-emerald-200/80
                          transition-all duration-200"
             >
-              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M8 5v14l11-7z" />
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                  d="M9 9V4.5M9 9H4.5M9 9L3.75 3.75M9 15v4.5M9 15H4.5M9 15l-5.25 5.25M15 9h4.5M15 9V4.5M15 9l5.25-5.25M15 15h4.5M15 15v4.5m0-4.5l5.25 5.25" />
               </svg>
-              开启专注
+              收起为桌面小组件
             </button>
           </div>
-        )} */}
+        )}
 
         {/* 状态栏 */}
         {tasks.length > 0 && (
