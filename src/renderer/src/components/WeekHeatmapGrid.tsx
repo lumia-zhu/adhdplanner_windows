@@ -1,0 +1,306 @@
+/**
+ * WeekHeatmapGrid —— 7×24 活动分布热力网格（周视图核心）
+ *
+ * 7 行（每天一行）× 24 列（每小时一格），颜色沿用日视图的 4 级配色。
+ * 点击某行 → 展开该天的任务时间分布详情。
+ * 顶部一句话洞察：统计"稳定高效时段"。
+ */
+
+import { useMemo, useState } from 'react'
+import type { ActivityRecord } from './ActivityHeatmap'
+import { getActiveRatio } from './ActivityHeatmap'
+import type { TrackEvent } from '../services/tracker'
+import type { WeekDayData } from './WeekView'
+
+// ===================== 常量 =====================
+
+const TOTAL_HOURS = 24
+const EXPECTED_RECORDS_PER_HOUR = 120  // 每小时 120 条（每 30 秒一条）
+
+function ratioToLevel(usageRatio: number): number {
+  if (usageRatio <= 0) return 0
+  if (usageRatio <= 0.33) return 1
+  if (usageRatio <= 0.67) return 2
+  return 3
+}
+
+const LEVEL_BG = [
+  'bg-gray-100',        // 0: 未使用
+  'bg-emerald-200',     // 1: 低
+  'bg-emerald-400',     // 2: 中
+  'bg-emerald-600',     // 3: 高
+]
+const LEVEL_LABELS = ['未使用', '< 20 分钟', '20~40 分钟', '> 40 分钟']
+const TIME_TICKS = [0, 6, 12, 18, 24]
+
+// ===================== 工具函数 =====================
+
+/** 将一天的 ActivityRecord 聚合为 24 个 level */
+function aggregateToHourlyLevels(data: ActivityRecord[]): number[] {
+  const buckets: { totalRatio: number }[] = Array.from({ length: TOTAL_HOURS }, () => ({ totalRatio: 0 }))
+  for (const r of data) {
+    const h = new Date(r.ts).getHours()
+    buckets[h].totalRatio += getActiveRatio(r)
+  }
+  return buckets.map(b => ratioToLevel(b.totalRatio / EXPECTED_RECORDS_PER_HOUR))
+}
+
+/** 从事件流提取任务→小时比例 */
+function buildTaskHourRatioMap(events: TrackEvent[]): Map<string, Map<number, number>> {
+  const result = new Map<string, Map<number, number>>()
+  const starts: { timestamp: number; taskTitle: string; sessionId: string }[] = []
+  const ends: { timestamp: number; taskTitle: string; sessionId: string }[] = []
+
+  for (const e of events) {
+    if (e.type === 'session.started') {
+      const p = e.payload as { sessionId: string; taskTitle: string }
+      if (p.taskTitle) starts.push({ timestamp: e.timestamp, taskTitle: p.taskTitle, sessionId: p.sessionId })
+    } else if (e.type === 'session.ended') {
+      const p = e.payload as { sessionId: string; taskTitle: string }
+      if (p.taskTitle) ends.push({ timestamp: e.timestamp, taskTitle: p.taskTitle, sessionId: p.sessionId })
+    }
+  }
+
+  function addMinutes(title: string, hour: number, minutes: number) {
+    if (!result.has(title)) result.set(title, new Map())
+    const hourMap = result.get(title)!
+    const cur = hourMap.get(hour) || 0
+    hourMap.set(hour, Math.min(cur + minutes / 60, 1))
+  }
+
+  for (const start of starts) {
+    const end = ends.find(e => e.sessionId === start.sessionId)
+    const startTs = start.timestamp
+    const endTs = end ? end.timestamp : Date.now()
+    const title = end ? end.taskTitle : start.taskTitle
+    if (!title) continue
+
+    const startDate = new Date(startTs)
+    const endDate = new Date(endTs)
+    const startHour = startDate.getHours()
+    const endHour = endDate.getHours()
+
+    if (startHour === endHour) {
+      addMinutes(title, startHour, (endTs - startTs) / 60000)
+    } else {
+      addMinutes(title, startHour, 60 - startDate.getMinutes() - startDate.getSeconds() / 60)
+      if (startHour < endHour) {
+        for (let h = startHour + 1; h < endHour; h++) addMinutes(title, h, 60)
+      } else {
+        for (let h = startHour + 1; h < 24; h++) addMinutes(title, h, 60)
+        for (let h = 0; h < endHour; h++) addMinutes(title, h, 60)
+      }
+      const endMin = endDate.getMinutes() + endDate.getSeconds() / 60
+      if (endMin > 0) addMinutes(title, endHour, endMin)
+    }
+  }
+  return result
+}
+
+function fmtHour(h: number): string {
+  return `${String(h % 24).padStart(2, '0')}:00`
+}
+
+function ratioToMinuteStr(ratio: number): string {
+  return `${Math.round(ratio * 60)} 分钟`
+}
+
+// ===================== Props =====================
+
+interface Props {
+  days: WeekDayData[]
+}
+
+// ===================== 主组件 =====================
+
+export default function WeekHeatmapGrid({ days }: Props) {
+  const [expandedDate, setExpandedDate] = useState<string | null>(null)
+
+  // 计算每天的 24 小时 level
+  const dayLevels = useMemo(() => {
+    return days.map(d => ({
+      date: d.date,
+      dateLabel: d.dateLabel,
+      weekdayShort: d.weekdayShort,
+      dateFull: d.dateFull,
+      hasData: d.hasData,
+      levels: aggregateToHourlyLevels(d.activity),
+    }))
+  }, [days])
+
+  // 稳定高效时段洞察
+  const insight = useMemo(() => {
+    // 对每个小时，统计 7 天中有几天 level >= 2
+    const hourHighCount: number[] = Array(TOTAL_HOURS).fill(0)
+    for (const dl of dayLevels) {
+      dl.levels.forEach((lv, h) => {
+        if (lv >= 2) hourHighCount[h]++
+      })
+    }
+    // >= 5 天的标注为"稳定高效"
+    const stableHours = hourHighCount
+      .map((cnt, h) => ({ h, cnt }))
+      .filter(x => x.cnt >= 5)
+      .map(x => x.h)
+
+    if (stableHours.length === 0) return null
+
+    // 合并连续时段
+    const ranges: string[] = []
+    let start = stableHours[0]
+    let prev = stableHours[0]
+    for (let i = 1; i < stableHours.length; i++) {
+      if (stableHours[i] === prev + 1) {
+        prev = stableHours[i]
+      } else {
+        ranges.push(`${start}:00–${prev + 1}:00`)
+        start = stableHours[i]
+        prev = stableHours[i]
+      }
+    }
+    ranges.push(`${start}:00–${prev + 1}:00`)
+    return `稳定高效时段：${ranges.join('、')}`
+  }, [dayLevels])
+
+  // 展开面板数据（选中天的任务分布）
+  const expandedTaskEntries = useMemo(() => {
+    if (!expandedDate) return null
+    const day = days.find(d => d.date === expandedDate)
+    if (!day) return null
+    const taskMap = buildTaskHourRatioMap(day.events)
+    return Array.from(taskMap.entries())
+      .map(([title, hourMap]) => {
+        let totalMin = 0
+        hourMap.forEach(r => { totalMin += r * 60 })
+        return { title, hourMap, totalMinutes: Math.round(totalMin) }
+      })
+      .sort((a, b) => b.totalMinutes - a.totalMinutes)
+  }, [expandedDate, days])
+
+  return (
+    <div className="space-y-2">
+      {/* 洞察文字 */}
+      {insight && (
+        <div className="text-[11px] text-emerald-600 bg-emerald-50 rounded-lg px-3 py-1.5 mb-1">
+          ✨ {insight}
+        </div>
+      )}
+
+      {/* 图例 */}
+      <div className="flex items-center gap-3 text-[10px] text-gray-400">
+        <span>每小时使用：</span>
+        {LEVEL_BG.map((c, i) => (
+          <div key={i} className="flex items-center gap-1">
+            <div className={`w-3 h-3 rounded-sm ${c}`} />
+            <span>{LEVEL_LABELS[i]}</span>
+          </div>
+        ))}
+      </div>
+
+      {/* 7×24 网格 */}
+      <div className="space-y-0.5">
+        {dayLevels.map((dl) => {
+          const isExpanded = expandedDate === dl.date
+          return (
+            <div key={dl.date}>
+              {/* 一行：日期标签 + 24 个格子 */}
+              <div
+                className={`flex items-center gap-1.5 cursor-pointer rounded-md px-1 py-0.5 transition-colors
+                  ${isExpanded ? 'bg-indigo-50' : 'hover:bg-gray-50'}`}
+                onClick={() => setExpandedDate(isExpanded ? null : dl.date)}
+              >
+                {/* 左侧日期标签 */}
+                <span
+                  className="text-[10px] text-gray-500 w-[50px] flex-shrink-0 text-right tabular-nums"
+                  title={dl.dateFull}
+                >
+                  {dl.dateLabel} {dl.weekdayShort}
+                </span>
+
+                {/* 24 小时格子 */}
+                <div className="flex-1 flex gap-[1px]">
+                  {dl.levels.map((lv, h) => (
+                    <div
+                      key={h}
+                      className={`h-4 flex-1 rounded-[2px] transition-all ${LEVEL_BG[lv]}
+                        ${isExpanded ? 'opacity-90' : 'hover:scale-y-125'}`}
+                      title={`${dl.dateFull} ${fmtHour(h)}–${fmtHour(h + 1)}: ${LEVEL_LABELS[lv]}`}
+                    />
+                  ))}
+                </div>
+
+                {/* 展开箭头 */}
+                <span className={`text-[8px] text-gray-400 w-3 flex-shrink-0 transition-transform ${
+                  isExpanded ? 'rotate-180' : ''
+                }`}>
+                  ▼
+                </span>
+              </div>
+
+              {/* 展开：该天的任务时间分布 */}
+              {isExpanded && expandedTaskEntries && (
+                <div className="ml-[62px] mr-4 mt-1.5 mb-2 space-y-1.5 animate-in fade-in slide-in-from-top-1 duration-200">
+                  {expandedTaskEntries.length === 0 ? (
+                    <p className="text-[10px] text-gray-400 py-1">当天暂无任务数据</p>
+                  ) : (
+                    expandedTaskEntries.map((task) => (
+                      <div key={task.title}>
+                        <div className="flex items-center justify-between mb-0.5">
+                          <span className="text-[10px] text-gray-600 font-medium truncate max-w-[55%]" title={task.title}>
+                            {task.title}
+                          </span>
+                          <span className="text-[9px] text-gray-400 tabular-nums flex-shrink-0 ml-2">
+                            共 {task.totalMinutes} 分钟
+                          </span>
+                        </div>
+                        {/* 24 格时间条 */}
+                        <div className="flex gap-[1px]">
+                          {Array.from({ length: TOTAL_HOURS }, (_, h) => {
+                            const ratio = task.hourMap.get(h) || 0
+                            return (
+                              <div
+                                key={h}
+                                className="h-[10px] flex-1 rounded-[2px] bg-gray-50 overflow-hidden"
+                                title={ratio > 0 ? `${fmtHour(h)}–${fmtHour(h + 1)}: ${ratioToMinuteStr(ratio)}` : ''}
+                              >
+                                {ratio > 0 && (
+                                  <div
+                                    className="h-full rounded-[2px] bg-emerald-400"
+                                    style={{ width: `${Math.max(ratio * 100, 10)}%` }}
+                                  />
+                                )}
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
+
+      {/* 底部时间刻度 */}
+      <div className="relative w-full h-4 ml-[56px]" style={{ width: 'calc(100% - 70px)' }}>
+        {TIME_TICKS.map((h) => {
+          const pct = (h / 24) * 100
+          return (
+            <span
+              key={h}
+              className="absolute text-[9px] text-gray-400 tabular-nums"
+              style={{
+                left: `${pct}%`,
+                transform: h === 0 ? 'none' : h === 24 ? 'translateX(-100%)' : 'translateX(-50%)',
+              }}
+            >
+              {h === 24 ? '24:00' : `${String(h).padStart(2, '0')}:00`}
+            </span>
+          )
+        })}
+      </div>
+    </div>
+  )
+}

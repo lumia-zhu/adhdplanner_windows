@@ -12,6 +12,25 @@
 
 import type { TrackEvent, DailySummary } from './types'
 
+/**
+ * 周视图数据精简接口（供 buildWeeklyLLMContext 使用）
+ * 与 WeekView.tsx 中的 WeekDayData 兼容，但不从组件层导入
+ */
+export interface WeekDayDataLite {
+  date: string
+  weekday: string
+  dateFull: string
+  summary: DailySummary
+  totalUsageMinutes: number
+  hasData: boolean
+  taskDurations: {
+    title: string
+    durationSec: number
+    completed: boolean
+    stuckMarks: { reason: string; resolved: boolean }[]
+  }[]
+}
+
 // ===================== 辅助函数 =====================
 
 /** 根据事件类型筛选 */
@@ -174,12 +193,18 @@ export function buildDailySummary(date: string, events: TrackEvent[]): DailySumm
 
   // -------- 6. 宏观任务闭环 --------
   const macroCompletes = filterByType(events, 'session.macro_completed')
-  const latestMacro = macroCompletes[macroCompletes.length - 1]
+
+  // ★ 修复：只有当 macro_completed 事件的 taskTitle 匹配当前焦点任务时才标记为完成
+  // 之前的 Bug：!!latestMacro 会在当天完成过任何任务时返回 true，导致后续进行中的任务被误判为「已完成」
+  const focusTitle = latestFocus?.payload.taskTitle ?? null
+  const matchedMacro = focusTitle
+    ? macroCompletes.find(e => e.payload.taskTitle === focusTitle)
+    : null
 
   const macroTask: DailySummary['macroTask'] = {
-    title: latestFocus?.payload.taskTitle ?? null,
-    completed: !!latestMacro,
-    completedVia: latestMacro?.payload.completedVia ?? null,
+    title: focusTitle,
+    completed: !!matchedMacro,
+    completedVia: matchedMacro?.payload.completedVia ?? null,
   }
 
   // -------- 7. 遗留任务池 --------
@@ -318,6 +343,143 @@ export function summaryToLLMContext(summary: DailySummary): string {
   if (summary.stats.averageTimeDeltaSeconds != null) {
     const avg = summary.stats.averageTimeDeltaSeconds
     lines.push(`- 平均时间感知偏差：${avg > 0 ? '高估' : '低估'} ${Math.abs(Math.round(avg / 60))} 分钟`)
+  }
+
+  return lines.join('\n')
+}
+
+// ===================== 周视图 LLM 上下文 =====================
+
+/** 格式化秒数为友好时长：<60s→Xs、<60min→X分钟、>=60min→X.Xh */
+function formatDuration(sec: number): string {
+  if (sec < 60) return `${sec}秒`
+  const min = Math.round(sec / 60)
+  if (min < 60) return `${min}分钟`
+  return `${(min / 60).toFixed(1)}小时`
+}
+
+/**
+ * 把 7 天的周视图数据转为 AI 可理解的 Markdown 文本
+ *
+ * 内容对齐用户看到的 5 个图表：
+ *   1. 每日完成率（WeekCompletionBars）
+ *   2. 周汇总指标（WeekMetricCards）
+ *   3. 任务用时排行（WeekTaskRanking）
+ *   4. 活动分布概览（WeekHeatmapGrid）
+ *   5. 使用节奏趋势（WeekRhythmChart）
+ */
+export function buildWeeklyLLMContext(days: WeekDayDataLite[]): string {
+  const lines: string[] = []
+  const daysWithData = days.filter(d => d.hasData)
+  const n = Math.max(daysWithData.length, 1)
+
+  const firstDate = days[0]?.dateFull ?? ''
+  const lastDate = days[days.length - 1]?.dateFull ?? ''
+  lines.push(`## 周数据摘要（${firstDate} – ${lastDate}）\n`)
+
+  // ---- 1. 每日完成率 ----
+  lines.push(`### 每日完成率`)
+  for (const day of days) {
+    if (!day.hasData) {
+      lines.push(`- ${day.dateFull}：无数据`)
+      continue
+    }
+    const { totalMicroSteps, completedMicroSteps } = day.summary.stats
+    const rate = totalMicroSteps > 0
+      ? Math.round((completedMicroSteps / totalMicroSteps) * 100)
+      : 0
+    lines.push(`- ${day.dateFull}：${rate}%（${completedMicroSteps}/${totalMicroSteps} 步）`)
+  }
+
+  // ---- 2. 周汇总指标 ----
+  const totalCompleted = daysWithData.reduce((s, d) => s + d.summary.stats.completedMicroSteps, 0)
+  const totalUsage = daysWithData.reduce((s, d) => s + d.totalUsageMinutes, 0)
+  const totalFocus = daysWithData.reduce((s, d) => s + d.summary.stats.totalFocusMinutes, 0)
+  const totalFlow = daysWithData.reduce((s, d) => s + d.summary.stats.totalFlowMinutes, 0)
+  const totalStuck = daysWithData.reduce((s, d) => s + d.summary.stats.totalStuckCount, 0)
+
+  lines.push(`\n### 周汇总指标（${daysWithData.length} 天有数据）`)
+  lines.push(`- 总完成任务数：${totalCompleted}（日均 ${(totalCompleted / n).toFixed(1)}）`)
+  lines.push(`- 总电脑使用时长：${formatDuration(totalUsage * 60)}（日均 ${formatDuration(Math.round(totalUsage / n) * 60)}）`)
+  lines.push(`- 总任务专注时长：${formatDuration(totalFocus * 60)}（日均 ${formatDuration(Math.round(totalFocus / n) * 60)}）`)
+  lines.push(`- 总心流时长：${totalFlow} 分钟`)
+  lines.push(`- 总卡顿次数：${totalStuck} 次`)
+  if (totalUsage > 0) {
+    lines.push(`- 周生产力比率：${Math.min(Math.round((totalFocus / totalUsage) * 100), 100)}%（专注/使用）`)
+  }
+
+  // ---- 3. 任务用时排行 Top 10 ----
+  const allTasks = daysWithData.flatMap(d => d.taskDurations)
+  const taskAgg = new Map<string, { sec: number; completed: boolean; stuckCount: number; days: string[] }>()
+  for (const t of allTasks) {
+    const existing = taskAgg.get(t.title)
+    if (existing) {
+      existing.sec += t.durationSec
+      if (t.completed) existing.completed = true
+      existing.stuckCount += t.stuckMarks.length
+    } else {
+      taskAgg.set(t.title, {
+        sec: t.durationSec,
+        completed: t.completed,
+        stuckCount: t.stuckMarks.length,
+        days: [],
+      })
+    }
+  }
+  // 记录每个任务出现在哪些天
+  for (const d of daysWithData) {
+    for (const t of d.taskDurations) {
+      const agg = taskAgg.get(t.title)
+      if (agg && !agg.days.includes(d.weekday)) {
+        agg.days.push(d.weekday)
+      }
+    }
+  }
+
+  const ranked = Array.from(taskAgg.entries())
+    .sort((a, b) => b[1].sec - a[1].sec)
+    .slice(0, 10)
+
+  if (ranked.length > 0) {
+    lines.push(`\n### 周任务用时排行 Top ${ranked.length}`)
+    for (let i = 0; i < ranked.length; i++) {
+      const [title, info] = ranked[i]
+      const status = info.completed ? '✅' : '⏳'
+      const stuckStr = info.stuckCount > 0 ? `，卡顿${info.stuckCount}次` : ''
+      lines.push(`${i + 1}. ${status} ${title}：${formatDuration(info.sec)}（出现在${info.days.join('、')}${stuckStr}）`)
+    }
+  }
+
+  // ---- 4. 逐日行为概要 ----
+  lines.push(`\n### 逐日行为概要`)
+  for (const day of days) {
+    if (!day.hasData) {
+      lines.push(`\n**${day.dateFull}**：无数据`)
+      continue
+    }
+    const s = day.summary.stats
+    lines.push(`\n**${day.dateFull}**`)
+    lines.push(`- 使用 ${day.totalUsageMinutes} 分钟，专注 ${s.totalFocusMinutes} 分钟，心流 ${s.totalFlowMinutes} 分钟`)
+    lines.push(`- 完成 ${s.completedMicroSteps}/${s.totalMicroSteps} 步，卡顿 ${s.totalStuckCount} 次`)
+
+    // 卡顿详情
+    if (day.summary.stuckEvents.length > 0) {
+      for (const stuck of day.summary.stuckEvents) {
+        lines.push(`  - 卡在「${stuck.microAction}」：原因「${stuck.reason}」→ 绕路「${stuck.pivotChosen}」→ ${stuck.rescueSucceeded ? '解决 ✅' : stuck.rescueSucceeded === false ? '未解决 ❌' : '未知'}`)
+      }
+    }
+
+    // 中断
+    if (day.summary.interruptions.length > 0) {
+      lines.push(`- 暂停 ${day.summary.interruptions.length} 次`)
+    }
+
+    // 心流
+    if (day.summary.flowEvents.length > 0) {
+      for (const f of day.summary.flowEvents) {
+        lines.push(`  - 心流：${f.taskTitle}，${Math.round(f.durationSeconds / 60)} 分钟`)
+      }
+    }
   }
 
   return lines.join('\n')

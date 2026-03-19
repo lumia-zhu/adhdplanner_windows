@@ -729,12 +729,14 @@ function TaskBlock({
         <div className="ml-[52px] mb-1.5">
           <button
             onClick={() => onResumePaused(task.id)}
-            className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg
-                       bg-blue-50/80 border border-blue-100
-                       hover:bg-blue-100 active:scale-95 transition-all cursor-pointer"
+            className="group flex items-center gap-1 px-2 py-[3px] rounded-full
+                       bg-blue-50 hover:bg-blue-500
+                       active:scale-95 transition-all duration-200 cursor-pointer"
           >
-            <span className="text-[11px]">▶</span>
-            <span className="text-[11px] text-blue-500 font-medium">已暂停，点击继续</span>
+            <svg className="w-3 h-3 text-blue-400 group-hover:text-white transition-colors" viewBox="0 0 20 20" fill="currentColor">
+              <path d="M6.3 2.84A1.5 1.5 0 004 4.11v11.78a1.5 1.5 0 002.3 1.27l9.344-5.891a1.5 1.5 0 000-2.538L6.3 2.84z" />
+            </svg>
+            <span className="text-[10px] text-blue-500 group-hover:text-white font-medium transition-colors">继续</span>
           </button>
         </div>
       )}

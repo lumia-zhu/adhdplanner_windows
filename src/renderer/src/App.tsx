@@ -396,7 +396,7 @@ export default function App() {
    * FocusFlow 阶段1 确认微任务 → 进入执行（阶段2）
    * @param understandingContext  用户在 Task Understanding 阶段的反思问答（可选）
    */
-  const handleStartMicro = (microTask: string, source: 'self' | 'ai_chip', understandingContext?: string) => {
+  const handleStartMicro = (microTask: string, source: 'self' | 'ai_chip' | 'skip', understandingContext?: string) => {
     const task = tasks.find(t => t.id === scaffoldTaskId)
     if (!task) return
     setScaffoldTaskId(null)

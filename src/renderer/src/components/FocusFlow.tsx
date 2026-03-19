@@ -41,7 +41,7 @@ export interface UnderstandingEntry {
 interface FocusFlowProps {
   task: Task
   aiConfig: AIConfig
-  onStart: (microTask: string, source: 'self' | 'ai_chip', understandingContext?: string) => void
+  onStart: (microTask: string, source: 'self' | 'ai_chip' | 'skip', understandingContext?: string) => void
   onCancel: () => void
 }
 
@@ -283,6 +283,14 @@ export default function FocusFlow({ task, aiConfig, onStart, onCancel }: FocusFl
     onStart(chip.action, 'ai_chip', ctx)
   }
 
+  /** 跳过：不等 AI、不输入，直接用默认动作开始 */
+  const handleSkip = () => {
+    const defaultAction = activeSubtask
+      ? `开始做「${activeSubtask.title}」`
+      : '开始做'
+    onStart(defaultAction, 'skip')
+  }
+
   // ===================== 渲染 =====================
 
   return (
@@ -518,8 +526,15 @@ export default function FocusFlow({ task, aiConfig, onStart, onCancel }: FocusFl
           </div>
         )}
 
-        {/* 底部取消 */}
-        <div className="px-6 pb-4 flex justify-end">
+        {/* 底部操作：跳过 + 取消 */}
+        <div className="px-6 pb-4 flex justify-between items-center">
+          {/* 跳过：直接进入执行，不输入第一步 */}
+          <button
+            onClick={handleSkip}
+            className="text-xs text-indigo-400 hover:text-indigo-600 transition-colors"
+          >
+            跳过，直接开始 →
+          </button>
           <button
             onClick={handleClose}
             className="text-xs text-gray-400 hover:text-gray-600 transition-colors"

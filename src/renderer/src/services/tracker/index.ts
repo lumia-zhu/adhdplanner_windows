@@ -11,7 +11,8 @@
  */
 
 export { tracker } from './tracker'
-export { buildDailySummary, summaryToLLMContext } from './summary'
+export { buildDailySummary, summaryToLLMContext, buildWeeklyLLMContext } from './summary'
+export type { WeekDayDataLite } from './summary'
 export type {
   TrackEventType,
   TrackEventMap,

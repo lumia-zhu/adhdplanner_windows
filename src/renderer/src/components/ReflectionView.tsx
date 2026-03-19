@@ -10,9 +10,9 @@ import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import html2canvas from 'html2canvas'
 import type { Task } from '../types'
 import type { AIConfig } from '../services/ai'
-import { buildReflectionSystemPrompt } from '../services/ai'
+import { buildReflectionSystemPrompt, buildWeeklyReflectionSystemPrompt } from '../services/ai'
 import type { TrackEvent, DailySummary } from '../services/tracker'
-import { buildDailySummary, summaryToLLMContext } from '../services/tracker'
+import { buildDailySummary, summaryToLLMContext, buildWeeklyLLMContext } from '../services/tracker'
 import DonutChart from './DonutChart'
 import TaskDurationChart from './TaskDurationChart'
 import type { TaskDurationItem, StuckMark } from './TaskDurationChart'
@@ -25,6 +25,9 @@ import ActivityRhythmChart from './ActivityRhythmChart'
 import InteractiveActivityHeatmap from './InteractiveActivityHeatmap'
 import ReflectionChat from './ReflectionChat'
 import MiniCalendar from './MiniCalendar'
+import WeekView from './WeekView'
+import type { WeekDayData } from './WeekView'
+import { getWeekDates } from './WeekView'
 import { tracker } from '../services/tracker'
 
 interface ReflectionViewProps {
@@ -53,6 +56,15 @@ const BUBBLE_HINTS_HISTORY = [
   '来复盘这天的表现吧 📊',
   '看看过去的自己，聊聊感受？',
   '翻翻老数据，找找规律 💡',
+]
+
+/** AI 浮标随机引导语 —— 周视图 */
+const BUBBLE_HINTS_WEEK = [
+  '一起看看这周的节奏吧 📊',
+  '周复盘比日复盘更能发现规律~',
+  '哪天状态最好？来聊聊 💡',
+  '这周有什么发现？点我~',
+  '找找跨天的规律，下周更高效 🚀',
 ]
 
 /** 主窗口默认宽度（和 main/index.ts 里的 MAIN_WIDTH 一致） */
@@ -155,17 +167,30 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
   // ---- AI 浮标气泡 ----
   const [showBubble, setShowBubble] = useState(false)
 
+  // ---- 日/周 视图模式 ----
+  const [viewMode, setViewMode] = useState<'day' | 'week'>('day')
+
   // ---- 日期选择 & 日历弹窗 ----
   const today = getToday()
   const [selectedDate, setSelectedDate] = useState(today)
   const isToday = selectedDate === today
   const [reflCalendarOpen, setReflCalendarOpen] = useState(false)
 
-  // 浮标气泡文案：根据日期区分
+  // ---- 周视图导航 ----
+  // weekEndDate 始终是周视图范围的最后一天
+  const [weekEndDate, setWeekEndDate] = useState(today)
+
+  // ---- 周视图 AI 数据 ----
+  const [weekDayData, setWeekDayData] = useState<WeekDayData[] | null>(null)
+
+  // 浮标气泡文案：根据视图模式和日期区分
   const bubbleText = useMemo(() => {
+    if (viewMode === 'week') {
+      return BUBBLE_HINTS_WEEK[Math.floor(Math.random() * BUBBLE_HINTS_WEEK.length)]
+    }
     const hints = isToday ? BUBBLE_HINTS_TODAY : BUBBLE_HINTS_HISTORY
     return hints[Math.floor(Math.random() * hints.length)]
-  }, [isToday])
+  }, [viewMode, isToday])
 
   // 切换日期时：关闭 AI 侧边栏 + 清除截图缓存（每天数据不同需重新截图）
   const resetChatOnDateChange = useCallback(() => {
@@ -473,6 +498,23 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
     return buildReflectionSystemPrompt(context + taskInfo + productivityInfo + activityInfo, !!screenshotBase64, isToday)
   }, [summary, tasks, completionRate, totalUsageMinutes, productivityRatio, flowRatio, activityTimeDistribution, screenshotBase64, isToday])
 
+  // ---- 周视图数据回调 ----
+  const handleWeekDataReady = useCallback((data: WeekDayData[]) => {
+    setWeekDayData(data)
+  }, [])
+
+  // 构建周 AI system prompt
+  const weekSystemPrompt = useMemo(() => {
+    if (!weekDayData || weekDayData.length === 0) return ''
+    const context = buildWeeklyLLMContext(weekDayData)
+    const dates = getWeekDates(weekEndDate)
+    const weekLabel = `${formatDateFriendly(dates[0]).replace(/ .+/, '')} – ${formatDateFriendly(dates[6]).replace(/ .+/, '')}`
+    return buildWeeklyReflectionSystemPrompt(context, !!screenshotBase64, weekLabel)
+  }, [weekDayData, weekEndDate, screenshotBase64])
+
+  // 根据当前视图模式选择对应的 system prompt
+  const activeSystemPrompt = viewMode === 'week' ? weekSystemPrompt : systemPrompt
+
   // 反思完成回调
   const handleReflectionComplete = (summaryText: string) => {
     tracker.track('daily.leftovers', {
@@ -574,13 +616,13 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
     }
   }, [])
 
-  // ---- 加载中 ----
-  if (loadingData) {
+  // ---- 加载中（仅日视图模式下等待日数据加载） ----
+  if (loadingData && viewMode === 'day') {
     return (
       <div className="h-full flex items-center justify-center bg-white">
         <div className="flex flex-col items-center gap-3">
           <div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
-          <p className="text-sm text-gray-400">正在加载今日数据...</p>
+          <p className="text-sm text-gray-400">正在加载数据...</p>
         </div>
       </div>
     )
@@ -594,88 +636,163 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
       {/* ====== 顶部标题栏 ====== */}
       <div className="drag-region flex items-center px-5 py-3 border-b border-gray-100 flex-shrink-0">
         {/* 左侧：图标 + 标题 */}
-        <div className="flex items-center gap-2.5 no-drag w-28 flex-shrink-0">
+        <div className="flex items-center gap-2.5 no-drag flex-shrink-0">
           <div className="w-7 h-7 rounded-lg bg-amber-400 flex items-center justify-center">
             <span className="text-sm">💡</span>
           </div>
-          <h1 className="font-semibold text-gray-800 text-sm">每日反思</h1>
+          <h1 className="font-semibold text-gray-800 text-sm">数据反思</h1>
         </div>
 
-        {/* 中间：日期导航（居中） */}
+        {/* 中间：日期导航 + 日/周切换 */}
         <div className="flex-1 flex justify-center">
-          <div className="flex items-center gap-1 relative no-drag">
-            {/* 前一天 */}
-            <button
-              onClick={goPrev}
-              className="w-6 h-6 rounded-md hover:bg-gray-100 flex items-center justify-center
-                         text-gray-400 hover:text-gray-600 transition-colors"
-              title="前一天"
-            >
-              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" />
-              </svg>
-            </button>
+          <div className="flex items-center gap-2.5 no-drag">
+            {viewMode === 'day' ? (
+              /* ---- 日视图导航 ---- */
+              <div className="flex items-center gap-1 relative">
+                <button
+                  onClick={goPrev}
+                  className="w-6 h-6 rounded-md hover:bg-gray-100 flex items-center justify-center
+                             text-gray-400 hover:text-gray-600 transition-colors"
+                  title="前一天"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" />
+                  </svg>
+                </button>
 
-            {/* 当前日期（点击弹出日历） */}
-            <button
-              onClick={() => setReflCalendarOpen(v => !v)}
-              className="text-xs font-medium text-gray-600 min-w-[90px] text-center select-none
-                         py-0.5 px-1.5 rounded-lg hover:bg-gray-100 transition-colors"
-              title="点击选择日期"
-            >
-              {formatDateFriendly(selectedDate)}
-              <svg className={`inline-block w-2.5 h-2.5 ml-0.5 transition-transform ${reflCalendarOpen ? 'rotate-180' : ''}`}
-                fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
-              </svg>
-            </button>
+                <button
+                  onClick={() => setReflCalendarOpen(v => !v)}
+                  className="text-xs font-medium text-gray-600 min-w-[90px] text-center select-none
+                             py-0.5 px-1.5 rounded-lg hover:bg-gray-100 transition-colors"
+                  title="点击选择日期"
+                >
+                  {formatDateFriendly(selectedDate)}
+                  <svg className={`inline-block w-2.5 h-2.5 ml-0.5 transition-transform ${reflCalendarOpen ? 'rotate-180' : ''}`}
+                    fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
 
-            {/* 日历弹窗 */}
-            {reflCalendarOpen && (
-              <MiniCalendar
-                selectedDate={selectedDate}
-                onSelect={(date) => {
-                  const todayStr = getToday()
-                  setSelectedDate(date > todayStr ? todayStr : date)
-                  setReflCalendarOpen(false)
-                  // 切换日期时关闭 AI 侧边栏 + 清除截图
+                {reflCalendarOpen && (
+                  <MiniCalendar
+                    selectedDate={selectedDate}
+                    onSelect={(date) => {
+                      const todayStr = getToday()
+                      setSelectedDate(date > todayStr ? todayStr : date)
+                      setReflCalendarOpen(false)
+                      resetChatOnDateChange()
+                    }}
+                    onClose={() => setReflCalendarOpen(false)}
+                  />
+                )}
+
+                <button
+                  onClick={goNext}
+                  disabled={isToday}
+                  className={`w-6 h-6 rounded-md flex items-center justify-center transition-colors
+                    ${isToday
+                      ? 'text-gray-200 cursor-not-allowed'
+                      : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'
+                    }`}
+                  title={isToday ? '已经是今天' : '后一天'}
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" />
+                  </svg>
+                </button>
+
+                {!isToday && (
+                  <button
+                    onClick={goToday}
+                    className="ml-1 px-2 py-0.5 rounded-full text-[10px] font-semibold
+                               bg-indigo-50 text-indigo-500 hover:bg-indigo-100 transition-colors"
+                  >
+                    今天
+                  </button>
+                )}
+              </div>
+            ) : (
+              /* ---- 周视图导航 ---- */
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => { setWeekEndDate(d => shiftDate(d, -7)); resetChatOnDateChange() }}
+                  className="w-6 h-6 rounded-md hover:bg-gray-100 flex items-center justify-center
+                             text-gray-400 hover:text-gray-600 transition-colors"
+                  title="前一周"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" />
+                  </svg>
+                </button>
+
+                <span className="text-xs font-medium text-gray-600 min-w-[130px] text-center select-none py-0.5 px-1.5">
+                  {(() => {
+                    const dates = getWeekDates(weekEndDate)
+                    return `${formatDateFriendly(dates[0]).replace(/ .+/, '')} – ${formatDateFriendly(dates[6]).replace(/ .+/, '')}`
+                  })()}
+                </span>
+
+                <button
+                  onClick={() => { setWeekEndDate(d => { const next = shiftDate(d, 7); return next > getToday() ? getToday() : next }); resetChatOnDateChange() }}
+                  disabled={weekEndDate === today}
+                  className={`w-6 h-6 rounded-md flex items-center justify-center transition-colors
+                    ${weekEndDate === today
+                      ? 'text-gray-200 cursor-not-allowed'
+                      : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'
+                    }`}
+                  title={weekEndDate === today ? '已经是本周' : '后一周'}
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" />
+                  </svg>
+                </button>
+
+                {weekEndDate !== today && (
+                  <button
+                    onClick={() => { setWeekEndDate(getToday()); resetChatOnDateChange() }}
+                    className="ml-1 px-2 py-0.5 rounded-full text-[10px] font-semibold
+                               bg-indigo-50 text-indigo-500 hover:bg-indigo-100 transition-colors"
+                  >
+                    本周
+                  </button>
+                )}
+              </div>
+            )}
+
+            <div className="flex rounded-md bg-gray-100 p-0.5">
+              <button
+                onClick={() => {
+                  setViewMode('day')
                   resetChatOnDateChange()
                 }}
-                onClose={() => setReflCalendarOpen(false)}
-              />
-            )}
-
-            {/* 后一天 */}
-            <button
-              onClick={goNext}
-              disabled={isToday}
-              className={`w-6 h-6 rounded-md flex items-center justify-center transition-colors
-                ${isToday
-                  ? 'text-gray-200 cursor-not-allowed'
-                  : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'
-                }`}
-              title={isToday ? '已经是今天' : '后一天'}
-            >
-              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" />
-              </svg>
-            </button>
-
-            {/* 回到今天（非今天时显示） */}
-            {!isToday && (
-              <button
-                onClick={goToday}
-                className="ml-1 px-2 py-0.5 rounded-full text-[10px] font-semibold
-                           bg-indigo-50 text-indigo-500 hover:bg-indigo-100 transition-colors"
+                className={`px-2 py-0.5 rounded text-[10px] font-medium transition-all
+                  ${viewMode === 'day'
+                    ? 'bg-white text-gray-700 shadow-sm'
+                    : 'text-gray-400 hover:text-gray-600'
+                  }`}
               >
-                今天
+                日
               </button>
-            )}
+              <button
+                onClick={() => {
+                  setViewMode('week')
+                  setWeekEndDate(selectedDate)
+                  resetChatOnDateChange()
+                }}
+                className={`px-2 py-0.5 rounded text-[10px] font-medium transition-all
+                  ${viewMode === 'week'
+                    ? 'bg-white text-gray-700 shadow-sm'
+                    : 'text-gray-400 hover:text-gray-600'
+                  }`}
+              >
+                周
+              </button>
+            </div>
           </div>
         </div>
 
-        {/* 右侧：关闭按钮（与左侧等宽保持居中） */}
-        <div className="w-28 flex-shrink-0 flex justify-end">
+        {/* 右侧：关闭按钮 */}
+        <div className="flex-shrink-0 flex justify-end">
           <button
             onClick={handleClose}
             className="no-drag w-7 h-7 rounded-md hover:bg-gray-100 flex items-center justify-center text-gray-400 hover:text-gray-600 transition-colors"
@@ -688,135 +805,121 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
         </div>
       </div>
 
-      {/* ====== 主内容区 ====== */}
+      {/* ====== 主内容区（日/周共享布局：数据面板 + AI 侧边栏） ====== */}
       <div ref={containerRef} className="flex-1 flex overflow-hidden relative">
 
-        {/* ---- 数据可视化区域 ---- */}
+        {/* ---- 数据可视化区域（日/周内容切换） ---- */}
         <div
           ref={dataPanelRef}
           className="flex-1 overflow-y-auto transition-all duration-400"
           style={{ minWidth: MIN_DATA_WIDTH }}
         >
-          {/* 内容容器：chatOpen 时靠左紧凑，关闭时居中宽松 */}
-          <div className={`p-6 space-y-6 transition-all duration-400 ${
-            chatOpen
-              ? 'max-w-sm'
-              : 'max-w-xl mx-auto'
-          }`}>
-            {/* 圆环图（仅今天显示，历史日期没有任务快照） */}
-            {isToday && (
-              <div id="chart-completion-rate" className="flex flex-col items-center">
-                <DonutChart
-                  percentage={completionRate}
-                  size={chatOpen ? 140 : 180}
-                  strokeWidth={chatOpen ? 12 : 14}
-                  label="任务完成率"
-                />
-              </div>
-            )}
-
-            {/* 核心指标卡片 */}
-            <div id="chart-key-metrics" className={`grid gap-3 w-full ${
-              chatOpen ? 'grid-cols-2' : 'grid-cols-3'
+          {viewMode === 'week' ? (
+            /* ---- 周视图 ---- */
+            <WeekView weekEndDate={weekEndDate} onDataReady={handleWeekDataReady} />
+          ) : (
+            /* ---- 日视图 ---- */
+            <div className={`p-6 space-y-6 transition-all duration-400 ${
+              chatOpen
+                ? 'max-w-sm'
+                : 'max-w-xl mx-auto'
             }`}>
-              <div className="text-center bg-emerald-50 rounded-xl py-2.5 px-2">
-                <p className="text-lg font-bold text-emerald-600">
-                  {summary?.stats.completedMicroSteps ?? 0}
-                </p>
-                <p className="text-[10px] text-emerald-500 mt-0.5">完成任务数</p>
-              </div>
-              <div className="text-center bg-blue-50 rounded-xl py-2.5 px-2">
-                <p className="text-lg font-bold text-blue-600">
-                  {usageDurationStr.value}
-                  <span className="text-xs font-normal ml-0.5">{usageDurationStr.unit}</span>
-                </p>
-                <p className="text-[10px] text-blue-500 mt-0.5">电脑使用时长</p>
-              </div>
-              <div className="text-center bg-indigo-50 rounded-xl py-2.5 px-2">
-                <p className="text-lg font-bold text-indigo-600">
-                  {summary?.stats.totalFocusMinutes ?? 0}
-                  <span className="text-xs font-normal ml-0.5">分钟</span>
-                </p>
-                <p className="text-[10px] text-indigo-500 mt-0.5">任务时长</p>
-              </div>
-            </div>
-
-            {/* 分隔线 */}
-            <div className="border-t border-gray-100" />
-
-            {/* 任务用时条形图 */}
-            {taskDurations.length > 0 && (
-              <div id="chart-task-duration">
-                <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
-                  ⏱ 任务实际用时
-                </h3>
-                <TaskDurationChart data={taskDurations} />
-              </div>
-            )}
-
-            {/* 分隔线 */}
-            {taskDurations.length > 0 && <div className="border-t border-gray-100" />}
-
-            {/* 使用时长热力图 —— 暂时隐藏 */}
-            {/* <div>
-              <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
-                🟩 使用时长热力图
-              </h3>
-              <ActivityHeatmap data={activityData} />
-            </div>
-
-            <div className="border-t border-gray-100" /> */}
-
-            {/* 任务活动分布（交互式热力图 + 任务时间轴） */}
-            <div id="chart-activity-heatmap">
-              <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
-                🔍 任务活动分布
-              </h3>
-              <InteractiveActivityHeatmap data={activityData} events={events} />
-            </div>
-
-            {/* 分隔线 */}
-            <div className="border-t border-gray-100" />
-
-            {/* 使用节奏曲线 */}
-            <div id="chart-rhythm">
-              <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
-                📈 使用节奏曲线
-              </h3>
-              <ActivityRhythmChart data={activityData} />
-            </div>
-
-            {/* 一日轨迹（暂时隐藏） */}
-            {/* <div className="border-t border-gray-100" />
-            <div>
-              <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
-                📅 一日轨迹
-              </h3>
-              <DayTimeline entries={timelineEntries} />
-            </div> */}
-
-            {/* 遗留任务（仅今天显示，历史日期没有任务快照） */}
-            {isToday && summary && summary.leftoverTasks.length > 0 && (
-              <>
-                <div className="border-t border-gray-100" />
-                <div>
-                  <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
-                    📦 未执行任务
-                  </h3>
-                  <div className="flex flex-wrap gap-1.5">
-                    {summary.leftoverTasks.map((t, i) => (
-                      <span
-                        key={i}
-                        className="text-[11px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-500"
-                      >
-                        {t}
-                      </span>
-                    ))}
-                  </div>
+              {/* 圆环图（仅今天显示，历史日期没有任务快照） */}
+              {isToday && (
+                <div id="chart-completion-rate" className="flex flex-col items-center">
+                  <DonutChart
+                    percentage={completionRate}
+                    size={chatOpen ? 140 : 180}
+                    strokeWidth={chatOpen ? 12 : 14}
+                    label="任务完成率"
+                  />
                 </div>
-              </>
-            )}
-          </div>
+              )}
+
+              {/* 核心指标卡片 */}
+              <div id="chart-key-metrics" className={`grid gap-3 w-full ${
+                chatOpen ? 'grid-cols-2' : 'grid-cols-3'
+              }`}>
+                <div className="text-center bg-emerald-50 rounded-xl py-2.5 px-2">
+                  <p className="text-lg font-bold text-emerald-600">
+                    {summary?.stats.completedMicroSteps ?? 0}
+                  </p>
+                  <p className="text-[10px] text-emerald-500 mt-0.5">完成任务数</p>
+                </div>
+                <div className="text-center bg-blue-50 rounded-xl py-2.5 px-2">
+                  <p className="text-lg font-bold text-blue-600">
+                    {usageDurationStr.value}
+                    <span className="text-xs font-normal ml-0.5">{usageDurationStr.unit}</span>
+                  </p>
+                  <p className="text-[10px] text-blue-500 mt-0.5">电脑使用时长</p>
+                </div>
+                <div className="text-center bg-indigo-50 rounded-xl py-2.5 px-2">
+                  <p className="text-lg font-bold text-indigo-600">
+                    {summary?.stats.totalFocusMinutes ?? 0}
+                    <span className="text-xs font-normal ml-0.5">分钟</span>
+                  </p>
+                  <p className="text-[10px] text-indigo-500 mt-0.5">任务时长</p>
+                </div>
+              </div>
+
+              {/* 分隔线 */}
+              <div className="border-t border-gray-100" />
+
+              {/* 任务用时条形图 */}
+              {taskDurations.length > 0 && (
+                <div id="chart-task-duration">
+                  <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
+                    ⏱ 任务实际用时
+                  </h3>
+                  <TaskDurationChart data={taskDurations} />
+                </div>
+              )}
+
+              {/* 分隔线 */}
+              {taskDurations.length > 0 && <div className="border-t border-gray-100" />}
+
+              {/* 任务活动分布（交互式热力图 + 任务时间轴） */}
+              <div id="chart-activity-heatmap">
+                <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
+                  🔍 任务活动分布
+                </h3>
+                <InteractiveActivityHeatmap data={activityData} events={events} />
+              </div>
+
+              {/* 分隔线 */}
+              <div className="border-t border-gray-100" />
+
+              {/* 使用节奏曲线 */}
+              <div id="chart-rhythm">
+                <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
+                  📈 使用节奏曲线
+                </h3>
+                <ActivityRhythmChart data={activityData} />
+              </div>
+
+              {/* 遗留任务（仅今天显示，历史日期没有任务快照） */}
+              {isToday && summary && summary.leftoverTasks.length > 0 && (
+                <>
+                  <div className="border-t border-gray-100" />
+                  <div>
+                    <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
+                      📦 未执行任务
+                    </h3>
+                    <div className="flex flex-wrap gap-1.5">
+                      {summary.leftoverTasks.map((t, i) => (
+                        <span
+                          key={i}
+                          className="text-[11px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-500"
+                        >
+                          {t}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
         </div>
 
         {/* ---- 可拖拽分隔条 ---- */}
@@ -826,24 +929,20 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
             className="w-1 flex-shrink-0 cursor-col-resize group relative
                        bg-gray-200 hover:bg-indigo-300 transition-colors duration-200"
           >
-            {/* 扩大拖拽热区 */}
             <div className="absolute inset-y-0 -left-1.5 -right-1.5" />
-            {/* 中央把手 */}
             <div className="absolute top-1/2 -translate-y-1/2 left-1/2 -translate-x-1/2
                             w-1 h-8 rounded-full bg-gray-300 group-hover:bg-indigo-400
                             transition-colors duration-200" />
           </div>
         )}
 
-        {/* ---- 对话侧边栏 ---- */}
+        {/* ---- 对话侧边栏（日/周共用） ---- */}
         <div
           className="flex-shrink-0 overflow-hidden border-l border-gray-100 flex flex-col
                      transition-[width] duration-400 ease-in-out"
           style={{ width: chatOpen ? chatWidth : 0 }}
         >
-          {/* 侧边栏内部（始终渲染，width=0 时被 overflow-hidden 截掉） */}
           <div className="flex flex-col h-full" style={{ minWidth: MIN_CHAT_WIDTH }}>
-            {/* 侧边栏顶部：左上角收起按钮 */}
             <div className="flex items-center gap-2 px-3 py-2.5 border-b border-gray-100 flex-shrink-0">
               <button
                 onClick={closeChat}
@@ -851,15 +950,15 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
                            text-gray-400 hover:text-gray-600 transition-colors"
                 title="收起对话"
               >
-                {/* 向右箭头（收起方向） */}
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 5l7 7-7 7M5 5l7 7-7 7" />
                 </svg>
               </button>
-              <span className="text-xs font-semibold text-gray-500">AI 反思助手</span>
+              <span className="text-xs font-semibold text-gray-500">
+                AI {viewMode === 'week' ? '周' : ''}反思助手
+              </span>
             </div>
 
-            {/* 对话内容 */}
             <div className="flex-1 min-h-0">
               {!hasAI ? (
                 <div className="flex-1 flex items-center justify-center h-full">
@@ -873,12 +972,13 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
                     </p>
                   </div>
                 </div>
-              ) : systemPrompt ? (
+              ) : activeSystemPrompt ? (
                 <ReflectionChat
-                  systemPrompt={systemPrompt}
+                  key={viewMode === 'week' ? `week-${weekEndDate}` : `day-${selectedDate}`}
+                  systemPrompt={activeSystemPrompt}
                   aiConfig={aiConfig}
                   screenshotBase64={screenshotBase64}
-                  selectedDate={selectedDate}
+                  selectedDate={viewMode === 'week' ? weekEndDate : selectedDate}
                   onChartRef={handleChartRef}
                   onComplete={handleReflectionComplete}
                 />
@@ -891,10 +991,9 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
           </div>
         </div>
 
-        {/* ---- 右下角 AI 机器人浮标（所有日期都显示，支持历史反思） ---- */}
+        {/* ---- 右下角 AI 机器人浮标（日/周都显示） ---- */}
         {!chatOpen && (
           <div className="absolute bottom-5 right-5 flex flex-col items-end gap-2 z-20">
-            {/* 气泡提示 */}
             <div
               className={`max-w-[200px] px-3 py-2 rounded-2xl rounded-br-md
                           bg-gray-800 text-white text-xs leading-relaxed shadow-lg
@@ -905,11 +1004,9 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
                           }`}
             >
               {bubbleText}
-              {/* 小三角 */}
               <div className="absolute -bottom-1 right-5 w-2.5 h-2.5 bg-gray-800 rotate-45" />
             </div>
 
-            {/* 浮标按钮：透明底色，只有 emoji */}
             <button
               onClick={openChat}
               onMouseEnter={() => setShowBubble(true)}

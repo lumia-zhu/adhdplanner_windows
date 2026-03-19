@@ -36,7 +36,7 @@ export interface PlanFirstMicroPayload {
   taskId: string
   taskTitle: string
   microAction: string
-  source: 'self' | 'ai_chip'  // 自己打字 or 点击了 AI 建议
+  source: 'self' | 'ai_chip' | 'skip'  // 自己打字 / 点击 AI 建议 / 跳过直接开始
 }
 
 /** ====== 2. 执行阶段 (Execution Phase) ====== */

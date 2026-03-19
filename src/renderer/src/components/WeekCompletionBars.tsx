@@ -1,0 +1,106 @@
+/**
+ * WeekCompletionBars —— 近 7 天每日完成率纵向柱状图
+ *
+ * X 轴：日期从左到右（M/d 周几缩写）
+ * Y 轴：完成率 0-100%
+ * hover 时 tooltip 显示 "完成 X/Y 步"。
+ * 无数据天显示虚线占位 + "--"。
+ */
+
+import type { WeekDayData } from './WeekView'
+
+interface Props {
+  days: WeekDayData[]
+}
+
+/** 柱状图高度（px） */
+const BAR_AREA_H = 100
+
+export default function WeekCompletionBars({ days }: Props) {
+
+  return (
+    <div>
+      {/* Y 轴刻度 + 柱子区域 */}
+      <div className="flex">
+        {/* Y 轴刻度标签 */}
+        <div
+          className="flex flex-col justify-between flex-shrink-0 pr-1.5"
+          style={{ height: BAR_AREA_H }}
+        >
+          {[100, 75, 50, 25, 0].map(tick => (
+            <span key={tick} className="text-[9px] text-gray-400 tabular-nums leading-none text-right w-[24px]">
+              {tick}%
+            </span>
+          ))}
+        </div>
+
+        {/* 柱子区域 */}
+        <div className="flex-1 relative" style={{ height: BAR_AREA_H }}>
+          {/* 水平参考线 */}
+          {[0, 25, 50, 75, 100].map(tick => (
+            <div
+              key={tick}
+              className="absolute left-0 right-0 border-t border-gray-100"
+              style={{ bottom: `${tick}%` }}
+            />
+          ))}
+
+          {/* 7 根柱子 */}
+          <div className="relative flex items-end justify-around h-full px-1">
+            {days.map((day, i) => {
+              const total = day.summary.stats.totalMicroSteps
+              const completed = day.summary.stats.completedMicroSteps
+              const hasData = day.hasData && total > 0
+              const pct = hasData ? Math.round((completed / total) * 100) : 0
+
+              return (
+                <div
+                  key={day.date}
+                  className="flex flex-col items-center flex-1 relative"
+                  style={{ height: '100%' }}
+                  
+                >
+                  {/* 柱子容器（底部对齐） */}
+                  <div className="flex-1 flex items-end justify-center w-full">
+                    {hasData ? (
+                      <div
+                        className="w-[60%] max-w-[36px] rounded-t-md bg-gray-300 hover:bg-gray-400 transition-all duration-300 relative"
+                        style={{ height: `${Math.max(pct, 3)}%` }}
+                      >
+                        {/* 柱顶百分比（hover 或 > 0 时显示） */}
+                        <span className="absolute -top-4 left-1/2 -translate-x-1/2 text-[9px] text-gray-500 font-mono tabular-nums whitespace-nowrap">
+                          {pct}%
+                        </span>
+                      </div>
+                    ) : (
+                      <div className="w-[60%] max-w-[36px] flex items-center justify-center h-full">
+                        <div className="w-px h-[60%] border-l border-dashed border-gray-200" />
+                      </div>
+                    )}
+                  </div>
+
+                  
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      </div>
+
+      {/* X 轴：日期标签 */}
+      <div className="flex ml-[28px]">
+        {days.map(day => (
+          <div key={day.date} className="flex-1 text-center">
+            <span className="text-[10px] text-gray-500 tabular-nums leading-tight">
+              {day.dateLabel}
+            </span>
+            <br />
+            <span className="text-[9px] text-gray-400">
+              {day.weekdayShort}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}

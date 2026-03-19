@@ -15,44 +15,97 @@ interface ChatBubble {
   timestamp: number
 }
 
-/** 图表引用标签 → 图表元素 id 的映射 */
-const CHART_REF_MAP: Record<string, string> = {
-  '完成率': 'chart-completion-rate',
-  '指标卡片': 'chart-key-metrics',
-  '任务用时': 'chart-task-duration',
-  '活动分布': 'chart-activity-heatmap',
-  '热力图': 'chart-activity-heatmap',
-  '节奏曲线': 'chart-rhythm',
+/**
+ * 图表 ID 映射表
+ *
+ * AI 在输出中使用 【chart:xxx】 格式引用图表，前端解析 ID 后：
+ * - 用 domId 找到对应的 DOM 元素进行滚动/高亮
+ * - 用 label 替换为用户友好的中文名显示
+ *
+ * 这样匹配逻辑是精确的英文 ID 比对，不依赖中文模糊匹配，成功率接近 100%
+ */
+const CHART_ID_MAP: Record<string, { domId: string; label: string }> = {
+  // 日视图图表
+  'completion-rate': { domId: 'chart-completion-rate', label: '完成率' },
+  'metrics':         { domId: 'chart-key-metrics',     label: '指标卡片' },
+  'task-duration':   { domId: 'chart-task-duration',   label: '任务用时' },
+  'activity':        { domId: 'chart-activity-heatmap', label: '活动分布' },
+  'rhythm':          { domId: 'chart-rhythm',           label: '节奏曲线' },
+  // 周视图图表
+  'week-completion': { domId: 'chart-week-completion', label: '每日完成率' },
+  'week-metrics':    { domId: 'chart-week-metrics',    label: '周汇总指标' },
+  'week-ranking':    { domId: 'chart-week-ranking',    label: '任务排行' },
+  'week-heatmap':    { domId: 'chart-week-heatmap',    label: '活动热力图' },
+  'week-rhythm':     { domId: 'chart-week-rhythm',     label: '节奏曲线' },
 }
 
-/** 解析文本中的【xxx】标签，返回 React 节点数组 */
+/**
+ * 解析 AI 回复中的图表引用标签，返回 React 节点数组
+ *
+ * 支持两种格式（优先匹配新 ID 格式，兼容旧中文格式）：
+ * - 新格式：【chart:rhythm】   → 精确 ID 匹配（推荐，成功率 ~100%）
+ * - 旧格式：【节奏曲线】       → 关键词模糊匹配（兜底）
+ */
 function parseChartRefs(
   text: string,
   onRef: (chartId: string) => void,
 ): React.ReactNode[] {
-  // 匹配 【xxx】 模式
+  // 匹配所有 【xxx】 模式（包括 【chart:xxx】 和 【中文】）
   const parts = text.split(/(【[^】]+】)/g)
   return parts.map((part, i) => {
     const match = part.match(/^【([^】]+)】$/)
-    if (match) {
-      const label = match[1]
-      const chartId = CHART_REF_MAP[label]
-      if (chartId) {
+    if (!match) return <span key={i}>{part}</span>
+
+    const inner = match[1]
+
+    // ---- 新格式：【chart:xxx】 精确 ID 匹配 ----
+    const idMatch = inner.match(/^chart:(.+)$/)
+    if (idMatch) {
+      const entry = CHART_ID_MAP[idMatch[1]]
+      if (entry) {
         return (
           <button
             key={i}
-            onClick={() => onRef(chartId)}
+            onClick={() => onRef(entry.domId)}
             className="inline-flex items-center gap-0.5 text-indigo-500 hover:text-indigo-700
                        underline underline-offset-2 decoration-indigo-300 hover:decoration-indigo-500
                        transition-colors cursor-pointer font-medium"
-            title={`点击查看${label}图表`}
+            title={`点击查看${entry.label}图表`}
           >
-            📊 {label}
+            📊 {entry.label}
           </button>
         )
       }
     }
-    return <span key={i}>{part}</span>
+
+    // ---- 旧格式兜底：【中文名】 关键词模糊匹配 ----
+    const keywordRules: [string[], string][] = [
+      [['完成率'],                     'completion-rate'],
+      [['指标', '卡片'],               'metrics'],
+      [['用时', '时长'],               'task-duration'],
+      [['活动', '热力', '分布'],       'activity'],
+      [['节奏', '曲线'],               'rhythm'],
+    ]
+    for (const [keywords, id] of keywordRules) {
+      if (keywords.some(kw => inner.includes(kw))) {
+        const entry = CHART_ID_MAP[id]!
+        return (
+          <button
+            key={i}
+            onClick={() => onRef(entry.domId)}
+            className="inline-flex items-center gap-0.5 text-indigo-500 hover:text-indigo-700
+                       underline underline-offset-2 decoration-indigo-300 hover:decoration-indigo-500
+                       transition-colors cursor-pointer font-medium"
+            title={`点击查看${entry.label}图表`}
+          >
+            📊 {entry.label}
+          </button>
+        )
+      }
+    }
+
+    // ---- 都没匹配上：去掉【】，渲染为加粗文字（不展示为可点击链接） ----
+    return <strong key={i} className="text-gray-700 font-semibold">{inner}</strong>
   })
 }
 
