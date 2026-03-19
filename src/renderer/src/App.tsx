@@ -369,6 +369,42 @@ export default function App() {
   }
 
   /**
+   * 底部输入框 ▶ 按钮：创建新任务并立即打开 FocusFlow
+   * 一步完成"创建 + 开始"，减少 ADHD 用户的操作摩擦
+   */
+  const handleCreateAndFocus = (title: string) => {
+    const newId = `t-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+    const newTask: Task = {
+      id: newId,
+      title,
+      note: '',
+      priority: 'medium',
+      completed: false,
+      createdAt: Date.now(),
+    }
+
+    // 创建任务 + 立即打开 FocusFlow（React 18 批量更新，同一次渲染生效）
+    setTasks(prev => [...prev, newTask])
+    setScaffoldTaskId(newId)
+
+    // 预加载 AI 建议
+    if (aiConfig.apiKey) {
+      aiCache.prefetch(newId, title, aiConfig)
+    }
+
+    // 📊 埋点
+    const pendingSnap = [...tasks.filter(t => !t.completed), newTask]
+    tracker.track('plan.brain_dump', {
+      tasks: pendingSnap.map(t => ({ id: t.id, title: t.title })),
+      taskCount: pendingSnap.length,
+    })
+    tracker.track('plan.focus_selected', {
+      taskId: newId,
+      taskTitle: title,
+    })
+  }
+
+  /**
    * 用户点击任务的「▶」按钮或底部「开启任务」
    * → 弹出 FocusFlow 覆盖层（阶段1）
    */
@@ -1041,6 +1077,57 @@ export default function App() {
     prevTaskCountRef.current = currentCount
   }, [pendingTasks.length, aiConfig])
 
+  // ★ 策略3：任务标题变更时 → 清除旧缓存 + 防抖重新预加载（修复改名后 AI 建议不更新的问题）
+  //   - 立即清除旧缓存（防止返回过期结果）
+  //   - 防抖 800ms 后再预加载（用户逐字输入时避免频繁请求 AI）
+  const prevTaskTitlesRef = useRef<Map<string, string>>(new Map())
+  const titleChangeTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
+  useEffect(() => {
+    if (loading || !aiConfig.apiKey) return
+
+    const prevTitles = prevTaskTitlesRef.current
+
+    // 检测每个任务的标题是否发生了变化
+    for (const task of tasks) {
+      const prevTitle = prevTitles.get(task.id)
+      // prevTitle !== undefined 说明这个任务之前就存在（排除新建任务的情况）
+      // prevTitle !== task.title 说明标题被修改了
+      if (prevTitle !== undefined && prevTitle !== task.title) {
+        // ① 立即清除旧缓存（这样点击 ▶ 时不会拿到旧建议）
+        aiCache.invalidate(task.id)
+
+        // ② 防抖预加载：清除之前的定时器，等用户停止输入 800ms 后再发请求
+        const existingTimer = titleChangeTimersRef.current.get(task.id)
+        if (existingTimer) clearTimeout(existingTimer)
+
+        if (!task.completed && !isWidgetMode) {
+          const taskSnapshot = { id: task.id, title: task.title, subtasks: task.subtasks }
+          const timer = setTimeout(() => {
+            console.log(`[AI Cache] 任务标题变更完成: → "${taskSnapshot.title}"，重新预加载`)
+            const subtaskTitle = (taskSnapshot.subtasks ?? []).find(s => !s.completed)?.title
+            aiCache.prefetch(taskSnapshot.id, taskSnapshot.title, aiConfig, subtaskTitle)
+            titleChangeTimersRef.current.delete(taskSnapshot.id)
+          }, 800)
+          titleChangeTimersRef.current.set(task.id, timer)
+        }
+      }
+    }
+
+    // 更新标题快照（记住每个任务当前的标题，用于下次比较）
+    const newTitles = new Map<string, string>()
+    for (const task of tasks) {
+      newTitles.set(task.id, task.title)
+    }
+    prevTaskTitlesRef.current = newTitles
+  }, [tasks, loading, isWidgetMode, aiConfig])
+
+  // 组件卸载时清除所有防抖定时器
+  useEffect(() => {
+    return () => {
+      titleChangeTimersRef.current.forEach(timer => clearTimeout(timer))
+    }
+  }, [])
+
   /** hover ▶ 按钮时预加载该任务的 AI 建议 */
   const handlePrefetchTask = useCallback((taskId: string) => {
     const task = tasks.find(t => t.id === taskId)
@@ -1127,6 +1214,7 @@ export default function App() {
       <NoteEditor
         tasks={tasks} setTasks={setTasks}
         onFocusTask={handleFocusTask} onResumePaused={handleResumePaused} onPrefetchTask={handlePrefetchTask}
+        onCreateAndFocus={handleCreateAndFocus}
         isToday={isToday} currentDate={currentDate}
         onPrevDate={goPrevDate} onNextDate={goNextDate} onGoToday={goToday}
         onJumpToDate={jumpToDate}

@@ -36,6 +36,8 @@ interface NoteEditorProps {
   onResumePaused: (taskId: string) => void
   /** hover ▶ 按钮时预加载 AI 建议（可选） */
   onPrefetchTask?: (taskId: string) => void
+  /** 创建新任务并立即开始专注（底部输入框 ▶ 按钮） */
+  onCreateAndFocus?: (title: string) => void
   /** 是否是今天（历史日期时隐藏新建输入框和专注按钮） */
   isToday?: boolean
   /** 当前显示的日期（YYYY-MM-DD），用于日期区域显示 */
@@ -99,7 +101,7 @@ function getGreeting(): string {
 // ===================== 主组件 =====================
 
 export default function NoteEditor({
-  tasks, setTasks, onFocusTask, onResumePaused, onPrefetchTask,
+  tasks, setTasks, onFocusTask, onResumePaused, onPrefetchTask, onCreateAndFocus,
   isToday = true, currentDate, onPrevDate, onNextDate, onGoToday, onJumpToDate,
 }: NoteEditorProps) {
   // 底部"新行"输入框文本
@@ -562,7 +564,7 @@ export default function NoteEditor({
                 // 与上方任务文本列对齐：普通任务约 52px，子任务约 74px
                 newLineIndented ? 'ml-[74px]' : 'ml-[52px]'
               }`}>
-                <div className="flex items-center py-[5px]">
+                <div className="flex items-center py-[5px] gap-1">
                   <input
                     ref={newLineRef}
                     type="text"
@@ -570,7 +572,20 @@ export default function NoteEditor({
                     onChange={(e) => setNewLineText(e.target.value)}
                     onKeyDown={handleNewLineKeyDown}
                     onFocus={() => setNewLineFocused(true)}
-                    onBlur={() => setNewLineFocused(false)}
+                    onBlur={() => {
+                      setNewLineFocused(false)
+                      // ★ 自动保存：失焦时如果有文字，自动创建任务
+                      //   避免用户忘按 Enter 导致输入内容丢失
+                      const trimmed = newLineText.trim()
+                      if (trimmed) {
+                        if (newLineIndented && tasks.length > 0) {
+                          addSubtaskToLast(trimmed)
+                        } else {
+                          addTaskAtEnd(trimmed)
+                        }
+                        setNewLineText('')
+                      }
+                    }}
                     placeholder={
                       tasks.length === 0
                         ? '输入第一个任务…'
@@ -584,6 +599,30 @@ export default function NoteEditor({
                         : 'text-[15px] font-medium text-gray-800'
                     }`}
                   />
+                  {/* ★ ▶ 一键开始按钮：输入文字后出现，点击 = 创建任务 + 立即进入专注 */}
+                  {!newLineIndented && newLineText.trim() && onCreateAndFocus && (
+                    <button
+                      onMouseDown={(e) => e.preventDefault()}  /* 阻止输入框失焦，避免 onBlur 重复创建 */
+                      onClick={() => {
+                        const trimmed = newLineText.trim()
+                        if (trimmed) {
+                          onCreateAndFocus(trimmed)
+                          setNewLineText('')
+                          setNewLineIndented(false)
+                        }
+                      }}
+                      className="w-7 h-7 rounded-lg flex items-center justify-center
+                                 bg-emerald-50 text-emerald-500 border border-emerald-200
+                                 hover:bg-emerald-500 hover:text-white hover:border-emerald-500
+                                 hover:shadow-sm hover:shadow-emerald-200/50
+                                 active:scale-90 transition-all flex-shrink-0"
+                      title="创建并立即专注"
+                    >
+                      <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M8 5v14l11-7z" />
+                      </svg>
+                    </button>
+                  )}
                 </div>
                 {/* 快捷键提示：仅在聚焦且输入为空时显示 */}
                 <div className={`overflow-hidden transition-all duration-200 ${

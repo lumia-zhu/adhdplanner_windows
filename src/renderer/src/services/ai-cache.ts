@@ -198,13 +198,20 @@ async function get(
 }
 
 /**
- * 清除指定任务的所有缓存
- * 当任务内容发生变化时调用
+ * 清除指定任务的所有缓存（包括正在进行中的请求）
+ * 当任务标题或内容发生变化时调用
  */
 function invalidate(taskId: string): void {
+  // 清除已完成的缓存
   for (const key of cache.keys()) {
     if (key.startsWith(taskId + ':') || key === taskId) {
       cache.delete(key)
+    }
+  }
+  // ★ 同时清除正在进行中的请求，避免旧请求完成后又写入过期缓存
+  for (const key of inflight.keys()) {
+    if (key.startsWith(taskId + ':') || key === taskId) {
+      inflight.delete(key)
     }
   }
 }
