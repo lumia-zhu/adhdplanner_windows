@@ -67,6 +67,8 @@ export interface FocusSession {
   isQuickFocus?: boolean          // true = 一键专注模式，无绑定任务，结束时再填写任务名称
   // ---- AI 第一步提示（非强制，仅展示） ----
   firstStepHint?: string          // FocusFlow 中确认的第一步，在任务结构视图中作为提示行显示
+  // ---- 暂停恢复累计时间 ----
+  elapsedOffset?: number          // 暂停→恢复后，之前已累计的秒数（仅用于计时器显示连续性，不影响埋点）
 }
 
 /** 快速专注模式下的薄条高度 */
@@ -178,13 +180,14 @@ function FocusDynamicBar({
   // ★ 使用 sessionStartTime 作为计时基准 —— 不因 stuck/relay/flow 切换而重置
   // 向后兼容：如果旧 session 没有 sessionStartTime，则 fallback 到 startTime
   const timerBase = session.sessionStartTime || startTime
+  const offset = session.elapsedOffset || 0  // 暂停→恢复后累计的历史秒数
   const [elapsed, setElapsed] = useState(0)
   useEffect(() => {
-    const tick = () => setElapsed(Math.floor((Date.now() - timerBase) / 1000))
+    const tick = () => setElapsed(Math.floor((Date.now() - timerBase) / 1000) + offset)
     tick()
     const timer = setInterval(tick, 1000)
     return () => clearInterval(timer)
-  }, [timerBase])
+  }, [timerBase, offset])
 
   const minutes = Math.floor(elapsed / 60)
   const seconds = elapsed % 60
@@ -1226,15 +1229,16 @@ interface QuickFocusWidgetProps {
  */
 function QuickFocusWidget({ session, onTaskDone, onExit }: QuickFocusWidgetProps) {
   const { sessionStartTime } = session
+  const offset = session.elapsedOffset || 0  // 暂停→恢复后累计的历史秒数
   const [elapsed, setElapsed] = useState(0)
 
   // 每秒更新计时
   useEffect(() => {
-    const tick = () => setElapsed(Math.floor((Date.now() - sessionStartTime) / 1000))
+    const tick = () => setElapsed(Math.floor((Date.now() - sessionStartTime) / 1000) + offset)
     tick()
     const timer = setInterval(tick, 1000)
     return () => clearInterval(timer)
-  }, [sessionStartTime])
+  }, [sessionStartTime, offset])
 
   const minutes = Math.floor(elapsed / 60)
   const seconds = elapsed % 60

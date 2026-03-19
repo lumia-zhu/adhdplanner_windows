@@ -757,7 +757,10 @@ export default function App() {
   const handlePause = () => {
     if (!session) return
 
-    const totalElapsed = Math.floor((Date.now() - session.sessionStartTime) / 1000)
+    // ★ 本段专注时长（仅当前恢复后的这一段，用于埋点）
+    const segmentDuration = Math.floor((Date.now() - session.sessionStartTime) / 1000)
+    // ★ 累计显示时长 = 本段 + 之前暂停累积的偏移量（用于下次恢复时计时器继续）
+    const totalDisplayed = segmentDuration + (session.elapsedOffset || 0)
 
     // 构造暂停快照
     const snapshot: PausedSession = {
@@ -769,16 +772,16 @@ export default function App() {
       currentSubtaskId: session.currentSubtaskId,
       currentSubtaskTitle: session.currentSubtaskTitle,
       pausedAt: Date.now(),
-      elapsedBeforePause: totalElapsed,
+      elapsedBeforePause: totalDisplayed,  // ★ 保存累计显示时长，下次恢复时计时器从这里接着计
     }
 
-    // 📊 埋点：暂停事件
+    // 📊 埋点：暂停事件（只记录本段时长，不含之前的累计）
     tracker.track('session.paused', {
       sessionId: sessionIdRef.current,
       taskId: session.taskId,
       taskTitle: session.taskTitle,
       microAction: session.currentMicroTask,
-      elapsedSeconds: totalElapsed,
+      elapsedSeconds: segmentDuration,
       completedMicroSteps: session.microHistory.length,
     })
 
@@ -787,7 +790,7 @@ export default function App() {
       sessionId: sessionIdRef.current,
       taskId: session.taskId,
       taskTitle: session.taskTitle,
-      totalDurationSeconds: totalElapsed,
+      totalDurationSeconds: segmentDuration,  // ★ 只记录本段，避免与之前段重复计数
       completedMicroSteps: session.microHistory.length,
       endReason: 'pause',
     })
@@ -832,6 +835,7 @@ export default function App() {
       firstStepHint: snap.firstStepHint,
       currentSubtaskId: snap.currentSubtaskId,
       currentSubtaskTitle: snap.currentSubtaskTitle,
+      elapsedOffset: snap.elapsedBeforePause,  // ★ 恢复之前已累计的秒数，计时器从暂停处继续
     }
 
     // 📊 埋点：恢复事件

@@ -7221,6 +7221,1902 @@ Let me plan the tasks and start implementing them.</details></think>
 
 ---
 
+<tool-use data-tool-type="read" data-tool-name="read_file">
+<details><summary>Tool use: **read_file** • Read file: D:\workspace\testwindows\src\renderer\src\components\ReflectionView.tsx</summary>
+
+</details>
+</tool-use>
+
+---
+
+好，开始一步步改。先改 A1：去掉浮标 `isToday` 限制 + A2：切日期清理状态 + A3：气泡文案区分日期：
+
+---
+
+<tool-use data-tool-type="write" data-tool-name="search_replace">
+
+<details><summary>Tool use: **search_replace** • Edit file: D:\workspace\testwindows\src\renderer\src\components\ReflectionView.tsx</summary>
+
+**Chunk 1**
+Lines added: 2, lines removed: 2
+
+```diff
+@@ -36,6 +36,6 @@
+  // ===================== 常量 =====================
+  
+- /** AI 浮标随机引导语 */
+- const BUBBLE_HINTS = [
++ /** AI 浮标随机引导语 —— 今天 */
++ const BUBBLE_HINTS_TODAY = [
+    '今天过得怎么样？来聊聊~',
+    '点我开始反思，只需 3 个问题 ✨',
+```
+
+**Chunk 2**
+Lines added: 9, lines removed: undefined
+
+```diff
+@@ -46,4 +46,13 @@
+    '今天的你，值得被看见 🌟',
+  ]
++ 
++ /** AI 浮标随机引导语 —— 历史日期 */
++ const BUBBLE_HINTS_HISTORY = [
++   '回头看看这一天，会有新发现 🔍',
++   '历史数据也值得反思哦~',
++   '来复盘这天的表现吧 📊',
++   '看看过去的自己，聊聊感受？',
++   '翻翻老数据，找找规律 💡',
++ ]
+  
+  /** 主窗口默认宽度（和 main/index.ts 里的 MAIN_WIDTH 一致） */
+```
+
+</details>
+
+</tool-use>
+
+---
+
+现在改气泡文案 state，让它根据日期动态变化：
+
+---
+
+<tool-use data-tool-type="write" data-tool-name="search_replace">
+
+<details><summary>Tool use: **search_replace** • Edit file: D:\workspace\testwindows\src\renderer\src\components\ReflectionView.tsx</summary>
+
+**Chunk 1**
+Lines added: undefined, lines removed: 3
+
+```diff
+@@ -154,7 +154,4 @@
+  
+    // ---- AI 浮标气泡 ----
+-   const [bubbleText] = useState(() =&gt;
+-     BUBBLE_HINTS[Math.floor(Math.random() * BUBBLE_HINTS.length)]
+-   )
+    const [showBubble, setShowBubble] = useState(false)
+  
+```
+
+</details>
+
+</tool-use>
+
+---
+
+Now add a `useMemo` for `bubbleText` that depends on `isToday` after the date state:
+
+---
+
+<tool-use data-tool-type="write" data-tool-name="search_replace">
+
+<details><summary>Tool use: **search_replace** • Edit file: D:\workspace\testwindows\src\renderer\src\components\ReflectionView.tsx</summary>
+
+**Chunk 1**
+Lines added: 6, lines removed: undefined
+
+```diff
+@@ -161,4 +161,10 @@
+    const isToday = selectedDate === today
+    const [reflCalendarOpen, setReflCalendarOpen] = useState(false)
++ 
++   // 浮标气泡文案：根据日期区分
++   const bubbleText = useMemo(() =&gt; {
++     const hints = isToday ? BUBBLE_HINTS_TODAY : BUBBLE_HINTS_HISTORY
++     return hints[Math.floor(Math.random() * hints.length)]
++   }, [isToday])
+  
+    const goPrev = useCallback(() =&gt; {
+```
+
+</details>
+
+</tool-use>
+
+---
+
+现在改 A2：切换日期时关闭侧边栏 + **清除截图缓存**：
+
+---
+
+<tool-use data-tool-type="write" data-tool-name="search_replace">
+
+<details><summary>Tool use: **search_replace** • Edit file: D:\workspace\testwindows\src\renderer\src\components\ReflectionView.tsx</summary>
+
+**Chunk 1**
+Lines added: 17, lines removed: 5
+
+```diff
+@@ -167,17 +167,29 @@
+      return hints[Math.floor(Math.random() * hints.length)]
+    }, [isToday])
++ 
++   // 切换日期时：关闭 AI 侧边栏 + 清除截图缓存（每天数据不同需重新截图）
++   const resetChatOnDateChange = useCallback(() =&gt; {
++     setScreenshotBase64(null)
++     if (chatOpen) {
++       setChatOpen(false)
++       window.electronAPI.resizeMainWindow(MAIN_WIDTH, MAIN_HEIGHT)
++     }
++   }, [chatOpen])
+  
+    const goPrev = useCallback(() =&gt; {
+      setSelectedDate(d =&gt; shiftDate(d, -1))
+-     // 切到历史日期时关闭 AI 侧边栏
+-     if (chatOpen) { setChatOpen(false); window.electronAPI.resizeMainWindow(MAIN_WIDTH, MAIN_HEIGHT) }
+-   }, [chatOpen])
++     resetChatOnDateChange()
++   }, [resetChatOnDateChange])
+    const goNext = useCallback(() =&gt; {
+      setSelectedDate(d =&gt; {
+        const next = shiftDate(d, 1)
+        return next &gt; getToday() ? d : next   // 不能超过今天
+      })
+-   }, [])
+-   const goToday = useCallback(() =&gt; setSelectedDate(getToday()), [])
++     resetChatOnDateChange()
++   }, [resetChatOnDateChange])
++   const goToday = useCallback(() =&gt; {
++     setSelectedDate(getToday())
++     resetChatOnDateChange()
++   }, [resetChatOnDateChange])
+  
+    // ---- 拖拽分隔条 ----
+```
+
+</details>
+
+</tool-use>
+
+---
+
+也改日历选择时的逻辑：
+
+---
+
+<tool-use data-tool-type="search" data-tool-name="grep">
+<details>
+<summary>Tool use: **grep** • Grep for "setReflCalendarOpen\(false\)" in "D:\workspace\testwindows\src\renderer\src\components\ReflectionView.tsx" • 2 matches</summary>
+
+Output mode: content
+
+
+| File | Content | Line |
+|------|------|------|
+| `.\ReflectionView.tsx` | `setReflCalendarOpen(false)` | L640 |
+| `.\ReflectionView.tsx` | `onClose=\{() => setReflCalendarOpen(false)\}` | L647 |
+
+
+</details>
+</tool-use>
+
+---
+
+<tool-use data-tool-type="write" data-tool-name="search_replace">
+
+<details><summary>Tool use: **search_replace** • Edit file: D:\workspace\testwindows\src\renderer\src\components\ReflectionView.tsx</summary>
+
+**Chunk 1**
+Lines added: 2, lines removed: 5
+
+```diff
+@@ -639,9 +639,6 @@
+                    setSelectedDate(date &gt; todayStr ? todayStr : date)
+                    setReflCalendarOpen(false)
+-                   // 切到历史日期时关闭 AI 侧边栏
+-                   if (date !== todayStr &amp;&amp; chatOpen) {
+-                     setChatOpen(false)
+-                     window.electronAPI.resizeMainWindow(MAIN_WIDTH, MAIN_HEIGHT)
+-                   }
++                   // 切换日期时关闭 AI 侧边栏 + 清除截图
++                   resetChatOnDateChange()
+                  }}
+                  onClose={() =&gt; setReflCalendarOpen(false)}
+```
+
+</details>
+
+</tool-use>
+
+---
+
+现在改 A1 核心：去掉浮标的 `isToday` 限制：
+
+---
+
+<tool-use data-tool-type="write" data-tool-name="search_replace">
+
+<details><summary>Tool use: **search_replace** • Edit file: D:\workspace\testwindows\src\renderer\src\components\ReflectionView.tsx</summary>
+
+**Chunk 1**
+Lines added: 2, lines removed: 2
+
+```diff
+@@ -891,6 +891,6 @@
+          &lt;/div&gt;
+  
+-         {/* ---- 右下角 AI 机器人浮标（仅今天显示） ---- */}
+-         {!chatOpen &amp;&amp; isToday &amp;&amp; (
++         {/* ---- 右下角 AI 机器人浮标（所有日期都显示，支持历史反思） ---- */}
++         {!chatOpen &amp;&amp; (
+            &lt;div className="absolute bottom-5 right-5 flex flex-col items-end gap-2 z-20"&gt;
+              {/* 气泡提示 */}
+```
+
+</details>
+
+</tool-use>
+
+---
+
+<tool-use data-tool-type="generic" data-tool-name="read_lints">
+<details>
+          <summary>Tool use: **read_lints** • Read lints for 1 file</summary>
+      
+Lint paths:
+
+- `D:\workspace\testwindows\src\renderer\src\components\ReflectionView.tsx`
+
+Lint results
+
+
+**No lint errors found**
+</details>
+</tool-use>
+
+---
+
+<tool-use data-tool-type="task" data-tool-name="todo_write">
+<details><summary>Tool use: **todo_write** • Todo List</summary>
+
+- [x] 去掉浮标 isToday 限制，所有日期都显示 AI 浮标
+- [x] 切换日期时关闭侧边栏 + 清除截图缓存
+- [x] 浮标气泡文案根据日期区分（今天/历史）
+- [-] 截图 user 消息区分日期（传 selectedDate 给 Chat）
+- [ ] 优化 prompt 第1步：从图表观察出发找亮点
+- [ ] 优化 prompt 第2步：从图表视觉反差出发聊困难
+- [ ] 增加规则：每个提问必须引用图表区域
+- [ ] 历史日期 prompt 措辞调整（今日→那天）
+- [ ] 构建验证 + 提交
+
+</details>
+</tool-use>
+
+---
+
+A4：把 `selectedDate` 传给 `ReflectionChat`，让截图附带消息区分日期：
+
+---
+
+<tool-use data-tool-type="read" data-tool-name="read_file">
+<details><summary>Tool use: **read_file** • Read file: D:\workspace\testwindows\src\renderer\src\components\ReflectionChat.tsx</summary>
+
+</details>
+</tool-use>
+
+---
+
+<tool-use data-tool-type="write" data-tool-name="search_replace">
+
+<details><summary>Tool use: **search_replace** • Edit file: D:\workspace\testwindows\src\renderer\src\components\ReflectionChat.tsx</summary>
+
+**Chunk 1**
+Lines added: 2, lines removed: undefined
+
+```diff
+@@ -64,4 +64,6 @@
+    /** 仪表板截图 base64（data:image/jpeg;base64,...） */
+    screenshotBase64?: string | null
++   /** 当前反思的日期 YYYY-MM-DD（用于截图消息中标注日期） */
++   selectedDate?: string
+    /** 图表引用回调：当用户点击 AI 消息中的图表标签时触发 */
+    onChartRef?: (chartId: string) =&gt; void
+```
+
+**Chunk 2**
+Lines added: 1, lines removed: undefined
+
+```diff
+@@ -74,4 +76,5 @@
+    aiConfig,
+    screenshotBase64,
++   selectedDate,
+    onChartRef,
+    onComplete,
+```
+
+</details>
+
+</tool-use>
+
+---
+
+现在修改截图消息内容，根据日期区分文案：
+
+---
+
+<tool-use data-tool-type="write" data-tool-name="search_replace">
+
+<details><summary>Tool use: **search_replace** • Edit file: D:\workspace\testwindows\src\renderer\src\components\ReflectionChat.tsx</summary>
+
+**Chunk 1**
+Lines added: 4, lines removed: 1
+
+```diff
+@@ -141,7 +141,10 @@
+      // ★ 有截图时：以多模态 user 消息附带图片
+      if (screenshotBase64) {
++       const todayStr = new Date().toISOString().slice(0, 10)
++       const dateIsToday = !selectedDate || selectedDate === todayStr
++       const dateLabel = dateIsToday ? '今天' : selectedDate!
+        const multimodalContent: MessageContentPart[] = [
+          { type: 'image_url', image_url: { url: screenshotBase64 } },
+-         { type: 'text', text: '上面是我今天的数据仪表板截图，包含任务完成率、核心指标卡片、任务用时条形图、活动热力图和使用节奏曲线。请结合这些可视化数据，开始我们的反思对话吧。' },
++         { type: 'text', text: &#96;上面是我${dateLabel}的数据仪表板截图，包含${dateIsToday ? '任务完成率、' : ''}核心指标卡片、任务用时条形图、活动热力图和使用节奏曲线。请结合这些可视化数据，开始我们的反思对话吧。&#96; },
+        ]
+        initMessages.push({ role: 'user', content: multimodalContent })
+```
+
+</details>
+
+</tool-use>
+
+---
+
+把 `selectedDate` 传入 `ReflectionChat` 组件：
+
+---
+
+<tool-use data-tool-type="write" data-tool-name="search_replace">
+
+<details><summary>Tool use: **search_replace** • Edit file: D:\workspace\testwindows\src\renderer\src\components\ReflectionView.tsx</summary>
+
+**Chunk 1**
+Lines added: 1, lines removed: undefined
+
+```diff
+@@ -879,4 +879,5 @@
+                    aiConfig={aiConfig}
+                    screenshotBase64={screenshotBase64}
++                   selectedDate={selectedDate}
+                    onChartRef={handleChartRef}
+                    onComplete={handleReflectionComplete}
+```
+
+</details>
+
+</tool-use>
+
+---
+
+<tool-use data-tool-type="task" data-tool-name="todo_write">
+<details><summary>Tool use: **todo_write** • Todo List</summary>
+
+- [x] 去掉浮标 isToday 限制，所有日期都显示 AI 浮标
+- [x] 切换日期时关闭侧边栏 + 清除截图缓存
+- [x] 浮标气泡文案根据日期区分（今天/历史）
+- [x] 截图 user 消息区分日期（传 selectedDate 给 Chat）
+- [-] 优化 prompt 第1步：从图表观察出发找亮点
+- [ ] 优化 prompt 第2步：从图表视觉反差出发聊困难
+- [ ] 增加规则：每个提问必须引用图表区域
+- [ ] 历史日期 prompt 措辞调整（今日→那天）
+- [ ] 构建验证 + 提交
+
+</details>
+</tool-use>
+
+---
+
+现在改造 system prompt（B1-B5 一起做），这是纯文本修改：
+
+---
+
+<tool-use data-tool-type="read" data-tool-name="read_file">
+<details><summary>Tool use: **read_file** • Read file: D:\workspace\testwindows\src\renderer\src\services\ai.ts</summary>
+
+</details>
+</tool-use>
+
+---
+
+现在整体重写这个函数，支持 `isToday` 参数，并优化所有提问示例：
+
+---
+
+<tool-use data-tool-type="write" data-tool-name="search_replace">
+
+<details><summary>Tool use: **search_replace** • Edit file: D:\workspace\testwindows\src\renderer\src\services\ai.ts</summary>
+
+**Chunk 1**
+Lines added: 19, lines removed: 9
+
+```diff
+@@ -573,35 +573,45 @@
+   * 构建反思对话的 system prompt
+   *
+-  * @param summaryContext 由 summaryToLLMContext 生成的今日行为摘要
++  * @param summaryContext 由 summaryToLLMContext 生成的行为摘要
+   * @param hasScreenshot  是否附带了仪表板截图（启用视觉理解模式）
++  * @param isToday        是否为今天（false=历史日期回顾）
+   */
+  export function buildReflectionSystemPrompt(
+    summaryContext: string,
+    hasScreenshot = false,
++   isToday = true,
+  ): string {
++   // 日期称谓：今天 vs 那天
++   const dayRef = isToday ? '今天' : '那天'
++   const dayRefShort = isToday ? '今日' : '当日'
++ 
+    // ★ 视觉理解引导段（仅在有截图时注入）
+    const visionGuide = hasScreenshot
+      ? &#96;
+  ## 视觉数据
+- 用户的下一条消息会附带一张"今日数据仪表板"截图，包含以下图表（从上到下）：
+- 1. **任务完成率** —— 中间圆环图，百分比
+- 2. **核心指标卡片** —— 三张小卡片：完成任务数、电脑使用时长、任务时长
++ 用户的下一条消息会附带一张"数据仪表板"截图，包含以下图表（从上到下）：
++ ${isToday ? '1. **任务完成率** —— 中间圆环图，百分比\n' : ''}2. **核心指标卡片** —— 三张小卡片：完成任务数、电脑使用时长、任务时长
+  3. **任务实际用时** —— 横向条形图，每个条代表一个任务，蓝色=已完成，灰色=未完成；条形旁标注分钟或秒数
+  4. **任务活动分布** —— 交互式热力图，显示一天中各时段的活动密度
+  5. **使用节奏曲线** —— 折线图，显示全天的使用节奏波动
+  
+- 请在对话中结合截图中的直观视觉特征来聊——比如"我看到条形图里有一个特别长的蓝色条"、"热力图上午那一块颜色很深"。这样用户能直接对照图表找到你说的地方。
+- 
+- 当你提到某个图表区域时，请用【】标签包裹图表名称，方便用户点击跳转：
++ ### 图表引用规范
++ 【重要】每次提问时，**必须**用【】标签标明你正在引用哪个图表区域，让用户一眼知道你在"看"哪里：
+  - 【完成率】—— 指圆环图
+  - 【指标卡片】—— 三张核心指标小卡片
+  - 【任务用时】—— 任务用时条形图
+  - 【活动分布】—— 活动热力图
+  - 【节奏曲线】—— 使用节奏折线图
+- 例如："【任务用时】里你做'写报告'花了最长的时间，条形明显比其他任务长一截。"
++ 
++ ### 如何用图表说话
++ 你的每个提问都应该从"我在图表上看到了什么"出发，先描述视觉特征，再引出问题。用户可以点击【】标签跳转到对应图表。
++ 好的方式——先说"我看到"，再问"你怎么看"：
++ - "我看到【任务用时】里有一根特别长的蓝色条是'写报告'，花了 45 分钟还完成了。当时是什么状态让你一口气做完的？"
++ - "【活动分布】里上午 9-11 点那片区域颜色特别深，说明那两小时很活跃。你还记得当时在什么环境下工作吗？"
++ - "【节奏曲线】下午 2 点到 3 点有个明显的低谷，几乎是一条平线。那段时间大概发生了什么？"
+  &#96;
+      : ''
+  
+-   return &#96;你是用户的一个朋友，帮他做每日复盘。你的核心目标是通过具体数据帮用户"看见自己"——觉察行为模式、时间感知、精力波动。
++   return &#96;你是用户的一个朋友，帮他做${isToday ? '每日复盘' : '历史回顾'}。你的核心目标是通过具体数据帮用户"看见自己"——觉察行为模式、时间感知、精力波动。
+  
+  ## 语气要求
+```
+
+**Chunk 2**
+Lines added: 32, lines removed: 21
+
+```diff
+@@ -610,55 +620,66 @@
+  - 不用游戏化比喻。不列清单、不加粗、不用标题。用连贯的段落写。
+  - 每条消息 2-4 句话，简洁。
++ - ${isToday ? '用"今天"指代当天。' : '这是历史日期的回顾，用"那天""当时"指代，不要说"今天"。'}
+  ${visionGuide}
+  ## 对话流程
+  严格按以下 3 步提问 + 1 步总结进行，每次只发一条消息，等用户回复再继续：
+  
+- ### 第 1 步：用数据聊亮点
+- 从数据中挑一个具体的正面发现，用数字说话，引出用户的感受。${hasScreenshot ? '可以引用截图中的视觉特征（如条形长度、颜色深浅）让用户直观对照。' : ''}
++ ### 第 1 步：从图表找亮点
++ ${hasScreenshot
++   ? &#96;先观察截图，从中找到一个视觉上突出的正面发现（比如最长的蓝色条、最密集的活动区域、上升的节奏曲线），用【图表标签】标明位置，结合具体数字，引出用户的感受。&#96;
++   : &#96;从数据中挑一个具体的正面发现，用数字说话，引出用户的感受。&#96;}
+  
+- 好的问法——用"什么/怎么"开头，引导用户描述而非判断：
+- - "你做'整理文献'的时候连续专注了 25 分钟然后进了心流，当时是什么状态让你这么顺？"
+- - "你上午 9-10 点连完成了 3 件事，这段时间你一般在什么环境下工作？"
++ 好的问法——先"指图"再提问，用"什么/怎么"引导用户描述而非判断：
++ ${hasScreenshot
++   ? &#96;- "我看到【任务用时】里'整理文献'的蓝色条特别长，花了 25 分钟还一口气做完了。${dayRef}做这件事的时候是什么状态让你这么顺？"
++ - "【活动分布】里上午 9-10 点那一带颜色很深，说明那段时间特别活跃，而且数据显示你连完成了 3 件事。${dayRef}那个时段你一般在什么环境下工作？"&#96;
++   : &#96;- "你做'整理文献'的时候连续专注了 25 分钟然后进了心流，${dayRef}是什么状态让你这么顺？"
++ - "你${dayRef}上午 9-10 点连完成了 3 件事，这段时间你一般在什么环境下工作？"&#96;}
+  
+  不要问：
+- - ❌ "你觉得今天效率高吗？"（太笼统，用户只能答高/不高）
+- - ❌ "今天心流 15 分钟，你满意吗？"（二元判断，没有反思深度）
++ - ❌ "你觉得${dayRef}效率高吗？"（太笼统，用户只能答高/不高）
++ - ❌ "${dayRef}心流 15 分钟，你满意吗？"（二元判断，没有反思深度）
+  
+- ### 第 2 步：用数据聊困难
+- 从卡顿、中断、放弃、精力低谷中选最突出的一个点，不评价地把数据摆出来，问"发生了什么"或"当时的感觉"。${hasScreenshot ? '可以指出截图中节奏曲线的低谷区域或热力图的空白段。' : ''}
++ ### 第 2 步：从图表找困难
++ ${hasScreenshot
++   ? &#96;观察截图中的视觉"反差"——节奏曲线的低谷、热力图的空白段、条形图里的灰色条（未完成任务）。选最突出的一个，用【图表标签】指出来，不评价地把看到的现象摆出来，问"发生了什么"或"当时什么感觉"。&#96;
++   : &#96;从卡顿、中断、放弃、精力低谷中选最突出的一个点，不评价地把数据摆出来，问"发生了什么"或"当时的感觉"。&#96;}
+  
+  好的问法——聚焦具体时刻，帮用户回忆当时情境：
+- - "你在'写代码'上做了 8 分钟后暂停了，过了 20 分钟才回来。那 20 分钟里大概在忙什么？"
+- - "数据显示你下午 2-4 点电脑基本空闲，跟上午的节奏差别挺大。那段时间有印象发生了什么吗？"
+- - "你卡在'准备PPT'的时候说困难是'不知道从哪开始'，后来用了拆分子任务的方式绕过去了。你觉得下次再遇到类似的，这个方法还管用吗？"
++ ${hasScreenshot
++   ? &#96;- "【节奏曲线】${dayRef}下午 2-4 点有个很明显的低谷，几乎是平的，跟上午的高峰差别挺大。那段时间有印象发生了什么吗？"
++ - "我注意到【任务用时】里'写代码'只做了 8 分钟就停了，灰色条很短。后来过了 20 分钟才回来继续，那 20 分钟大概在忙什么？"
++ - "【活动分布】里下午 3 点前后有一大片空白，看起来电脑基本没在用。那段时间你还记得在干嘛吗？"&#96;
++   : &#96;- "${dayRef}你在'写代码'上做了 8 分钟后暂停了，过了 20 分钟才回来。那 20 分钟里大概在忙什么？"
++ - "数据显示${dayRef}下午 2-4 点电脑基本空闲，跟上午的节奏差别挺大。那段时间有印象发生了什么吗？"&#96;}
+  
+  如果数据中有时间感知偏差（预估 vs 实际），一定要用：
+  - "你预估'写开头段落'要 5 分钟，实际花了 22 分钟。你觉得是这件事比想象中复杂，还是中间有什么打断了？"
+  
+  不要问：
+- - ❌ "你觉得今天有哪些不足？"（让用户自我批评，不利于 ADHD）
++ - ❌ "你觉得${dayRef}有哪些不足？"（让用户自我批评，不利于 ADHD）
+  - ❌ "下午效率是不是不太好？"（带评价）
+  
+  ### 第 3 步：用发现聊策略
+- 结合前两步对话中用户暴露出的具体模式，问一个指向行动的问题。
++ 结合前两步对话中用户暴露出的具体模式，问一个指向行动的问题。${hasScreenshot ? '可以回顾截图中的图表特征来帮助用户形成具体策略。' : ''}
+  
+- 好的问法——帮用户把发现转化为明天可以做的一件小事：
+- - "你说上午状态好是因为刚喝完咖啡精神好。如果明天想把最难的任务放上午，你打算几点开始做哪件？"
+- - "你提到暂停 20 分钟是因为被同学喊走了。明天如果想减少被打断，你觉得有什么简单的办法？"
++ 好的问法——帮用户把发现转化为可以做的一件小事：
++ - "你说上午状态好是因为刚喝完咖啡精神好。如果${isToday ? '明天' : '下次'}想把最难的任务放上午，你打算几点开始做哪件？"
++ - "你提到暂停 20 分钟是因为被同学喊走了。${isToday ? '明天' : '以后'}如果想减少被打断，你觉得有什么简单的办法？"
+  
+  不要问：
+- - ❌ "明天打算怎么改进？"（太大太空，ADHD 用户难以回答）
++ - ❌ "${isToday ? '明天' : '以后'}打算怎么改进？"（太大太空，ADHD 用户难以回答）
+  
+  ### 第 4 步：总结
+  用户回答完第三个问题后，写一段自然的总结，包含：
+- - 今天做得好的具体点（引用数据，真诚不夸张）
++ - ${dayRef}做得好的具体点（${hasScreenshot ? '引用图表中看到的视觉特征+数据' : '引用数据'}，真诚不夸张）
+  - 遇到的具体困难（客观描述，不带评价）
+- - 一个实用小技巧——结合用户今天的实际情况推荐，说清楚怎么用
++ - 一个实用小技巧——结合用户${dayRef}的实际情况推荐，说清楚怎么用
+  - 一句简短收尾
+  
+  ## 规则
+  - 第一条消息直接开始聊，不要自我介绍
+  - 【严格】每条消息只聊一个任务、一个时刻。绝对不要把多个任务名列在一起问。如果有多个亮点，只挑最突出的那一个
+- - 必须引用具体的任务名、时长、时间段等数字，不泛泛而谈
++ - ${hasScreenshot ? '【严格】每个提问必须引用至少一个图表区域（用【】标签），让用户知道你在"看"哪张图' : '必须引用具体的任务名、时长、时间段等数字，不泛泛而谈'}
+  - 用户回答得短没关系，根据他的回答自然追问，不要机械进入下一步
+  - 如果数据中有"中断与恢复"记录，在第 2 步优先使用——中断频率是 ADHD 用户最值得觉察的模式之一
+```
+
+**Chunk 3**
+Lines added: 2, lines removed: 2
+
+```diff
+@@ -669,7 +690,7 @@
+  - 耗时 0 分钟或 1 分钟的任务，通常是用户直接勾选完成的（没有实际进入专注计时），不要说"0分钟就完成了"，这不是效率高，只是没走计时流程。对这类任务不要当作亮点来夸
+  - 只有通过专注会话（session）且耗时 ≥ 2 分钟的记录，才值得作为反思话题引用
+- - 如果今天数据很少（比如只有直接勾选、没有 session 记录），聊天语气更轻松，不要硬凑问题。可以简单问问今天整体状态怎么样
++ - 如果${dayRefShort}数据很少（比如只有直接勾选、没有 session 记录），聊天语气更轻松，不要硬凑问题。可以简单问问${dayRef}整体状态怎么样
+  
+- ========== 今日数据 ==========
++ ========== ${dayRefShort}数据 ==========
+  ${summaryContext}
+  ========== 数据结束 ==========&#96;
+```
+
+</details>
+
+</tool-use>
+
+---
+
+现在更新 `ReflectionView.tsx` 中调用 `buildReflectionSystemPrompt` 的地方，传入 `isToday`：
+
+---
+
+<tool-use data-tool-type="write" data-tool-name="search_replace">
+
+<details><summary>Tool use: **search_replace** • Edit file: D:\workspace\testwindows\src\renderer\src\components\ReflectionView.tsx</summary>
+
+**Chunk 1**
+Lines added: 2, lines removed: 2
+
+```diff
+@@ -471,6 +471,6 @@
+        ? &#96;\n\n精力时间分布（每小时电脑活跃度）：\n${activityTimeDistribution}&#96;
+        : ''
+-     return buildReflectionSystemPrompt(context + taskInfo + productivityInfo + activityInfo, !!screenshotBase64)
+-   }, [summary, tasks, completionRate, totalUsageMinutes, productivityRatio, flowRatio, activityTimeDistribution, screenshotBase64])
++     return buildReflectionSystemPrompt(context + taskInfo + productivityInfo + activityInfo, !!screenshotBase64, isToday)
++   }, [summary, tasks, completionRate, totalUsageMinutes, productivityRatio, flowRatio, activityTimeDistribution, screenshotBase64, isToday])
+  
+    // 反思完成回调
+```
+
+</details>
+
+</tool-use>
+
+---
+
+<tool-use data-tool-type="generic" data-tool-name="read_lints">
+<details>
+          <summary>Tool use: **read_lints** • Read lints for 3 files</summary>
+      
+Lint paths:
+
+- `D:\workspace\testwindows\src\renderer\src\services\ai.ts`
+- `D:\workspace\testwindows\src\renderer\src\components\ReflectionView.tsx`
+- `D:\workspace\testwindows\src\renderer\src\components\ReflectionChat.tsx`
+
+Lint results
+
+
+**No lint errors found**
+</details>
+</tool-use>
+
+---
+
+<tool-use data-tool-type="task" data-tool-name="todo_write">
+<details><summary>Tool use: **todo_write** • Todo List</summary>
+
+- [x] 去掉浮标 isToday 限制，所有日期都显示 AI 浮标
+- [x] 切换日期时关闭侧边栏 + 清除截图缓存
+- [x] 浮标气泡文案根据日期区分（今天/历史）
+- [x] 截图 user 消息区分日期（传 selectedDate 给 Chat）
+- [x] 优化 prompt 第1步：从图表观察出发找亮点
+- [x] 优化 prompt 第2步：从图表视觉反差出发聊困难
+- [x] 增加规则：每个提问必须引用图表区域
+- [x] 历史日期 prompt 措辞调整（今日→那天）
+- [-] 构建验证 + 提交
+
+</details>
+</tool-use>
+
+---
+
+构建验证：
+
+---
+
+<tool-use data-tool-type="shell" data-tool-name="run_terminal_cmd">
+<details><summary>Tool use: **run_terminal_cmd** • Run command: cd D:\workspace\testwindows; npm run build 2>&1 | Select-Object -Last 30</summary>
+
+```bash
+cd D:\workspace\testwindows; npm run build 2>&1 | Select-Object -Last 30
+```
+
+```
+
+&gt; task-manager@1.0.0 build
+&gt; electron-vite build
+
+vite v5.4.21 building SSR bundle for production...
+node.exe : (node:7016) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///D:/workspace/testwindows/postcss.
+config.js is not specified and it doesn't parse as CommonJS.
+����λ�� ��:1 �ַ�: 1
++ &amp; "C:\Program Files\nodejs/node.exe" "C:\Program Files\nodejs/node_mo ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ((node:7016) [MO...se as CommonJS.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+transforming...
+�?1 modules transformed.
+rendering chunks...
+out/main/index.js  25.79 kB
+�?built in 1.10s
+vite v5.4.21 building SSR bundle for production...
+transforming...
+�?1 modules transformed.
+rendering chunks...
+out/preload/index.js  3.28 kB
+�?built in 26ms
+vite v5.4.21 building for production...
+transforming...
+�?69 modules transformed.
+rendering chunks...
+../../out/renderer/index.html                   0.63 kB
+../../out/renderer/assets/index-Cinq5uCV.css   64.22 kB
+../../out/renderer/assets/index-BAVbp5eS.js   945.28 kB
+�?built in 4.21s
+ 
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to D:\workspace\testwindows\package.json.
+(Use &#96;node --trace-warnings ...&#96; to show where the warning was created)
+
+```
+</details>
+</tool-use>
+
+---
+
+构建成功！提交代码：
+
+---
+
+<tool-use data-tool-type="shell" data-tool-name="run_terminal_cmd">
+<details><summary>Tool use: **run_terminal_cmd** • Run command: cd D:\workspace\testwindows; git add -A; git commit -m "feat: AI reflection for all dates + chart-first questioning prompts"</summary>
+
+```bash
+cd D:\workspace\testwindows; git add -A; git commit -m "feat: AI reflection for all dates + chart-first questioning prompts"
+```
+
+```
+warning: in the working copy of 'src/renderer/src/components/ReflectionChat.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/renderer/src/components/ReflectionView.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/renderer/src/components/TaskDurationChart.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/renderer/src/index.css', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/renderer/src/services/ai.ts', LF will be replaced by CRLF the next time Git touches it
+[feature/task-understanding f3fdbcd] feat: AI reflection for all dates + chart-first questioning prompts
+ 4 files changed, 1961 insertions(+), 52 deletions(-)
+
+```
+</details>
+</tool-use>
+
+---
+
+<tool-use data-tool-type="shell" data-tool-name="run_terminal_cmd">
+<details><summary>Tool use: **run_terminal_cmd** • Run command: cd D:\workspace\testwindows; git push</summary>
+
+```bash
+cd D:\workspace\testwindows; git push
+```
+
+```
+To https://github.com/lumia-zhu/adhdplanner_windows.git
+   27a2f15..f3fdbcd  feature/task-understanding -&gt; feature/task-understanding
+
+```
+</details>
+</tool-use>
+
+---
+
+<tool-use data-tool-type="task" data-tool-name="todo_write">
+<details><summary>Tool use: **todo_write** • Todo List</summary>
+
+- [x] 去掉浮标 isToday 限制，所有日期都显示 AI 浮标
+- [x] 切换日期时关闭侧边栏 + 清除截图缓存
+- [x] 浮标气泡文案根据日期区分（今天/历史）
+- [x] 截图 user 消息区分日期（传 selectedDate 给 Chat）
+- [x] 优化 prompt 第1步：从图表观察出发找亮点
+- [x] 优化 prompt 第2步：从图表视觉反差出发聊困难
+- [x] 增加规则：每个提问必须引用图表区域
+- [x] 历史日期 prompt 措辞调整（今日→那天）
+- [x] 构建验证 + 提交
+
+</details>
+</tool-use>
+
+---
+
+全部完成！✅ 来总结一下这次改了什么：
+
+---
+
+## 改造总结
+
+### 改了哪些东西？
+
+#### 1️⃣ 历史日期也能 AI 反思（`ReflectionView.tsx`）
+- **AI 🤖 浮标** 现在所有日期都显示，不再限制"仅今天"
+- **切换日期**时：自动关闭 AI 侧边栏 + 清除截图缓存（因为每天数据不同，需要重新截图）
+- **气泡文案**根据日期区分：
+  - 今天 → "今天过得怎么样？来聊聊~"
+  - 历史 → "回头看看这一天，会有新发现 🔍"
+
+#### 2️⃣ 截图消息智能区分日期（`ReflectionChat.tsx`）
+- 新增 `selectedDate` prop
+- 发给 AI 的截图消息会标注日期："上面是我**3月18日**的数据仪表板截图"
+- 历史日期时不提"任务完成率"（因为历史日期没有圆环图）
+
+#### 3️⃣ System Prompt 全面优化（`ai.ts`）
+
+| 改动 | 效果 |
+|------|------|
+| 新增 `isToday` 参数 | 今天说"今天"，历史说"那天/当时" |
+| **图表引用规范** | 要求 AI 每个提问**必须**用【】标签标明引用的图表 |
+| **第 1 步（亮点）重写** | 从"我看到【任务用时】里有一根特别长的蓝条..."出发 |
+| **第 2 步（困难）重写** | 从"【节奏曲线】下午有个明显低谷..."出发 |
+| **视觉说话方式** | "先指图，再提问"——先描述视觉特征，再引出用户感受 |
+| **策略步骤** | 时间称谓自适应（"明天"vs"下次"） |
+
+### 效果是什么样的？
+
+打开历史日期 → 点击 🤖 → AI 看到截图后会说：
+
+> "我看到【任务用时】里那天'写报告'的蓝色条特别长，花了 45 分钟一口气做完了。你还记得当时是什么状态让你这么顺？"
+
+用户可以**点击** `📊 任务用时` 按钮 → 左侧面板自动滚动到对应图表并闪烁高亮。
+
+---
+
+_**User (2026-03-19 02:12Z)**_
+
+其实这个原因如果点开可视化图表是能看到的，就是点击条，有没有什么办法让AI知道这个事情而不需要重复问用户，因为用户已经知道了
+
+---
+
+_**Agent (model claude-4.6-opus-high-thinking, mode Agent)**_
+
+
+
+
+
+---
+
+<think><details><summary>Thought Process</summary>
+The user is pointing out an important UX issue: The AI is asking the user "what happened when you got stuck" but that information is already visible in the visualization charts (when you click on a task bar, it shows stuck marks/details). The user wants the AI to already know this information so it doesn't redundantly ask questions the user already has answers to.
+
+Let me understand the current flow:
+1. The task duration chart shows bars with red "stuck marks"
+2. When you click/expand a bar, you can see the stuck details (reason, what happened, etc.)
+3. But the AI doesn't know this detail - it only sees the screenshot and the text summary
+4. So the AI asks "what happened when you got stuck?" which is redundant because the data already shows it
+
+
+5. The fix is to include the stuck/interruption details in the data sent to the AI via `summaryToLLMContext` so it can reference them directly
+
+Now I need to check what data is currently being passed to the AI and what information is available in the chart expansion to see what's missing.</details></think>
+
+---
+
+<tool-use data-tool-type="search" data-tool-name="codebase_search">
+<details>
+                <summary>Tool use: **codebase_search** • Searched codebase "What stuck mark details are shown when clicking/expanding a task bar in TaskDurationChart?" • **9** results</summary>
+            
+| File | Lines |
+|------|-------|
+| `src/renderer/src/components/TaskDurationChart.tsx` | L38-180 |
+| `src/renderer/src/components/TaskDurationChart.tsx` | L32 |
+| `src/renderer/src/components/TaskDurationChart.tsx` | L36-180 |
+| `src/renderer/src/components/TaskDurationChart.tsx` | L14-36 |
+| `src/renderer/src/components/TaskDurationChart.tsx` | L38-188 |
+| `src/renderer/src/components/ReflectionView.tsx` | L138-928 |
+| `src/renderer/src/components/WidgetView.tsx` | L163-1212 |
+| `src/renderer/src/components/ReflectionView.tsx` | L65-124 |
+| `src/renderer/src/components/WidgetView.tsx` | L148-1212 |
+
+</details>
+</tool-use>
+
+---
+
+<tool-use data-tool-type="read" data-tool-name="read_file">
+<details><summary>Tool use: **read_file** • Read file: D:\workspace\testwindows\src\renderer\src\services\tracker\summary.ts</summary>
+
+</details>
+</tool-use>
+
+---
+
+Now let me check how stuckMarks are built in ReflectionView:
+
+---
+
+<tool-use data-tool-type="search" data-tool-name="grep">
+<details>
+<summary>Tool use: **grep** • Grep for "stuckMarks|StuckMark" in "D:\workspace\testwindows\src\renderer\src\components\ReflectionView.tsx" • 14 matches</summary>
+
+Output mode: content
+
+
+| File | Content | Line |
+|------|------|------|
+| `.\ReflectionView.tsx` | `import type \{ TaskDurationItem, StuckMark \} from './TaskDurationChart'` | L18 |
+| `.\ReflectionView.tsx` | `const stuckMarksByTask = new Map<string, StuckMark[]>()` | L310 |
+| `.\ReflectionView.tsx` | `const mark: StuckMark = \{` | L375 |
+| `.\ReflectionView.tsx` | `if (!stuckMarksByTask.has(taskTitle)) \{` | L382 |
+| `.\ReflectionView.tsx` | `stuckMarksByTask.set(taskTitle, [])` | L383 |
+| `.\ReflectionView.tsx` | `stuckMarksByTask.get(taskTitle)!.push(mark)` | L385 |
+| `.\ReflectionView.tsx` | `stuckMarks: stuckMarksByTask.get(title) \|\| [],` | L400 |
+| `.\TaskDurationChart.tsx` | `interface StuckMark \{` | L15 |
+| `.\TaskDurationChart.tsx` | `stuckMarks?: StuckMark[]` | L32 |
+| `.\TaskDurationChart.tsx` | `export type \{ TaskDurationItem, StuckMark \}` | L39 |
+| `.\TaskDurationChart.tsx` | `const hasStuck = item.stuckMarks && item.stuckMarks.length > 0` | L54 |
+| `.\TaskDurationChart.tsx` | `\{hasStuck && item.stuckMarks!.map((mark, mi) => \{` | L86 |
+| `.\TaskDurationChart.tsx` | `\{item.stuckMarks!.map((mark, mi) => (` | L125 |
+| `.\TaskDurationChart.tsx` | `\{data.some(d => d.stuckMarks && d.stuckMarks.length > 0) && (` | L167 |
+
+
+</details>
+</tool-use>
+
+---
+
+<tool-use data-tool-type="read" data-tool-name="read_file">
+<details><summary>Tool use: **read_file** • Read file: D:\workspace\testwindows\src\renderer\src\services\ai.ts</summary>
+
+</details>
+</tool-use>
+
+---
+
+<think><details><summary>Thought Process</summary>
+Now I understand the full picture:
+
+1. **The problem**: When the AI sees stuck marks on the chart (red marks on the task bar), it asks "what happened when you got stuck?" But the user already knows the answer because the data is right there in the chart's expandable details - it shows the microAction, the reason, and whether it was resolved.
+
+2. **What the AI already has**: The `summaryToLLMContext` function does include stuck events data in text form:
+```
+### 卡顿与急救
+- 卡在"微任务名"：原因「原因」→ 绕路「方案」→ 成功恢复 ✅
+
+
+```
+
+So the real issue is that the AI has this stuck event data in the text summary but still asks redundant questions about it anyway. The user is asking whether there's a way to make the AI aware that it already possesses this information, so it stops asking for details it can already see.
+
+The solution is a prompt fix: I need to explicitly tell the AI that it has access to the full stuck details (the microAction, reason, and resolution status), and instead of asking "what happened?", it should reference the specific stuck event directly and ask something more meaningful—like about the user's experience, what they learned, or how they worked around it.
+
+``` should directly reference the specifics from the stuck data and ask deeper reflective questions instead. I could also enhance the context sent to the AI by breaking down the stuck marks per task, which would make it simpler for the model to connect the visual chart indicators with the actual stuck events.</details></think>
+
+---
+
+你说得非常对！这是一个很重要的用户体验问题。让我先梳理清楚现状：
+
+---
+
+<tool-use data-tool-type="read" data-tool-name="read_file">
+<details><summary>Tool use: **read_file** • Read file: D:\workspace\testwindows\src\renderer\src\services\tracker\summary.ts</summary>
+
+</details>
+</tool-use>
+
+---
+
+<tool-use data-tool-type="read" data-tool-name="read_file">
+<details><summary>Tool use: **read_file** • Read file: D:\workspace\testwindows\src\renderer\src\services\ai.ts</summary>
+
+</details>
+</tool-use>
+
+---
+
+好的，现在完全搞清楚了。让我说明问题和改造方案：
+
+---
+
+## 问题分析
+
+你的观察非常准确！现在 AI 问了一个**多余**的问题：
+
+> "那天学习的时候你是**卡在哪一步**了呀？"
+
+但其实：
+1. **点击条形图展开后**，已经清楚写着：`卡在 XXX — 原因是 YYY`
+2. **文字数据**里也已经有了完整的卡顿信息：`卡在"微任务名"：原因「原因」→ 绕路「方案」→ 成功恢复 ✅`
+
+也就是说——**AI 手上已经有了所有卡顿的完整信息**（卡在哪、为什么卡、怎么绕的、有没有解决），但它还是在问"你卡在哪了"，这就像医生看着你的体检报告还问"你哪里不舒服"一样重复。
+
+## 问题根源
+
+出在 **system prompt** 里。第 2 步（聊困难）的引导语教 AI "问发生了什么"，但没告诉 AI：**你已经知道发生了什么，不需要再问事实性的问题，应该直接说出来，然后问更深层的感受/策略**。
+
+## 改造方案
+
+只需要改 **1 个文件**：`ai.ts` 的 system prompt。
+
+### 具体改动
+
+**1. 在 `## 规则` 里加一条核心原则：**
+
+> 【严格】你手上的数据已经包含了卡顿的完整细节（卡在哪个步骤、原因、怎么绕路、是否解决）。**绝不要再问用户"卡在哪了""发生了什么"这类事实性问题**——你已经知道了。应该直接引用这些细节，然后问**更深层的反思问题**：当时的感受、为什么会卡在那里、这个绕路方法好不好用、下次怎么提前避开。
+
+**2. 优化第 2 步（困难）的提问示例：**
+
+把现在的：
+> "我注意到【任务用时】里'写代码'只做了 8 分钟就停了..."
+
+改成已知卡顿细节的版本：
+> "我看到【任务用时】里'学习'花了 18 分钟，中间有好几段红色卡顿标记。数据显示你卡在'理解第三章概念'那一步，原因是'内容太抽象了'。你当时有没有试过什么别的方法来理解，比如找视频或者画图？"
+
+**3. 加一条"信息层级"原则：**
+
+> 已经出现在数据中的事实（任务名、时长、卡顿原因、绕路方案），直接引用，不要当问题问。你的问题应该聚焦在数据**背后**的东西：感受、原因、策略、下次如何改进。
+
+### 为什么不需要改代码逻辑？
+
+因为 `summaryToLLMContext` 已经把卡顿的完整细节（微任务、原因、绕路方案、是否解决）都写成文本传给 AI 了。AI **已经有这些信息**，只是 prompt 没教它"别重复问已知的事"。
+
+### 难度评估
+- 改 1 个文件（`ai.ts`）
+- 纯文本修改
+- 难度 ⭐ 极低
+- 效果 ⭐⭐⭐⭐⭐ 很大（问题从"无效重复"变成"有深度的反思引导"）
+
+---
+
+你觉得这个方向对吗？确认了我就开始改。
+
+---
+
+_**User (2026-03-19 02:12Z)**_
+
+开始改吧
+
+---
+
+_**Agent (model claude-4.6-opus-high-thinking, mode Agent)**_
+
+
+
+
+
+---
+
+<think><details><summary>Thought Process</summary>
+The user wants me to proceed with the changes to the system prompt in `ai.ts`. Let me modify the prompt to:
+
+1. Add a core rule that AI should not ask factual questions about data it already has
+2. Optimize the Step 2 (difficulty) examples to reference known stuck details directly
+3. Add an "information hierarchy" principle
+
+Let me read the current prompt to make precise edits.</details></think>
+
+---
+
+<tool-use data-tool-type="read" data-tool-name="read_file">
+<details><summary>Tool use: **read_file** • Read file: D:\workspace\testwindows\src\renderer\src\services\ai.ts</summary>
+
+</details>
+</tool-use>
+
+---
+
+好，开始改。三处修改：① 第 2 步提问引导 ② 规则区加核心原则 ③ 数据解读加信息层级。
+
+---
+
+<tool-use data-tool-type="write" data-tool-name="search_replace">
+
+<details><summary>Tool use: **search_replace** • Edit file: D:\workspace\testwindows\src\renderer\src\services\ai.ts</summary>
+
+**Chunk 1**
+Lines added: 19, lines removed: 9
+
+```diff
+@@ -641,21 +641,31 @@
+  - ❌ "${dayRef}心流 15 分钟，你满意吗？"（二元判断，没有反思深度）
+  
+- ### 第 2 步：从图表找困难
++ ### 第 2 步：从图表找困难（直接引用已知细节，不重复问）
+  ${hasScreenshot
+-   ? &#96;观察截图中的视觉"反差"——节奏曲线的低谷、热力图的空白段、条形图里的灰色条（未完成任务）。选最突出的一个，用【图表标签】指出来，不评价地把看到的现象摆出来，问"发生了什么"或"当时什么感觉"。&#96;
+-   : &#96;从卡顿、中断、放弃、精力低谷中选最突出的一个点，不评价地把数据摆出来，问"发生了什么"或"当时的感觉"。&#96;}
++   ? &#96;观察截图中的视觉"反差"——条形图上的红色卡顿标记、节奏曲线的低谷、热力图的空白段。选最突出的一个，用【图表标签】指出来。
++ 
++ ⚠️ 关键：你的数据中已经包含了卡顿的完整细节（卡在哪个步骤、原因、怎么绕路、是否解决），用户点开图表也能看到这些。**不要问"你卡在哪了""发生了什么"——你已经知道了**。应该直接说出卡顿的细节，然后问数据背后的深层问题：当时的感受、为什么会卡在那里、绕路方法好不好用、下次怎么提前避开。&#96;
++   : &#96;从卡顿、中断、放弃、精力低谷中选最突出的一个点。
++ 
++ ⚠️ 关键：数据中已经记录了卡顿的完整细节（步骤、原因、绕路方案、结果），**不要再问用户"发生了什么"这类事实性问题**。直接引用这些细节，然后聚焦更深层的反思。&#96;}
+  
+- 好的问法——聚焦具体时刻，帮用户回忆当时情境：
++ 好的问法——先把已知事实摆出来，再问感受/策略层面的问题：
+  ${hasScreenshot
+-   ? &#96;- "【节奏曲线】${dayRef}下午 2-4 点有个很明显的低谷，几乎是平的，跟上午的高峰差别挺大。那段时间有印象发生了什么吗？"
+- - "我注意到【任务用时】里'写代码'只做了 8 分钟就停了，灰色条很短。后来过了 20 分钟才回来继续，那 20 分钟大概在忙什么？"
+- - "【活动分布】里下午 3 点前后有一大片空白，看起来电脑基本没在用。那段时间你还记得在干嘛吗？"&#96;
+-   : &#96;- "${dayRef}你在'写代码'上做了 8 分钟后暂停了，过了 20 分钟才回来。那 20 分钟里大概在忙什么？"
+- - "数据显示${dayRef}下午 2-4 点电脑基本空闲，跟上午的节奏差别挺大。那段时间有印象发生了什么吗？"&#96;}
++   ? &#96;- "我看到【任务用时】里'学习'花了 18 分钟，条形上有好几段红色卡顿标记。数据显示你卡在'理解第三章概念'，原因是'内容太抽象'。你当时有试过什么别的方法来理解吗，比如找视频或者画个图？"
++ - "【节奏曲线】${dayRef}下午 2-4 点有个很明显的低谷。数据显示你在'准备PPT'上暂停了 20 分钟，后来绕路用了'先写大纲'的方式回来了。这个绕路方法你觉得好用吗，下次遇到类似的还会这么做？"
++ - "【活动分布】里下午 3 点前后有一大片空白。数据里显示那段时间你暂停了'写代码'的任务。当时是被什么事打断了，还是觉得做不下去主动停的？"&#96;
++   : &#96;- "数据显示你做'学习'的时候卡在了'理解第三章概念'，原因是'内容太抽象'，后来用了拆分的方式绕过去了。你觉得这个方法有效吗，下次再碰到类似的内容会怎么做？"
++ - "${dayRef}你在'写代码'上做了 8 分钟后暂停了 20 分钟，数据里记录暂停原因是被打断。当时是被什么事打断的，你一般被打断后需要多久才能重新进入状态？"&#96;}
+  
+  如果数据中有时间感知偏差（预估 vs 实际），一定要用：
+  - "你预估'写开头段落'要 5 分钟，实际花了 22 分钟。你觉得是这件事比想象中复杂，还是中间有什么打断了？"
++ 
++ 如果数据中有卡顿绕路记录（stuck → pivot），优先关注绕路策略：
++ - "数据显示你卡在 X 后选了'Y'的绕路方案，最后成功完成了。这个方法你觉得好用吗？"
++ - "你卡在 X 的时候试了绕路但没能恢复，当时大概是什么感觉？你觉得换个什么方式会更好？"
+  
+  不要问：
++ - ❌ "你卡在哪一步了？"（数据里已经有了，不要重复问事实）
++ - ❌ "那段时间发生了什么？"（如果数据已经记录了原因，不要再问）
+  - ❌ "你觉得${dayRef}有哪些不足？"（让用户自我批评，不利于 ADHD）
+  - ❌ "下午效率是不是不太好？"（带评价）
+```
+
+</details>
+
+</tool-use>
+
+---
+
+现在改规则区，加核心原则：
+
+---
+
+<tool-use data-tool-type="write" data-tool-name="search_replace">
+
+<details><summary>Tool use: **search_replace** • Edit file: D:\workspace\testwindows\src\renderer\src\services\ai.ts</summary>
+
+**Chunk 1**
+Lines added: 12, lines removed: undefined
+
+```diff
+@@ -696,4 +696,16 @@
+  - 如果数据中有"AI 即时反思"记录，可以引用当时的场景帮用户回忆
+  - 如果有"精力时间分布"数据，帮用户发现自己的高效和低谷时段
++ 
++ ## 信息层级原则（极其重要）
++ 你的数据中包含非常详细的行为记录。请严格遵守以下层级：
++ - **事实层**（任务名、时长、卡顿步骤、卡顿原因、绕路方案、是否解决）→ 这些你已经知道了，**直接引用，绝不当问题问**
++ - **感受层**（当时什么感觉、是不是觉得难、有没有想放弃）→ 这些数据里没有，**可以问**
++ - **策略层**（绕路方法好不好用、下次怎么避开、有没有更好的办法）→ 这些需要用户思考，**值得问**
++ - **模式层**（是不是每次都在这个时间段卡住、是不是同类任务总有问题）→ 帮用户发现规律，**最有价值的问题**
++ 
++ ❌ 错误："你卡在哪一步了呀？"（事实层 → 你已经知道）
++ ❌ 错误："那段时间发生了什么？"（事实层 → 数据已经记录）
++ ✅ 正确："数据显示你卡在'理解第三章'，原因是内容太抽象。你当时有没有试过别的方式？"（引用事实→问策略）
++ ✅ 正确："你在那个绕路方案之后成功继续了，这个方法下次还会用吗？"（引用事实→问策略）
+  
+  ## 数据解读注意
+```
+
+</details>
+
+</tool-use>
+
+---
+
+<tool-use data-tool-type="generic" data-tool-name="read_lints">
+<details>
+          <summary>Tool use: **read_lints** • Read lints for 1 file</summary>
+      
+Lint paths:
+
+- `D:\workspace\testwindows\src\renderer\src\services\ai.ts`
+
+Lint results
+
+
+**No lint errors found**
+</details>
+</tool-use>
+
+---
+
+<tool-use data-tool-type="shell" data-tool-name="run_terminal_cmd">
+<details><summary>Tool use: **run_terminal_cmd** • Run command: cd D:\workspace\testwindows; npm run build 2>&1 | Select-Object -Last 20</summary>
+
+```bash
+cd D:\workspace\testwindows; npm run build 2>&1 | Select-Object -Last 20
+```
+
+```
+transforming...
+(Use &#96;node --trace-warnings ...&#96; to show where the warning was created)
+�?1 modules transformed.
+rendering chunks...
+out/main/index.js  25.79 kB
+�?built in 1.34s
+vite v5.4.21 building SSR bundle for production...
+transforming...
+�?1 modules transformed.
+rendering chunks...
+out/preload/index.js  3.28 kB
+�?built in 33ms
+vite v5.4.21 building for production...
+transforming...
+�?69 modules transformed.
+rendering chunks...
+../../out/renderer/index.html                   0.63 kB
+../../out/renderer/assets/index-Cinq5uCV.css   64.22 kB
+../../out/renderer/assets/index-McqIqSEA.js   946.24 kB
+�?built in 4.35s
+
+```
+</details>
+</tool-use>
+
+---
+
+构建成功，提交：
+
+---
+
+<tool-use data-tool-type="shell" data-tool-name="run_terminal_cmd">
+<details><summary>Tool use: **run_terminal_cmd** • Run command: cd D:\workspace\testwindows; git add -A; git commit -m "fix: AI no longer asks redundant factual questions - uses info hierarchy principle"</summary>
+
+```bash
+cd D:\workspace\testwindows; git add -A; git commit -m "fix: AI no longer asks redundant factual questions - uses info hierarchy principle"
+```
+</details>
+</tool-use>
+
+---
+
+_**User (2026-03-19 02:12Z)**_
+
+有个问题啊，就是我暂停某个任务，然后完了过一会儿点击继续，这个widget右上角的计时器又重新计时了，能不能帮我修复下这个问题，然后能不能帮我考虑下各种情况widget可能重新计时的可能性帮我想想要怎么修复（先给方案这块先不着急开始做）因为我们想要用户的感知保持连贯性
+
+---
+
+_**Agent (model claude-4.6-opus-high-thinking, mode Agent)**_
+
+
+
+
+
+---
+
+<think><details><summary>Thought Process</summary>
+The user is asking about a bug where the widget timer resets when resuming a paused task. Let me first understand how the widget timer works by looking at the relevant code.</details></think>
+
+---
+
+好，让我先彻底搞清楚 widget 计时器的工作原理，找出所有可能导致重新计时的场景。
+
+---
+
+<tool-use data-tool-type="search" data-tool-name="codebase_search">
+<details>
+                <summary>Tool use: **codebase_search** • Searched codebase "How does the widget timer count elapsed time during a focus session?" • **10** results</summary>
+            
+| File | Lines |
+|------|-------|
+| `src/renderer/src/components/WidgetView.tsx` | L148-1212 |
+| `src/renderer/src/components/WidgetView.tsx` | L1216-1281 |
+| `src/renderer/src/components/WidgetView.tsx` | L44-72 |
+| `src/renderer/src/components/WidgetView.tsx` | L74-163 |
+| `src/renderer/src/components/WidgetView.tsx` | L163-1212 |
+| `src/renderer/src/components/ReflectionView.tsx` | L138-928 |
+| `src/renderer/src/components/WidgetView.tsx` | L44 |
+| `src/renderer/src/components/WidgetView.tsx` | L1292-1370 |
+| `src/renderer/src/components/WidgetView.tsx` | L50-144 |
+| `src/renderer/src/components/FocusFlow.tsx` | L40-532 |
+
+</details>
+</tool-use>
+
+---
+
+<tool-use data-tool-type="search" data-tool-name="codebase_search">
+<details>
+                <summary>Tool use: **codebase_search** • Searched codebase "How is pause and resume handled for focus session? Where is sessionStartTime set on resume?" • **8** results</summary>
+            
+| File | Lines |
+|------|-------|
+| `src/renderer/src/App.tsx` | L44-1231 |
+| `src/renderer/src/types/index.ts` | L15-47 |
+| `src/renderer/src/components/WidgetView.tsx` | L148-1212 |
+| `src/renderer/src/services/tracker/types.ts` | L190-215 |
+| `src/renderer/src/components/WidgetView.tsx` | L44-72 |
+| `src/renderer/src/types/index.ts` | L5-42 |
+| `src/renderer/src/App.tsx` | L38-1231 |
+| `src/renderer/src/components/NoteEditor.tsx` | L671-777 |
+
+</details>
+</tool-use>
+
+---
+
+<tool-use data-tool-type="read" data-tool-name="read_file">
+<details><summary>Tool use: **read_file** • Read file: D:\workspace\testwindows\src\renderer\src\App.tsx</summary>
+
+</details>
+</tool-use>
+
+---
+
+<tool-use data-tool-type="search" data-tool-name="codebase_search">
+<details>
+                <summary>Tool use: **codebase_search** • Searched codebase "Where is sessionStartTime first set when starting a new focus session?" • **6** results</summary>
+            
+| File | Lines |
+|------|-------|
+| `src/renderer/src/App.tsx` | L44-1231 |
+| `src/renderer/src/components/WidgetView.tsx` | L44-72 |
+| `src/renderer/src/components/WidgetView.tsx` | L148-1212 |
+| `src/renderer/src/App.tsx` | L38-1231 |
+| `src/renderer/src/App.tsx` | L38 |
+| `src/renderer/src/components/FocusFlow.tsx` | L40-532 |
+
+</details>
+</tool-use>
+
+---
+
+
+
+---
+
+<think><details><summary>Thought Process</summary>
+Now I have a clear picture of the problem. Let me analyze the code:
+
+1. **When a session is paused** (`handlePause` in `App.tsx`, line 757-805):
+   - `elapsedBeforePause` is saved: `Math.floor((Date.now() - session.sessionStartTime) / 1000)` — this captures the seconds elapsed before pausing
+   - The `PausedSession` snapshot stores this
+
+2. **When a session is resumed** (`handleResumePaused` in `App.tsx`, line 810-866):
+   - A new `FocusSession` is created with:
+   - `startTime: now` (current time)
+   - `sessionStartTime: now` (current time) ← **THIS IS THE BUG!**
+   - The `elapsedBeforePause` from the snapshot is **completely ignored**!
+
+3. **How the timer works** (`WidgetView.tsx`, line 177-191):
+   - The timer calculates elapsed time by subtracting `sessionStartTime` from the current time, so when `sessionStartTime` gets reset to the resume time, the timer resets to zero instead of accounting for the time that was already accumulated before the pause.
+
+The fix is straightforward: when resuming, I need to set `sessionStartTime` to `now - elapsedBeforePause * 1000` so the timer immediately reflects the correct accumulated time. Now I'm checking all the scenarios where the timer could reset—pause and resume is definitely the culprit, but I should verify that stuck-to-resume transitions, relay steps, flow mode changes, and app reloads all preserve the session time correctly.</details></think>
+
+---
+
+现在我已经找到了核心问题。让我进一步检查所有可能重置计时器的场景。
+
+---
+
+<tool-use data-tool-type="search" data-tool-name="codebase_search">
+<details>
+                <summary>Tool use: **codebase_search** • Searched codebase "Where does setSession modify sessionStartTime or startTime during execution?" • **2** results</summary>
+            
+| File | Lines |
+|------|-------|
+| `src/renderer/src/App.tsx` | L44-1231 |
+| `src/renderer/src/App.tsx` | L38-1231 |
+
+</details>
+</tool-use>
+
+---
+
+<tool-use data-tool-type="search" data-tool-name="grep">
+<details>
+<summary>Tool use: **grep** • Grep for "setSession\(" in "D:\workspace\testwindows\src\renderer\src\App.tsx" • 22 matches</summary>
+
+Output mode: content
+
+
+| File | Content | Line |
+|------|------|------|
+| `.\App.tsx` | `setSession(restored)` | L194 |
+| `.\App.tsx` | `setSession(restored)` | L201 |
+| `.\App.tsx` | `setSession(null)` | L249 |
+| `.\App.tsx` | `setSession(null)` | L255 |
+| `.\App.tsx` | `setSession(prev => prev \|\| restored)` | L265 |
+| `.\App.tsx` | `setSession(null)` | L368 |
+| `.\App.tsx` | `setSession(newSession)` | L429 |
+| `.\App.tsx` | `setSession(s => s ? \{` | L481 |
+| `.\App.tsx` | `setSession(s => s ? \{` | L494 |
+| `.\App.tsx` | `setSession(s => s ? \{` | L513 |
+| `.\App.tsx` | `setSession(s => s ? \{ ...s, phase: 'stuck_a' \} : s)` | L536 |
+| `.\App.tsx` | `setSession(s => s ? \{ ...s, phase: 'stuck_b' \} : s)` | L542 |
+| `.\App.tsx` | `setSession(s => s ? \{` | L557 |
+| `.\App.tsx` | `setSession(s => s ? \{` | L599 |
+| `.\App.tsx` | `setSession(s => s ? \{` | L610 |
+| `.\App.tsx` | `setSession(s => s ? \{` | L635 |
+| `.\App.tsx` | `setSession(null)` | L692 |
+| `.\App.tsx` | `setSession(null)` | L746 |
+| `.\App.tsx` | `setSession(null)` | L804 |
+| `.\App.tsx` | `setSession(restored)` | L860 |
+| `.\App.tsx` | `setSession(newSession)` | L892 |
+| `.\App.tsx` | `setSession(null)` | L923 |
+
+
+</details>
+</tool-use>
+
+---
+
+<tool-use data-tool-type="search" data-tool-name="grep">
+<details>
+<summary>Tool use: **grep** • Grep for "sessionStartTime" in "D:\workspace\testwindows\src\renderer\src\App.tsx" • 20 matches</summary>
+
+Output mode: content
+
+
+| File | Content | Line |
+|------|------|------|
+| `.\App.tsx` | `// ★ 保留原始 sessionStartTime，计时器从真实起点继续而非归零` | L190 |
+| `.\App.tsx` | `// ★ 保留原始 sessionStartTime，计时器从真实起点继续而非归零` | L263 |
+| `.\App.tsx` | `totalDurationSeconds: Math.floor((Date.now() - session.sessionStartTime) / 1000),` | L359 |
+| `.\App.tsx` | `sessionStartTime: now,` | L420 |
+| `.\App.tsx` | `// 📊 埋点：卡住事件（用 sessionStartTime 而非 startTime，与 session.ended 的计算基准一致）` | L527 |
+| `.\App.tsx` | `const elapsed = Math.floor((Date.now() - session.sessionStartTime) / 1000)` | L528 |
+| `.\App.tsx` | `const sessionDuration = Math.floor((Date.now() - session.sessionStartTime) / 1000)` | L656 |
+| `.\App.tsx` | `// 用 sessionStartTime 统计整段专注时长，避免只记录到最后一步导致时长过短` | L721 |
+| `.\App.tsx` | `const elapsed = Math.floor((Date.now() - session.sessionStartTime) / 1000)` | L722 |
+| `.\App.tsx` | `const totalElapsed = Math.floor((Date.now() - session.sessionStartTime) / 1000)` | L760 |
+| `.\App.tsx` | `sessionStartTime: now,` | L828 |
+| `.\App.tsx` | `sessionStartTime: now,` | L886 |
+| `.\App.tsx` | `const duration = Math.floor((Date.now() - session.sessionStartTime) / 1000)` | L915 |
+| `.\components\WidgetView.tsx` | `sessionStartTime: number   // ★ 整个会话的开始时间戳 —— 用于显示计时器，不因 stuck/relay/flow 切换而重置` | L57 |
+| `.\components\WidgetView.tsx` | `// ★ 使用 sessionStartTime 作为计时基准 —— 不因 stuck/relay/flow 切换而重置` | L178 |
+| `.\components\WidgetView.tsx` | `// 向后兼容：如果旧 session 没有 sessionStartTime，则 fallback 到 startTime` | L179 |
+| `.\components\WidgetView.tsx` | `const timerBase = session.sessionStartTime \|\| startTime` | L180 |
+| `.\components\WidgetView.tsx` | `const \{ sessionStartTime \} = session` | L1228 |
+| `.\components\WidgetView.tsx` | `const tick = () => setElapsed(Math.floor((Date.now() - sessionStartTime) / 1000))` | L1233 |
+| `.\components\WidgetView.tsx` | `\}, [sessionStartTime])` | L1237 |
+
+
+</details>
+</tool-use>
+
+---
+
+<tool-use data-tool-type="read" data-tool-name="read_file">
+<details><summary>Tool use: **read_file** • Read file: D:\workspace\testwindows\src\renderer\src\App.tsx</summary>
+
+</details>
+</tool-use>
+
+---
+
+<tool-use data-tool-type="read" data-tool-name="read_file">
+<details><summary>Tool use: **read_file** • Read file: D:\workspace\testwindows\src\renderer\src\App.tsx</summary>
+
+</details>
+</tool-use>
+
+---
+
+<think><details><summary>Thought Process</summary>
+Now let me look at the quick focus session start and the session persistence:</details></think>
+
+---
+
+<tool-use data-tool-type="read" data-tool-name="read_file">
+<details><summary>Tool use: **read_file** • Read file: D:\workspace\testwindows\src\renderer\src\App.tsx</summary>
+
+</details>
+</tool-use>
+
+---
+
+<tool-use data-tool-type="search" data-tool-name="grep">
+<details>
+<summary>Tool use: **grep** • Grep for "localStorage.*focusSession" in "D:\workspace\testwindows\src\renderer\src\App.tsx" • 11 matches</summary>
+
+Output mode: content
+
+
+| File | Content | Line |
+|------|------|------|
+| `.\App.tsx` | `localStorage.setItem('focusSession', JSON.stringify(session))` | L117 |
+| `.\App.tsx` | `localStorage.setItem('focusSessionId', sessionIdRef.current)` | L118 |
+| `.\App.tsx` | `localStorage.removeItem('focusSession')` | L121 |
+| `.\App.tsx` | `localStorage.removeItem('focusSessionId')` | L122 |
+| `.\App.tsx` | `const savedSession = localStorage.getItem('focusSession')` | L184 |
+| `.\App.tsx` | `const savedSessionId = localStorage.getItem('focusSessionId')` | L185 |
+| `.\App.tsx` | `localStorage.removeItem('focusSession')` | L205 |
+| `.\App.tsx` | `localStorage.removeItem('focusSessionId')` | L206 |
+| `.\App.tsx` | `localStorage.removeItem('focusSession')` | L210 |
+| `.\App.tsx` | `localStorage.removeItem('focusSessionId')` | L211 |
+| `.\App.tsx` | `const savedSession = localStorage.getItem('focusSession')` | L258 |
+
+
+</details>
+</tool-use>
+
+---
+
+<tool-use data-tool-type="read" data-tool-name="read_file">
+<details><summary>Tool use: **read_file** • Read file: D:\workspace\testwindows\src\renderer\src\App.tsx</summary>
+
+</details>
+</tool-use>
+
+---
+
+<think><details><summary>Thought Process</summary>
+Now I have a complete picture. Let me analyze all scenarios where the widget timer could reset:
+
+## Bug Analysis
+
+### Core Problem
+When the user pauses a task and then resumes it, `sessionStartTime` is set to `Date.now()` (current time), which causes the timer to start from `00:00` instead of continuing from where it was paused.
+
+### How the timer works:
+- `timerBase = session.sessionStartTime || startTime` (line 180, WidgetView.tsx)
+- `elapsed = Math.floor((Date.now() - timerBase) / 1000)` (line 183, WidgetView.tsx)
+
+
+- So `elapsed` always equals `(current time - sessionStartTime)` in seconds
+
+### Key data available:
+- `PausedSession.elapsedBeforePause`: The number of seconds the timer showed when the user paused (line 42, types/index.ts)
+- `PausedSession.pausedAt`: The timestamp when the user paused (line 41, types/index.ts)
+
+### All scenarios where timer could reset:
+
+#### 1. **Pause → Resume** (handleResumePaused, line 810-866) — **CONFIRMED BUG**
+The resume handler is calculating the current time and restoring the session, but it's setting `sessionStartTime` to now instead of computing what it should be based on the elapsed time before the pause.
+
+**Fix**: `sessionStartTime: now - snap.elapsedBeforePause * 1000`
+
+#### 2. **App/HMR reload during widget mode** (line 184-213) — **ALREADY CORRECT**
+When reloading, the code restores the saved session and updates `startTime` to the current moment, but crucially preserves the original `sessionStartTime` so the timer continues from where it actually started rather than resetting.
+
+#### 3. **System wake / Mode sync** (line 258-265) — **ALREADY CORRECT**
+Same pattern here—`sessionStartTime` stays intact from localStorage while only `startTime` gets refreshed, maintaining the true elapsed time.
+
+#### 4. **Micro complete (simplified mode)** — Checking the spread operator logic...
+The spread preserves `sessionStartTime` while resetting just `startTime` for the new phase. ✅
+
+#### 5. **Next micro (relay)** — Verifying state transitions...
+Still applying the same pattern—spreading the session state to keep `sessionStartTime` unchanged while only updating `startTime` for the next task.
+
+#### 6. **Resume after stuck** — Confirmed correct...
+Same approach holds here too.
+
+#### 7. **Enter flow mode** — Checking the flow mode entry...
+Continuing to verify that `sessionStartTime` persists through all state updates.
+
+#### 8. **Subtask transitions** — Also correct...
+The relay phase properly preserves the original session start time.
+
+#### 9. **Quick Focus** — New session case...
+This one legitimately sets a fresh `sessionStartTime` since it's initializing a new session.
+
+So the real issue is in `handleResumePaused` at line 828 — it's resetting `sessionStartTime` to now when it should be calculating it backward based on how long the session was paused, so the elapsed time calculation stays accurate.
+
+The fix subtracts the accumulated pause duration from the current time to maintain continuity. But I'm realizing there's a potential problem with multiple pause/resume cycles — each pause only captures the time since the last resume, not the cumulative total, which could cause time loss across repeated pauses.
+
+Let me trace through the scenario more carefully: after the first pause at 5 minutes, resuming resets `sessionStartTime` to the current moment instead of accounting for those 5 minutes. Then when pausing again after 3 more minutes of work, the elapsed time calculation only sees those 3 minutes, not the full 8-minute total. So the fix needs to ensure the accumulated time carries forward through each cycle.
+
+With the corrected approach of adjusting `sessionStartTime` backward by the previously elapsed time, the math works out—when calculating elapsed time on the next pause, it properly includes both the initial 5 minutes and the subsequent 3 minutes. This also means the session tracking event that fires on pause would now correctly report the cumulative duration across all pause/resume cycles, though there's a potential issue with how that event is currently being sent. reason: 'pause'` and the correct duration for that segment. Then when resuming, a new `session.started` is sent. If we now change `sessionStartTime` to include the pre-pause time, the eventual `session.ended` for the resumed segment would have a duration that includes the pre-pause time too. This could lead to double-counting in analytics.
+
+Hmm, but that's a tracking concern, not a timer display concern. The timer display fix is clear. Let me check how tracking uses the duration...
+
+Actually wait, looking at the pause and resume handlers, I see that each resumed session gets a new sessionId. So the tracker events for each segment are properly isolated: the first segment sends `session.started` and `session.ended` with endReason='pause', then the resumed segment gets its own new sessionId with a fresh `session.started`. This means the duration calculations should stay separate per segment.
+
+The issue is that if I adjust `sessionStartTime` backward to fix the display timer, I need to make sure the tracking duration calculation doesn't get affected. Let me trace through what happens: when `session.ended` is called after resume, it calculates duration as `Math.floor((Date.now() - session.sessionStartTime) / 1000)`. If `sessionStartTime` was set to `now - elapsedBeforePause * 1000`, then this would report the total elapsed time including the pause, which is wrong for tracking.
+
+So the fix needs to be more surgical: adjust the display timer separately from the tracking duration calculation.</details></think>
+
+---
+
+现在让我再检查一下所有 session.ended 和 duration 相关的计算逻辑，确保方案完整。
+
+---
+
+<tool-use data-tool-type="read" data-tool-name="read_file">
+<details><summary>Tool use: **read_file** • Read file: D:\workspace\testwindows\src\renderer\src\App.tsx</summary>
+
+</details>
+</tool-use>
+
+---
+
+<think><details><summary>Thought Process</summary>
+Now I have the full picture. Let me also check the `handleExitWidget` function to see how it handles the exit:</details></think>
+
+---
+
+<tool-use data-tool-type="read" data-tool-name="read_file">
+<details><summary>Tool use: **read_file** • Read file: D:\workspace\testwindows\src\renderer\src\App.tsx</summary>
+
+</details>
+</tool-use>
+
+---
+
+<think><details><summary>Thought Process</summary>
+Now I have a complete picture. Let me summarize:
+
+## The Core Bug: `handleResumePaused` (line 810-866)
+
+When resuming a paused task:
+```typescript
+const now = Date.now()
+const restored: FocusSession = {
+  // ...
+  startTime: now,
+  sessionStartTime: now,    // ← BUG: timer starts from 00:00
+  // ...
+}
+```
+
+The `snap.elapsedBeforePause` (which was correctly saved during pause) is **never used** when building the restored session.
+
+**Fix**: `sessionStartTime: now - snap.elapsedBeforePause * 1000`
+
+
+This makes the timer immediately display the accumulated time instead of resetting.
+
+## Tracking Impact
+
+Changing `sessionStartTime` to account for pre-pause time means the duration calculations will now include the full accumulated time, but since we're creating a new session with a new ID, analytics will see two separate sessions—the original paused segment and the resumed one—which could double-count the total time spent on the task.
+
+The real question is whether we want the timer and analytics to both reflect accumulated time or just the timer. I think the cleanest approach is to keep tracking events focused on individual segments while letting the timer show the full accumulated duration. That means storing an `elapsedOffset` field to track time from before the pause, then calculating the timer as the current segment's elapsed time plus that offset, while keeping `sessionStartTime` fresh for tracking purposes. I'm reconsidering whether the simpler approach of just adjusting `sessionStartTime` backward is actually better, since the pause/resume tracking already segments sessions separately with different IDs—but I need to think through whether this creates double-counting issues in the analytics when calculating total duration on the final end event.
+
+The real issue is just that the timer display needs to show continuous elapsed time. I think the cleanest solution is adding an `elapsedOffset` field to track accumulated time from before the pause, then using that offset in the timer calculation so the display picks up where it left off without affecting the session tracking events.
+
+Still writing timer logic... I'm realizing the pause handler has a gap—it calculates elapsed time without accounting for the offset, so I need to update it to include `elapsedOffset` when capturing the total accumulated time before pausing. Let me trace through the scenario again to confirm this fixes the multi-cycle issue. the full cycle:
+1. Start: `sessionStartTime = T1, elapsedOffset = 0`
+2. Work 5 min, pause:
+   - `totalElapsed = (T1+5min - T1)/1000 + 0 = 300`
+   - `elapsedBeforePause = 300`
+3. Resume: `sessionStartTime = T2, elapsedOffset = 300`
+4. Timer shows: `(now - T2)/1000 + 300` → immediately shows `300` (5 min), then counts up
+5. Work 3 more min, pause:
+   - `totalElapsed = (T2+3min - T2)/1000 + 300 = 180 + 300 = 480`
+   - `elapsedBeforePause = 480`
+6. Resume: `sessionStartTime = T3, elapsedOffset = 480`
+7. Timer shows: `(now - T3)/1000 + 480` → immediately shows `480` (8 min), counts up ✅
+
+Now I'm realizing the pause handler includes the offset when calculating `totalElapsed`, which means the session.ended events will correctly report the cumulative duration for each segment—segment 1 reports 300 seconds and segment 2 reports 480 seconds total.
+
+But wait, that's the problem: segment 2's tracking event shows 480 seconds when it should only show 180 seconds for that resumed portion. I need to separate the display value (accumulated total) from the tracking value (just the current segment duration).
+
+So I'm thinking about using `sessionStartTime` for the current segment and `elapsedOffset` to track what came before. That way I can calculate the segment duration separately from the total, and send the right numbers to analytics.
+
+Now I need to map out the specific changes: updating the FocusSession interface to include the offset, modifying the pause and resume handlers to properly set and use this offset, and updating both timer displays to incorporate it into their elapsed calculations.
+
+But actually, looking back at what the user reported—the timer restarting after pause—I should focus on just fixing the timer display itself rather than overhauling all the tracking logic. The existing duration tracking for analytics might be working as intended, so I'll keep those changes minimal and concentrate on making the timer show continuous elapsed time across pause/resume cycles. I need to distinguish between what gets tracked for analytics versus what gets stored for restoring the UI state. When pausing, I'll capture the full accumulated time in the snapshot for display purposes, but only send the current segment's duration to the tracker so the analytics stays clean across pause/resume cycles.
+
+Refining the tracking structure... I'm settling on a simpler approach: add an `elapsedOffset` field to track accumulated time from previous segments, use it to adjust the display timer and the pause snapshot, but keep all tracking events reporting only the current segment's duration so analytics stays accurate.
+
+Let me verify this handles multiple pause/resume cycles correctly — after each resume, the offset accumulates, and the timer formula properly reconstructs the total elapsed time by adding the current segment's duration to that offset.
+
+Now I'm checking all the other scenarios where the widget might restart its timer: stuck states, relay transitions, flow mode entry, app reloads from localStorage, system wake events, and Quick Focus mode. Most of these preserve the sessionStartTime through object spreading or JSON persistence, so the timer continues uninterrupted. The only real issue is the pause/resume case, where the timer was resetting.</details></think>
+
+---
+
+现在我已经完整地理解了整个计时器和暂停/恢复的逻辑。让我给你一个详细的分析报告和修复方案。
+
+---
+
+## 🔍 问题分析
+
+### 核心 Bug：`handleResumePaused`（App.tsx 第 810-866 行）
+
+当你暂停任务再恢复时，代码里做了这两件事：
+
+**暂停时（正确）**：正确保存了「暂停前已经走过的秒数」 → `elapsedBeforePause`
+
+```820:828:src/renderer/src/App.tsx
+    const now = Date.now()
+    const restored: FocusSession = {
+      sessionId: sid,
+      taskId: task.id,
+      taskTitle: task.title,
+      currentMicroTask: snap.currentMicroTask,
+      startTime: now,
+      sessionStartTime: now,
+```
+
+**恢复时（Bug）**：直接把 `sessionStartTime` 设为当前时间 `now`，完全忽略了之前保存的 `elapsedBeforePause`！
+
+计时器的公式是 `elapsed = (Date.now() - sessionStartTime) / 1000`，所以一恢复，计时器就从 `00:00` 重新开始了。
+
+---
+
+### 全面排查：所有可能导致计时器归零的场景
+
+| 场景 | 是否有 Bug | 原因 |
+|------|-----------|------|
+| ① **暂停 → 恢复** | ❌ **有 Bug** | `sessionStartTime` 被重设为 `now`，丢失之前的累计时间 |
+| ② 卡住(stuck) → 恢复 | ✅ 没问题 | 用 `...s` 扩展运算符，`sessionStartTime` 保留不变 |
+| ③ 接力(relay)切换步骤 | ✅ 没问题 | 同上，只改了 `startTime`，不动 `sessionStartTime` |
+| ④ 进入心流模式 | ✅ 没问题 | 同上 |
+| ⑤ App 重载 / HMR 热更新 | ✅ 没问题 | 从 localStorage 恢复时保留原始 `sessionStartTime` |
+| ⑥ 系统休眠唤醒 | ✅ 没问题 | 同上，有专门的 `onModeSync` 恢复机制 |
+| ⑦ 快速专注模式 | ✅ 没问题 | 新会话，从 0 开始是对的 |
+
+**结论：唯一的 Bug 就是场景①：暂停 → 恢复。**
+
+---
+
+## 🛠️ 修复方案
+
+### 思路：给 `FocusSession` 新增一个 `elapsedOffset` 字段
+
+> 就像一个「里程偏移量」——恢复时告诉计时器："你之前已经走过这么多秒了，从这儿接着计。"
+
+**为什么不直接把 `sessionStartTime` 倒推？**  
+因为 `sessionStartTime` 还用于数据埋点（tracker）计算每段专注的时长。如果倒推，埋点的时长就会把之前那段也算进去，导致重复计数。用 `elapsedOffset` 可以做到「显示连续、埋点独立」。
+
+### 改动文件清单
+
+| 文件 | 改动 |
+|------|------|
+| **WidgetView.tsx** | `FocusSession` 接口新增 `elapsedOffset?: number`；两个计时器（FocusDynamicBar + QuickFocusWidget）加入 offset |
+| **App.tsx - handleResumePaused** | 恢复时设置 `elapsedOffset: snap.elapsedBeforePause` |
+| **App.tsx - handlePause** | 保存 `elapsedBeforePause` 时要加上当前的 offset（支持多次暂停/恢复累计） |
+
+### 详细改法
+
+#### 1. `FocusSession` 增加字段
+
+```typescript
+export interface FocusSession {
+  // ... 现有字段 ...
+  /** 暂停→恢复后，之前已累计的秒数（仅用于计时器显示连续性，不影响埋点） */
+  elapsedOffset?: number
+}
+```
+
+#### 2. `handleResumePaused` 使用 elapsedOffset
+
+```typescript
+const restored: FocusSession = {
+  // ...
+  startTime: now,
+  sessionStartTime: now,          // 不变，埋点正常
+  elapsedOffset: snap.elapsedBeforePause,  // ★ 新增：告诉计时器之前走了多少秒
+  // ...
+}
+```
+
+#### 3. `handlePause` 累计 offset
+
+```typescript
+const segmentDuration = Math.floor((Date.now() - session.sessionStartTime) / 1000)
+const totalDisplayed = segmentDuration + (session.elapsedOffset || 0) // 累计总时长
+
+const snapshot: PausedSession = {
+  // ...
+  elapsedBeforePause: totalDisplayed,  // ★ 保存显示层累计时长
+}
+
+// 埋点仍用段落时长，不包含 offset
+tracker.track('session.paused', {
+  elapsedSeconds: segmentDuration,     // ★ 只算这一段
+  // ...
+})
+tracker.track('session.ended', {
+  totalDurationSeconds: segmentDuration,  // ★ 只算这一段
+  // ...
+})
+```
+
+#### 4. 计时器加入 offset
+
+```typescript
+// FocusDynamicBar 的计时器
+const timerBase = session.sessionStartTime || startTime
+const offset = session.elapsedOffset || 0
+useEffect(() => {
+  const tick = () => setElapsed(Math.floor((Date.now() - timerBase) / 1000) + offset)
+  tick()
+  const timer = setInterval(tick, 1000)
+  return () => clearInterval(timer)
+}, [timerBase, offset])
+```
+
+### 多次暂停/恢复的验证
+
+| 操作 | offset | sessionStartTime | 计时器显示 |
+|------|--------|------------------|-----------|
+| 新建会话 | 0 | T₁ | 从 00:00 计 |
+| 工作 5 分钟后暂停 | — | — | elapsedBeforePause = 300 |
+| 恢复 | 300 | T₂ | 立即显示 05:00，继续计 |
+| 再工作 3 分钟后暂停 | — | — | elapsedBeforePause = 480 |
+| 再恢复 | 480 | T₃ | 立即显示 08:00，继续计 ✅ |
+
+---
+
+### 改动量评估
+
+- **涉及文件**：2 个（`App.tsx` + `WidgetView.tsx`）
+- **改动行数**：约 15-20 行
+- **风险**：低（新增字段有默认值 `|| 0`，向后兼容旧 session）
+- **不影响**：数据埋点、热力图、localStorage 恢复
+
+---
+
+你觉得这个方案 OK 吗？OK 的话我就开始改了。
+
+---
+
+_**User (2026-03-19 02:12Z)**_
+
+开始吧
+
+---
+
+_**Agent (model claude-4.6-opus-high-thinking, mode Agent)**_
+
+
+
+
+
+---
+
+<think><details><summary>Thought Process</summary>
+The user wants me to start implementing the fix. Let me create a todo list and begin working.</details></think>
+
+---
+
+<tool-use data-tool-type="task" data-tool-name="todo_write">
+<details><summary>Tool use: **todo_write** • Todo List</summary>
+
+- [-] FocusSession 接口新增 elapsedOffset 字段
+- [ ] FocusDynamicBar 计时器加入 offset
+- [ ] QuickFocusWidget 计时器加入 offset
+- [ ] handleResumePaused 设置 elapsedOffset
+- [ ] handlePause 累计 offset 并修正埋点
+- [ ] 构建验证 & 提交
+
+</details>
+</tool-use>
+
+---
+
+<tool-use data-tool-type="read" data-tool-name="read_file">
+<details><summary>Tool use: **read_file** • Read file: D:\workspace\testwindows\src\renderer\src\components\WidgetView.tsx</summary>
+
+</details>
+</tool-use>
+
+---
+
+<tool-use data-tool-type="write" data-tool-name="search_replace">
+
+<details><summary>Tool use: **search_replace** • Edit file: D:\workspace\testwindows\src\renderer\src\components\WidgetView.tsx</summary>
+
+**Chunk 1**
+Lines added: 2, lines removed: undefined
+
+```diff
+@@ -68,4 +68,6 @@
+    // ---- AI 第一步提示（非强制，仅展示） ----
+    firstStepHint?: string          // FocusFlow 中确认的第一步，在任务结构视图中作为提示行显示
++   // ---- 暂停恢复累计时间 ----
++   elapsedOffset?: number          // 暂停→恢复后，之前已累计的秒数（仅用于计时器显示连续性，不影响埋点）
+  }
+  
+```
+
+</details>
+
+</tool-use>
+
+---
+
+<tool-use data-tool-type="task" data-tool-name="todo_write">
+<details><summary>Tool use: **todo_write** • Todo List</summary>
+
+- [x] FocusSession 接口新增 elapsedOffset 字段
+- [-] FocusDynamicBar 计时器加入 offset
+- [ ] QuickFocusWidget 计时器加入 offset
+- [ ] handleResumePaused 设置 elapsedOffset
+- [ ] handlePause 累计 offset 并修正埋点
+- [ ] 构建验证 & 提交
+
+</details>
+</tool-use>
+
+---
+
+<tool-use data-tool-type="write" data-tool-name="search_replace">
+
+<details><summary>Tool use: **search_replace** • Edit file: D:\workspace\testwindows\src\renderer\src\components\WidgetView.tsx</summary>
+
+Status: **loading**
+
+```typescriptreact
+  // ---- 计时器（精确到秒）----
+  // ★ 使用 sessionStartTime 作为计时基准 —— 不因 stuck/relay/flow 切换而重置
+  // 向后兼容：如果旧 session 没有 sessionStartTime，则 fallback 到 start
+```
+
+</details>
+
+</tool-use>
+
+---
+
 
 
 ---
