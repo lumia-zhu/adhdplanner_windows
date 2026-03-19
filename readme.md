@@ -57,6 +57,23 @@ npm run build:portable
 
 ---
 
+## 📚 研究与设计文档
+
+如果你当前更关心“为什么这样设计”，建议优先看这些文档：
+
+- `docs/flowchart.md`：核心交互流程，理解计划、执行、反思三阶段如何串起来
+- `docs/pilot-interview-outline.md`：3 天预实验后的访谈提纲
+- `docs/chi-user-study-plan.md`：正式 user study 的研究结构与数据收集建议
+- `docs/rq-data-analysis-mapping.md`：研究问题、数据和分析方向的对应关系
+- `docs/entry-trigger-strategy.md`：针对 ADHD 用户“忘记或懒得打开主界面”的入口触发策略
+
+这次新增 `docs/entry-trigger-strategy.md` 的目的，是把一个重要风险说清楚：
+
+- 当前原型已经较强地支持“打开后持续陪伴”
+- 但还需要继续优化“用户没打开时，怎样把开始入口送到他面前”
+
+---
+
 ## 📁 项目结构
 
 ```
@@ -127,6 +144,8 @@ C:\Users\{用户名}\AppData\Roaming\task-manager\tasks.json
 - [ ] 音效：勾选完成时播放轻柔的"叮~"声
 - [ ] 任务分类/标签系统
 - [ ] 截止日期与提醒功能
+- [ ] 入口触发优化：静默常驻 + 托盘直接继续上次任务
+- [ ] 轻量开始提醒：在合适时机提醒用户“先做第一步”
 - [ ] 深色模式
 - [ ] 数据导出（CSV / Markdown）
 - [ ] 连续完成彩蛋（5秒内完成3个触发超级特效）

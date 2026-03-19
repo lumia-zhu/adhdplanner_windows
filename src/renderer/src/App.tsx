@@ -10,6 +10,7 @@ import TitleBar from './components/TitleBar'
 import CarryOverBanner from './components/CarryOverBanner'
 import NoteEditor from './components/NoteEditor'
 import WidgetView, { ENABLE_STEP_BY_STEP } from './components/WidgetView'
+import StandbyWidget from './components/StandbyWidget'
 import FocusFlow from './components/FocusFlow'
 import AISettings from './components/AISettings'
 import ProfileSettings from './components/ProfileSettings'
@@ -48,6 +49,7 @@ export default function App() {
   const [tasks, setTasks] = useState<Task[]>([])
   const [loading, setLoading] = useState(true)
   const [isWidgetMode, setIsWidgetMode] = useState(false)
+  const [isStandbyMode, setIsStandbyMode] = useState(false)
   const [focusTaskId, setFocusTaskId] = useState<string | null>(null)
 
   // -------- 日期概念：每天有独立的任务列表 --------
@@ -160,6 +162,11 @@ export default function App() {
         // ★ 如果主进程说当前是 widget 模式，同步过来（页面重载/唤醒后恢复）
         if (windowMode?.isWidgetMode) {
           setIsWidgetMode(true)
+          // 没有 session 时默认是待命模式（有 session 会在 loadDailyTasks 中恢复）
+          const savedSession = localStorage.getItem('focusSession')
+          if (!savedSession) {
+            setIsStandbyMode(true)
+          }
         }
       } catch (e) {
         console.error('初始化数据加载失败:', e)
@@ -235,6 +242,17 @@ export default function App() {
       } catch (e) {
         console.error('加载任务数据失败:', e)
       } finally {
+        // ★ 首次加载完成后，如果没有正在执行的 session，默认进入待命 widget
+        if (loading) {
+          const windowMode = await window.electronAPI.getWindowMode()
+          const hasSavedSession = !!localStorage.getItem('focusSession')
+          if (!windowMode?.isWidgetMode && !hasSavedSession) {
+            // 首次启动，没有 widget 模式也没有 session → 进入待命
+            window.electronAPI.enterWidget()
+            setIsWidgetMode(true)
+            setIsStandbyMode(true)
+          }
+        }
         setLoading(false)
       }
     }
@@ -243,9 +261,14 @@ export default function App() {
 
   // -------- 监听托盘菜单触发的模式切换 --------
   useEffect(() => {
-    window.electronAPI.onWidgetEnter(() => setIsWidgetMode(true))
+    window.electronAPI.onWidgetEnter(() => {
+      setIsWidgetMode(true)
+      // 托盘触发进入 widget 模式时，如果没有 session 就进入待命
+      if (!session) setIsStandbyMode(true)
+    })
     window.electronAPI.onWidgetExit(() => {
       setIsWidgetMode(false)
+      setIsStandbyMode(false)
       setSession(null)
     })
     // ★ 系统唤醒后，主进程推送模式同步（确保 widget 不会变成压缩的主界面）
@@ -335,6 +358,42 @@ export default function App() {
   /** 判断用户是否已填写过资料（至少填了专业或年级） */
   const hasProfile = !!(userProfile.major || userProfile.grade)
 
+  // ===================== 待命 widget =====================
+
+  /** 主界面 → 收起为待命 widget */
+  const handleEnterStandby = () => {
+    window.electronAPI.enterWidget()
+    setIsWidgetMode(true)
+    setIsStandbyMode(true)
+  }
+
+  /** 待命 widget → 展开为主界面 */
+  const handleExpandFromStandby = () => {
+    window.electronAPI.exitWidget()
+    setIsWidgetMode(false)
+    setIsStandbyMode(false)
+  }
+
+  /** 待命 widget 中点击"开始"→ 先恢复主窗口显示 FocusFlow，确认后进入执行 widget */
+  const handleStandbyFocus = (taskId: string) => {
+    // 先退出 widget 模式恢复主窗口大小（FocusFlow 覆盖层需要完整窗口）
+    window.electronAPI.exitWidget()
+    setIsWidgetMode(false)
+    setIsStandbyMode(false)
+    // 触发 FocusFlow（确认微任务后会自动进入执行 widget）
+    setScaffoldTaskId(taskId)
+    if (aiConfig.apiKey) {
+      const task = tasks.find(t => t.id === taskId)
+      if (task) aiCache.prefetch(taskId, task.title, aiConfig)
+    }
+  }
+
+  /** 待命 widget 中点击"继续"→ 恢复暂停的 session */
+  const handleStandbyResume = (taskId: string) => {
+    setIsStandbyMode(false)
+    handleResumePaused(taskId)
+  }
+
   // ===================== 小组件 / 专注模式 =====================
 
   /** 退出小组件 */
@@ -362,10 +421,11 @@ export default function App() {
       })
     }
 
-    window.electronAPI.exitWidget()
-    setIsWidgetMode(false)
+    // 退出执行 widget → 进入待命 widget（而不是回主界面）
     setFocusTaskId(null)
     setSession(null)
+    setIsStandbyMode(true)
+    // 不调用 exitWidget()，保持 widget 模式窗口
   }
 
   /**
@@ -721,11 +781,10 @@ export default function App() {
       }
     }))
 
-    // 退出小组件（不再重复记录退出事件）
-    window.electronAPI.exitWidget()
-    setIsWidgetMode(false)
+    // 任务完成后 → 进入待命 widget
     setFocusTaskId(null)
     setSession(null)
+    setIsStandbyMode(true)
   }
 
   // ===================== 简化模式：任务结构视图中的子任务勾选 =====================
@@ -775,11 +834,10 @@ export default function App() {
           t.id === session.taskId ? { ...t, completed: true } : t,
         ))
 
-        // 退出 widget
-        window.electronAPI.exitWidget()
-        setIsWidgetMode(false)
+        // 子任务全部完成 → 进入待命 widget
         setFocusTaskId(null)
         setSession(null)
+        setIsStandbyMode(true)
       }, 400)
     }
   }
@@ -836,11 +894,10 @@ export default function App() {
       t.id === session.taskId ? { ...t, pausedSession: snapshot } : t,
     ))
 
-    // 退出小组件
-    window.electronAPI.exitWidget()
-    setIsWidgetMode(false)
+    // 暂停后 → 进入待命 widget（而不是回主界面）
     setFocusTaskId(null)
     setSession(null)
+    setIsStandbyMode(true)
   }
 
   /**
@@ -1150,7 +1207,21 @@ export default function App() {
     )
   }
 
-  // -------- 小组件模式（包含旧版和新版 Dynamic Bar） --------
+  // -------- 待命 widget 模式（没有 session 时显示常驻开始入口） --------
+  if (isWidgetMode && isStandbyMode) {
+    return (
+      <div className="w-full h-full overflow-hidden">
+        <StandbyWidget
+          tasks={tasks}
+          onFocusTask={handleStandbyFocus}
+          onResumePaused={handleStandbyResume}
+          onExpand={handleExpandFromStandby}
+        />
+      </div>
+    )
+  }
+
+  // -------- 执行 widget 模式（包含旧版和新版 Dynamic Bar） --------
   if (isWidgetMode) {
     return (
       <div className="w-full h-full bg-white overflow-hidden">
@@ -1197,6 +1268,7 @@ export default function App() {
         onOpenProfile={() => setShowProfile(true)}
         onOpenAISettings={() => setShowAISettings(true)}
         onOpenReflection={() => setShowReflection(true)}
+        onEnterStandby={handleEnterStandby}
         hasProfile={hasProfile}
       />
 

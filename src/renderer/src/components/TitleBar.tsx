@@ -11,12 +11,13 @@ interface TitleBarProps {
   onOpenProfile?: () => void    // 打开个人资料设置
   onOpenAISettings?: () => void // 打开 AI 设置面板
   onOpenReflection?: () => void // 打开每日反思页面
+  onEnterStandby?: () => void   // 收起为待命 widget
   hasProfile?: boolean          // 是否已填写个人资料（用于显示小绿点）
 }
 
 export default function TitleBar({
   taskCount,
-  onOpenProfile, onOpenAISettings, onOpenReflection, hasProfile,
+  onOpenProfile, onOpenAISettings, onOpenReflection, onEnterStandby, hasProfile,
 }: TitleBarProps) {
   // 设置下拉菜单的开关状态
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -163,18 +164,20 @@ export default function TitleBar({
           </svg>
         </button>
 
-        {/* 隐藏到托盘按钮 */}
-        <button
-          onClick={() => window.electronAPI.hideWindow()}
-          className="w-7 h-7 rounded-md hover:bg-gray-100 flex items-center justify-center text-gray-500 hover:text-gray-700 transition-colors"
-          title="隐藏到托盘"
-        >
-          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-              d="M19 9l-7 7-7-7"
-            />
-          </svg>
-        </button>
+        {/* 收起为待命 widget */}
+        {onEnterStandby && (
+          <button
+            onClick={onEnterStandby}
+            className="w-7 h-7 rounded-md hover:bg-indigo-50 flex items-center justify-center text-gray-500 hover:text-indigo-500 transition-colors"
+            title="收起为桌面小组件"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                d="M19 9l-7 7-7-7"
+              />
+            </svg>
+          </button>
+        )}
 
         {/* 退出按钮 */}
         <button
