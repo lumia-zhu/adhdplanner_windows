@@ -324,9 +324,9 @@ export default function ReflectionChat({
 
   const STEP_LABELS = [
     '正在准备...',
-    '第1步 / 3：寻找今日亮点 ✨',
-    '第2步 / 3：发现改进空间 🔍',
-    '第3步 / 3：制定明日策略 🎯',
+    '第1/3步：寻找今日亮点 ✨',
+    '第2/3步：发现改进空间 🔍',
+    '第3/3步：制定明日策略 🎯',
     '✅ 反思完成！',
   ]
 
@@ -352,11 +352,6 @@ export default function ReflectionChat({
                 }`}
               />
             ))}
-            <div
-              className={`w-2 h-2 rounded-full transition-all duration-300 ml-0.5 ${
-                isComplete ? 'bg-amber-400 scale-125 ring-2 ring-amber-100' : 'bg-gray-200'
-              }`}
-            />
           </div>
           <span className="text-xs text-gray-500 font-medium">
             {STEP_LABELS[Math.min(step, 4)]}

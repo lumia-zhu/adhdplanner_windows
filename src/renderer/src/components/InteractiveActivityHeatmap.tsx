@@ -127,7 +127,7 @@ function ratioToPercentStr(ratio: number): string {
 
 export default function InteractiveActivityHeatmap({ data, events }: Props) {
   const [tooltip, setTooltip] = useState<{
-    x: number; y: number; label: string; usagePct: number; level: number
+    x: number; y: number; label: string; usagePct: number; level: number; taskName?: string
   } | null>(null)
 
   // ---- 聚合热力条（全 24 小时） ----
@@ -303,47 +303,42 @@ export default function InteractiveActivityHeatmap({ data, events }: Props) {
         })}
       </div>
 
-      {/* ======== 任务时间分布（和热力条同范围对齐） ======== */}
+      {/* ======== 任务时间分布（颜色深浅，和上方热力条统一视觉隐喻） ======== */}
       {taskEntries.length > 0 && (
-        <div className="mt-3 space-y-2">
-          {taskEntries.map((task) => {
-            return (
-              <div key={task.title}>
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-[11px] text-gray-600 font-medium truncate max-w-[60%]" title={task.title}>
-                    {task.title}
-                  </span>
-                  <span className="text-[10px] text-gray-400 tabular-nums flex-shrink-0 ml-2">
-                    {`共 ${task.totalMinutes} 分钟`}
-                  </span>
-                </div>
-                <div className="relative flex gap-[2px] w-full">
-                  {Array.from({ length: visibleSpan }, (_, i) => {
-                    const h = rangeStart + i
-                    const ratio = task.hourMap.get(h) || 0
-                    const hasActivity = ratio > 0
-
-                    return (
-                      <div
-                        key={h}
-                        className="h-[14px] flex-1 rounded-[2px] overflow-hidden relative group bg-gray-50"
-                        title={hasActivity ? `${fmtHour(h)}–${fmtHour(h + 1)}：${ratioToPercentStr(ratio)}` : ''}
-                      >
-                        {hasActivity && (
-                          <div
-                            className="h-full rounded-[2px] transition-all duration-300 bg-emerald-400"
-                            style={{
-                              width: `${Math.max(ratio * 100, 10)}%`,
-                            }}
-                          />
-                        )}
-                      </div>
-                    )
-                  })}
-                </div>
+        <div className="mt-3 space-y-1.5">
+          {taskEntries.map((task) => (
+            <div key={task.title} className="flex items-center gap-2">
+              <span className="text-[11px] text-gray-600 font-medium truncate w-[80px] flex-shrink-0" title={task.title}>
+                {task.title}
+              </span>
+              <div className="flex gap-[2px] flex-1 min-w-0">
+                {Array.from({ length: visibleSpan }, (_, i) => {
+                  const h = rangeStart + i
+                  const ratio = task.hourMap.get(h) || 0
+                  const level = ratioToLevel(ratio)
+                  return (
+                    <div
+                      key={h}
+                      className={`h-5 flex-1 rounded-[3px] transition-all hover:scale-y-110 ${LEVEL_COLORS[level]}`}
+                      onMouseEnter={(e) => {
+                        if (ratio <= 0) return
+                        const rect = e.currentTarget.getBoundingClientRect()
+                        setTooltip({
+                          x: rect.left + rect.width / 2,
+                          y: rect.top,
+                          label: `${fmtHour(h)}–${fmtHour(h + 1)}`,
+                          usagePct: Math.min(Math.round(ratio * 100), 100),
+                          level,
+                          taskName: task.title,
+                        })
+                      }}
+                      onMouseLeave={() => setTooltip(null)}
+                    />
+                  )
+                })}
               </div>
-            )
-          })}
+            </div>
+          ))}
         </div>
       )}
 
@@ -358,11 +353,15 @@ export default function InteractiveActivityHeatmap({ data, events }: Props) {
             transform: 'translateX(-50%)',
           }}
         >
+          {tooltip.taskName && (
+            <>
+              <span className="font-medium">{tooltip.taskName}</span>
+              <span className="mx-1.5 opacity-40">|</span>
+            </>
+          )}
           <span className="font-medium">{tooltip.label}</span>
           <span className="mx-1.5 opacity-40">|</span>
           <span>活跃 {tooltip.usagePct}%</span>
-          <span className="mx-1.5 opacity-40">|</span>
-          <span>{LEVEL_LABELS[tooltip.level]}</span>
         </div>
       )}
     </div>

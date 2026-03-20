@@ -49,14 +49,13 @@ export default function ActivityRhythmChart({ data }: Props) {
       buckets[h].count++
     }
 
-    // 用固定分母：totalRatio / 120，再乘以 60 转为分钟
-    // 例如：totalRatio=80 → (80/120)*60 = 40 分钟（该小时内约 40 分钟在使用）
-    return buckets.map(b => Math.min((b.totalRatio / EXPECTED_RECORDS_PER_HOUR) * 60, 60))
+    // 用固定分母：totalRatio / 120 → 0~1 的活跃占比，再乘 100 转为百分比
+    return buckets.map(b => Math.min((b.totalRatio / EXPECTED_RECORDS_PER_HOUR) * 100, 100))
   }, [data])
 
-  // Y 轴用"分钟"表示（0-60）
-  const maxVal = 60
-  const ticks = [0, 15, 30, 45, 60]
+  // Y 轴用百分比表示（0-100%）
+  const maxVal = 100
+  const ticks = [0, 25, 50, 75, 100]
 
   // 固定显示 0-23 小时，生成折线路径点（24 个点）
   const points = useMemo(() => {
@@ -105,7 +104,7 @@ export default function ActivityRhythmChart({ data }: Props) {
       {peakHour.val > 0 && (
         <p className="text-[11px] text-gray-500 mb-2">
           🌟 今日使用高峰：<span className="font-semibold text-emerald-600">{peakHour.hour}:00</span> 时段
-          <span className="text-gray-400 ml-1">（约 {Math.round(peakHour.val)} 分钟/小时）</span>
+          <span className="text-gray-400 ml-1">（活跃 {Math.round(peakHour.val)}%）</span>
         </p>
       )}
 
@@ -115,7 +114,6 @@ export default function ActivityRhythmChart({ data }: Props) {
         {ticks.map((tickVal, i) => {
           const ratio = maxVal > 0 ? tickVal / maxVal : 0
           const y = PAD_T + CHART_H * (1 - ratio)
-          const label = tickVal % 1 === 0 ? String(tickVal) : tickVal.toFixed(1)
           return (
             <g key={i}>
               <line
@@ -124,7 +122,7 @@ export default function ActivityRhythmChart({ data }: Props) {
               />
               {/* y 轴刻度 */}
               <text x={PAD_L - 4} y={y + 3} textAnchor="end" fontSize={7} fill="#9ca3af">
-                {label}
+                {tickVal}%
               </text>
             </g>
           )
@@ -192,7 +190,7 @@ export default function ActivityRhythmChart({ data }: Props) {
                       x={p.x} y={textY}
                       textAnchor="middle" fontSize={7} fill="white" fontWeight="500"
                     >
-                      {p.hour}:00 · {Math.round(p.val)}min
+                      {p.hour}:00 · {Math.round(p.val)}%
                     </text>
                   </g>
                 )
@@ -206,7 +204,7 @@ export default function ActivityRhythmChart({ data }: Props) {
                     x={p.x} y={labelY}
                     textAnchor="middle" fontSize={7} fill="#059669" fontWeight="bold"
                   >
-                    {isHovered ? `${p.hour}:00 · ${Math.round(p.val)}min` : `★ ${Math.round(peakHour.val)}min`}
+                    {isHovered ? `${p.hour}:00 · ${Math.round(p.val)}%` : `★ ${Math.round(peakHour.val)}%`}
                   </text>
                 )
               })()}
@@ -217,7 +215,7 @@ export default function ActivityRhythmChart({ data }: Props) {
 
       {/* y 轴说明 */}
       <p className="text-[10px] text-gray-400 mt-1 text-center">
-        纵轴：每小时使用时长（分钟） · 横轴：时间
+        纵轴：每小时活跃占比 · 横轴：时间
       </p>
     </div>
   )

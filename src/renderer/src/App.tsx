@@ -242,12 +242,12 @@ export default function App() {
       } catch (e) {
         console.error('加载任务数据失败:', e)
       } finally {
-        // ★ 首次加载完成后，如果没有正在执行的 session，默认进入待命 widget
+        // ★ 首次启动时，如果没有正在执行的 session，默认进入待命 widget
+        // 注意：锁屏唤醒等导致的页面重载不应触发（isFirstInit 区分）
         if (loading) {
           const windowMode = await window.electronAPI.getWindowMode()
           const hasSavedSession = !!localStorage.getItem('focusSession')
-          if (!windowMode?.isWidgetMode && !hasSavedSession) {
-            // 首次启动，没有 widget 模式也没有 session → 进入待命
+          if (windowMode?.isFirstInit && !windowMode?.isWidgetMode && !hasSavedSession) {
             window.electronAPI.enterWidget()
             setIsWidgetMode(true)
             setIsStandbyMode(true)

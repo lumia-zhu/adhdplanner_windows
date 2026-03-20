@@ -932,7 +932,13 @@ function setupIPC(): void {
   })
 
   // 渲染进程启动时查询当前窗口模式（解决睡眠唤醒后状态不同步）
-  ipcMain.handle('window:getMode', () => ({ isWidgetMode }))
+  // rendererReady: 区分首次启动 vs 页面重载（锁屏后 GPU 重置等）
+  let rendererReady = false
+  ipcMain.handle('window:getMode', () => {
+    const isFirstInit = !rendererReady
+    rendererReady = true
+    return { isWidgetMode, isFirstInit }
+  })
 
   ipcMain.on('window:minimize', () => mainWindow?.minimize())
   ipcMain.on('window:hide',     () => { mainWindow?.hide(); updateTrayMenu() })
