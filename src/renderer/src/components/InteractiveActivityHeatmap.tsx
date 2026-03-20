@@ -23,18 +23,20 @@ const DEFAULT_END = 23       // 无数据时的默认结束
 
 function ratioToLevel(usageRatio: number): number {
   if (usageRatio <= 0) return 0
-  if (usageRatio <= 0.33) return 1
-  if (usageRatio <= 0.67) return 2
-  return 3
+  if (usageRatio <= 0.25) return 1
+  if (usageRatio <= 0.50) return 2
+  if (usageRatio <= 0.75) return 3
+  return 4
 }
 
 const LEVEL_COLORS = [
   'bg-gray-100',       // 0: 未使用
-  'bg-emerald-200',    // 1: 低
-  'bg-emerald-400',    // 2: 中
-  'bg-emerald-600',    // 3: 高
+  'bg-emerald-100',    // 1: < 25%
+  'bg-emerald-300',    // 2: 25%~50%
+  'bg-emerald-500',    // 3: 50%~75%
+  'bg-emerald-700',    // 4: > 75%
 ]
-const LEVEL_LABELS = ['未使用', '< 20 分钟', '20~40 分钟', '> 40 分钟']
+const LEVEL_LABELS = ['未使用', '< 25%', '25%~50%', '50%~75%', '> 75%']
 
 interface Props {
   data: ActivityRecord[]
@@ -117,16 +119,15 @@ function fmtHour(h: number): string {
   return `${String(h % 24).padStart(2, '0')}:00`
 }
 
-function ratioToMinuteStr(ratio: number): string {
-  const min = Math.round(ratio * 60)
-  return `${min} 分钟`
+function ratioToPercentStr(ratio: number): string {
+  return `${Math.round(ratio * 100)}%`
 }
 
 // ===================== 主组件 =====================
 
 export default function InteractiveActivityHeatmap({ data, events }: Props) {
   const [tooltip, setTooltip] = useState<{
-    x: number; y: number; label: string; usageMinutes: number; level: number
+    x: number; y: number; label: string; usagePct: number; level: number
   } | null>(null)
 
   // ---- 聚合热力条（全 24 小时） ----
@@ -143,11 +144,9 @@ export default function InteractiveActivityHeatmap({ data, events }: Props) {
     }
     return buckets.map((b, i) => {
       const avgUsageRatio = b.totalRatio / EXPECTED_RECORDS_PER_BLOCK
-      const usageMinutes = Math.round(b.totalRatio * 0.5)
       return {
         index: i,
         avgUsageRatio,
-        usageMinutes,
         count: b.count,
         label: `${String(i).padStart(2, '0')}:00–${String(i + 1 === 24 ? 0 : i + 1).padStart(2, '0')}:00`,
       }
@@ -227,7 +226,11 @@ export default function InteractiveActivityHeatmap({ data, events }: Props) {
     for (let h = firstTick; h < rangeEnd; h += step) {
       if (h > rangeStart) ticks.push(h)
     }
-    if (ticks[ticks.length - 1] !== rangeEnd) ticks.push(rangeEnd)
+    // 末尾刻度距离上一个刻度至少要有 step/2 的间距，避免两个刻度挤在一起
+    const lastTick = ticks[ticks.length - 1]
+    if (lastTick !== rangeEnd && rangeEnd - lastTick >= Math.ceil(step / 2)) {
+      ticks.push(rangeEnd)
+    }
     return ticks
   }, [rangeStart, rangeEnd, visibleSpan])
 
@@ -247,7 +250,7 @@ export default function InteractiveActivityHeatmap({ data, events }: Props) {
 
       {/* ======== 图例 ======== */}
       <div className="flex items-center gap-3 mb-2.5 text-[10px] text-gray-400">
-        <span>每小时使用时长：</span>
+        <span>每小时活跃占比：</span>
         {LEVEL_COLORS.map((c, i) => (
           <div key={i} className="flex items-center gap-1">
             <div className={`w-3 h-3 rounded-sm ${c}`} />
@@ -271,7 +274,7 @@ export default function InteractiveActivityHeatmap({ data, events }: Props) {
                   x: rect.left + rect.width / 2,
                   y: rect.top,
                   label: block.label,
-                  usageMinutes: block.usageMinutes,
+                  usagePct: Math.min(Math.round(block.avgUsageRatio * 100), 100),
                   level,
                 })
               }}
@@ -324,7 +327,7 @@ export default function InteractiveActivityHeatmap({ data, events }: Props) {
                       <div
                         key={h}
                         className="h-[14px] flex-1 rounded-[2px] overflow-hidden relative group bg-gray-50"
-                        title={hasActivity ? `${fmtHour(h)}–${fmtHour(h + 1)}：${ratioToMinuteStr(ratio)}` : ''}
+                        title={hasActivity ? `${fmtHour(h)}–${fmtHour(h + 1)}：${ratioToPercentStr(ratio)}` : ''}
                       >
                         {hasActivity && (
                           <div
@@ -357,7 +360,7 @@ export default function InteractiveActivityHeatmap({ data, events }: Props) {
         >
           <span className="font-medium">{tooltip.label}</span>
           <span className="mx-1.5 opacity-40">|</span>
-          <span>使用约 {tooltip.usageMinutes} / 60 分钟</span>
+          <span>活跃 {tooltip.usagePct}%</span>
           <span className="mx-1.5 opacity-40">|</span>
           <span>{LEVEL_LABELS[tooltip.level]}</span>
         </div>
