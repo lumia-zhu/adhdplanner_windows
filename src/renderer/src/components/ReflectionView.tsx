@@ -979,6 +979,7 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
                   aiConfig={aiConfig}
                   screenshotBase64={screenshotBase64}
                   selectedDate={viewMode === 'week' ? weekEndDate : selectedDate}
+                  storageKey={viewMode === 'week' ? `week-${weekEndDate}` : selectedDate}
                   onChartRef={handleChartRef}
                   onComplete={handleReflectionComplete}
                 />

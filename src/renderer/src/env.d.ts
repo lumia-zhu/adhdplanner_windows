@@ -36,6 +36,9 @@ interface Window {
     // 行为追踪
     appendTrackerEvents: (date: string, events: unknown[]) => Promise<boolean>
     loadTrackerEvents: (date: string) => Promise<unknown[]>
+    // 反思聊天记录
+    saveReflectionChat: (key: string, data: unknown) => Promise<boolean>
+    loadReflectionChat: (key: string) => Promise<unknown>
     // 活跃度数据
     /** 读取指定日期的活跃度采样记录 */
     loadActivityData: (date: string) => Promise<unknown[]>

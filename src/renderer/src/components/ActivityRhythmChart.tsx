@@ -51,7 +51,7 @@ export default function ActivityRhythmChart({ data }: Props) {
 
     // 用固定分母：totalRatio / 120，再乘以 60 转为分钟
     // 例如：totalRatio=80 → (80/120)*60 = 40 分钟（该小时内约 40 分钟在使用）
-    return buckets.map(b => (b.totalRatio / EXPECTED_RECORDS_PER_HOUR) * 60)
+    return buckets.map(b => Math.min((b.totalRatio / EXPECTED_RECORDS_PER_HOUR) * 60, 60))
   }, [data])
 
   // Y 轴用"分钟"表示（0-60）

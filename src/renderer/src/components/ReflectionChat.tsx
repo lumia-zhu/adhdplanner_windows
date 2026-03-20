@@ -109,6 +109,14 @@ function parseChartRefs(
   })
 }
 
+/** 持久化存储的聊天数据结构 */
+interface SavedReflectionChat {
+  bubbles: ChatBubble[]
+  messages: ReflectionMessage[]
+  step: number
+  savedAt: number
+}
+
 interface ReflectionChatProps {
   /** 由 buildReflectionSystemPrompt 构建的系统提示词 */
   systemPrompt: string
@@ -118,6 +126,8 @@ interface ReflectionChatProps {
   screenshotBase64?: string | null
   /** 当前反思的日期 YYYY-MM-DD（用于截图消息中标注日期） */
   selectedDate?: string
+  /** 存储标识，如 "2026-03-20" 或 "week-2026-03-20"，用于持久化聊天记录 */
+  storageKey?: string
   /** 图表引用回调：当用户点击 AI 消息中的图表标签时触发 */
   onChartRef?: (chartId: string) => void
   /** 反思完成回调（AI 生成总结后） */
@@ -129,6 +139,7 @@ export default function ReflectionChat({
   aiConfig,
   screenshotBase64,
   selectedDate,
+  storageKey,
   onChartRef,
   onComplete,
 }: ReflectionChatProps) {
@@ -137,6 +148,8 @@ export default function ReflectionChat({
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [step, setStep] = useState(0)  // 0=等待首条AI, 1-3=等待用户回答, 4=已完成
+  const [restored, setRestored] = useState(false)      // 是否从历史记录恢复
+  const [storageReady, setStorageReady] = useState(false) // 存储检查是否完成
   const scrollRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const messagesRef = useRef<ReflectionMessage[]>([])
@@ -180,9 +193,63 @@ export default function ReflectionChat({
     return content
   }, [aiConfig])
 
+  // ---- 加载历史聊天记录 ----
+  useEffect(() => {
+    if (!storageKey) { setStorageReady(true); return }
+
+    // 防御：preload 脚本更新需要重启 Electron，未重启时 API 可能不存在
+    if (typeof window.electronAPI.loadReflectionChat !== 'function') {
+      setStorageReady(true)
+      return
+    }
+
+    window.electronAPI.loadReflectionChat(storageKey)
+      .then((raw) => {
+        const saved = raw as SavedReflectionChat | null
+        if (saved && Array.isArray(saved.bubbles) && saved.bubbles.length > 0) {
+          setBubbles(saved.bubbles)
+          messagesRef.current = saved.messages || []
+          setStep(saved.step ?? 0)
+          setRestored(true)
+          initCalledRef.current = true
+        }
+        setStorageReady(true)
+      })
+      .catch(() => setStorageReady(true))
+  }, [storageKey])
+
+  // ---- 自动保存聊天记录（bubbles 或 step 变化时，防抖 500ms） ----
+  useEffect(() => {
+    if (!storageKey || bubbles.length === 0) return
+    if (typeof window.electronAPI.saveReflectionChat !== 'function') return
+    const timer = setTimeout(() => {
+      window.electronAPI.saveReflectionChat(storageKey, {
+        bubbles,
+        messages: messagesRef.current,
+        step,
+        savedAt: Date.now(),
+      } satisfies SavedReflectionChat)
+    }, 500)
+    return () => clearTimeout(timer)
+  }, [bubbles, step, storageKey])
+
+  // ---- 重新开始对话 ----
+  const handleRestart = useCallback(() => {
+    if (storageKey && typeof window.electronAPI.saveReflectionChat === 'function') {
+      window.electronAPI.saveReflectionChat(storageKey, null)
+    }
+    setBubbles([])
+    messagesRef.current = []
+    setStep(0)
+    setRestored(false)
+    setError(null)
+    initCalledRef.current = false
+  }, [storageKey])
+
   // 初始化：发送第一条 AI 消息（Step 1 提问）
   // 如果有截图，会在 user 消息中附带仪表板截图让 AI 先"看"一下
   useEffect(() => {
+    if (!storageReady) return // 等存储检查完成再决定是否初始化
     if (initCalledRef.current || step > 0 || bubbles.length > 0) return
     if (!systemPrompt) return  // systemPrompt 为空时不发送
     initCalledRef.current = true
@@ -208,7 +275,7 @@ export default function ReflectionChat({
     sendToAI(initMessages).then(content => {
       if (content) setStep(1) // 等待用户回答 Step 1
     })
-  }, [systemPrompt, screenshotBase64])
+  }, [systemPrompt, screenshotBase64, storageReady])
 
   // bubbles 变化时滚动到底
   useEffect(() => {
@@ -302,6 +369,21 @@ export default function ReflectionChat({
         ref={scrollRef}
         className="flex-1 overflow-y-auto px-4 py-4 space-y-4"
       >
+        {/* 历史记录恢复提示 */}
+        {restored && (
+          <div className="flex justify-center">
+            <div className="flex items-center gap-2 bg-amber-50 border border-amber-200/60 text-amber-600 text-[11px] px-3 py-1.5 rounded-full">
+              <span>📋 这是上次的对话记录</span>
+              <button
+                onClick={handleRestart}
+                className="text-amber-500 hover:text-amber-700 font-medium underline underline-offset-2 transition-colors"
+              >
+                重新开始
+              </button>
+            </div>
+          </div>
+        )}
+
         {bubbles.map((b, i) => (
           <div
             key={i}

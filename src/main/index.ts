@@ -31,6 +31,10 @@ const getLegacyTasksPath = (): string => join(app.getPath('userData'), 'tasks.js
 const getDailyTasksPath = (date: string): string =>
   join(app.getPath('userData'), `tasks-${date}.json`)
 
+/** 反思聊天记录路径，如 reflection-2026-03-20.json 或 reflection-week-2026-03-20.json */
+const getReflectionChatPath = (key: string): string =>
+  join(app.getPath('userData'), `reflection-${key}.json`)
+
 /**
  * 一次性迁移：如果旧的 tasks.json 存在，把内容写入今天的每日文件，然后重命名旧文件为备份。
  * 这样老用户升级后不会丢数据。
@@ -1031,6 +1035,21 @@ function setupIPC(): void {
     appendTrackerEvents(date, events))
   ipcMain.handle('tracker:load', (_, date: string) =>
     loadTrackerEvents(date))
+
+  // -------- 反思聊天记录 --------
+  ipcMain.handle('reflection:save', (_, key: string, data: unknown) => {
+    try {
+      fs.writeFileSync(getReflectionChatPath(key), JSON.stringify(data, null, 2), 'utf-8')
+      return true
+    } catch (e) { console.error('[reflection:save]', e); return false }
+  })
+  ipcMain.handle('reflection:load', (_, key: string) => {
+    try {
+      const p = getReflectionChatPath(key)
+      if (fs.existsSync(p)) return JSON.parse(fs.readFileSync(p, 'utf-8'))
+    } catch (e) { console.error('[reflection:load]', e) }
+    return null
+  })
 
   // -------- 活跃度数据 --------
   /** 先把内存缓冲区 flush 到磁盘，再读取 → 保证数据最新 */

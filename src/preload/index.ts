@@ -86,6 +86,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
   loadTrackerEvents: (date: string): Promise<unknown[]> =>
     ipcRenderer.invoke('tracker:load', date),
 
+  // -------- 反思聊天记录 --------
+  /** 保存反思聊天记录（key 格式: "2026-03-20" 或 "week-2026-03-20"） */
+  saveReflectionChat: (key: string, data: unknown): Promise<boolean> =>
+    ipcRenderer.invoke('reflection:save', key, data),
+  /** 加载反思聊天记录 */
+  loadReflectionChat: (key: string): Promise<unknown> =>
+    ipcRenderer.invoke('reflection:load', key),
+
   // -------- 活跃度数据 --------
   /** 读取指定日期的活跃度采样记录 */
   loadActivityData: (date: string): Promise<unknown[]> =>

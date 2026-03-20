@@ -1,11 +1,11 @@
 /**
  * InteractiveActivityHeatmap —— 交互式活动热力图 + 任务时间分布
  *
- * 上半部分：24 小时热力条（和 ActivityHeatmap 相同），支持选区交互
- * 下半部分：任务时间分布
- *   - 任务名独占一行（左对齐）
- *   - 24 格时间条紧跟其下，占满全宽，和热力条完美对齐
- *   - 色块宽度按实际活跃比例显示
+ * 自适应时间范围：根据当天实际活动数据动态裁剪显示区间，
+ * 避免凌晨等无活动时段浪费空间，让有数据的部分占满全宽。
+ *
+ * 上半部分：热力条（仅显示活跃范围）
+ * 下半部分：任务时间分布（和热力条对齐）
  */
 
 import { useMemo, useState } from 'react'
@@ -17,6 +17,9 @@ import type { TrackEvent } from '../services/tracker'
 
 const TOTAL_BLOCKS = 24
 const EXPECTED_RECORDS_PER_BLOCK = 120
+const MIN_SPAN = 12         // 最少显示 12 小时，避免活动集中时格子太宽
+const DEFAULT_START = 7      // 无数据时的默认起始
+const DEFAULT_END = 23       // 无数据时的默认结束
 
 function ratioToLevel(usageRatio: number): number {
   if (usageRatio <= 0) return 0
@@ -32,7 +35,6 @@ const LEVEL_COLORS = [
   'bg-emerald-600',    // 3: 高
 ]
 const LEVEL_LABELS = ['未使用', '< 20 分钟', '20~40 分钟', '> 40 分钟']
-const TIME_TICKS = [0, 3, 6, 9, 12, 15, 18, 21, 24]
 
 interface Props {
   data: ActivityRecord[]
@@ -44,7 +46,6 @@ interface Props {
 /**
  * 从事件流中提取每个任务在每个小时的活跃比例
  * 返回 Map<taskTitle, Map<hourIndex, ratio>>
- *   ratio 取值 0~1，表示该小时内任务实际活跃了多大比例
  */
 function buildTaskHourRatioMap(events: TrackEvent[]): Map<string, Map<number, number>> {
   const result = new Map<string, Map<number, number>>()
@@ -113,10 +114,9 @@ function buildTaskHourRatioMap(events: TrackEvent[]): Map<string, Map<number, nu
 }
 
 function fmtHour(h: number): string {
-  return `${String(h).padStart(2, '0')}:00`
+  return `${String(h % 24).padStart(2, '0')}:00`
 }
 
-/** 格式化比例为分钟文字（用于 tooltip） */
 function ratioToMinuteStr(ratio: number): string {
   const min = Math.round(ratio * 60)
   return `${min} 分钟`
@@ -129,7 +129,7 @@ export default function InteractiveActivityHeatmap({ data, events }: Props) {
     x: number; y: number; label: string; usageMinutes: number; level: number
   } | null>(null)
 
-  // ---- 聚合热力条 ----
+  // ---- 聚合热力条（全 24 小时） ----
   const blocks = useMemo(() => {
     const buckets: { totalRatio: number; count: number }[] = Array.from(
       { length: TOTAL_BLOCKS },
@@ -160,7 +160,6 @@ export default function InteractiveActivityHeatmap({ data, events }: Props) {
   const taskEntries = useMemo(() => {
     return Array.from(taskHourRatioMap.entries())
       .map(([title, hourMap]) => {
-        // 计算总时长（分钟）
         let totalMinutes = 0
         hourMap.forEach(r => { totalMinutes += r * 60 })
         return { title, hourMap, totalMinutes: Math.round(totalMinutes) }
@@ -168,7 +167,72 @@ export default function InteractiveActivityHeatmap({ data, events }: Props) {
       .sort((a, b) => b.totalMinutes - a.totalMinutes)
   }, [taskHourRatioMap])
 
-  const filteredTasks = taskEntries
+  // ---- 自适应时间范围 ----
+  const { rangeStart, rangeEnd } = useMemo(() => {
+    let firstActive = 24
+    let lastActive = -1
+
+    // 从活跃度数据中找范围
+    for (const b of blocks) {
+      if (b.avgUsageRatio > 0) {
+        firstActive = Math.min(firstActive, b.index)
+        lastActive = Math.max(lastActive, b.index)
+      }
+    }
+
+    // 也从任务事件中找范围（覆盖活跃度采样可能遗漏的时段）
+    for (const [, hourMap] of taskHourRatioMap) {
+      for (const [h, ratio] of hourMap) {
+        if (ratio > 0) {
+          firstActive = Math.min(firstActive, h)
+          lastActive = Math.max(lastActive, h)
+        }
+      }
+    }
+
+    // 无活动数据 → 默认范围
+    if (firstActive > lastActive) {
+      return { rangeStart: DEFAULT_START, rangeEnd: DEFAULT_END }
+    }
+
+    // 前后各加 1 小时缓冲（rangeEnd 是 exclusive，所以 lastActive + 2）
+    let start = Math.max(0, firstActive - 1)
+    let end = Math.min(24, lastActive + 2)
+
+    // 保证最小跨度
+    const span = end - start
+    if (span < MIN_SPAN) {
+      const deficit = MIN_SPAN - span
+      const padBefore = Math.floor(deficit / 2)
+      const padAfter = deficit - padBefore
+      start = Math.max(0, start - padBefore)
+      end = Math.min(24, end + padAfter)
+      // 边界补偿
+      if (end - start < MIN_SPAN) {
+        if (start === 0) end = Math.min(24, start + MIN_SPAN)
+        else start = Math.max(0, end - MIN_SPAN)
+      }
+    }
+
+    return { rangeStart: start, rangeEnd: end }
+  }, [blocks, taskHourRatioMap])
+
+  const visibleSpan = rangeEnd - rangeStart
+
+  // ---- 动态时间刻度 ----
+  const timeTicks = useMemo(() => {
+    const step = visibleSpan <= 10 ? 2 : 3
+    const ticks: number[] = [rangeStart]
+    const firstTick = Math.ceil(rangeStart / step) * step
+    for (let h = firstTick; h < rangeEnd; h += step) {
+      if (h > rangeStart) ticks.push(h)
+    }
+    if (ticks[ticks.length - 1] !== rangeEnd) ticks.push(rangeEnd)
+    return ticks
+  }, [rangeStart, rangeEnd, visibleSpan])
+
+  // ---- 裁剪后的热力块 ----
+  const visibleBlocks = blocks.slice(rangeStart, rangeEnd)
 
   if (data.length === 0) {
     return (
@@ -192,9 +256,9 @@ export default function InteractiveActivityHeatmap({ data, events }: Props) {
         ))}
       </div>
 
-      {/* ======== 热力条：全宽 24 格（仅展示，不再支持时间选区筛选） ======== */}
+      {/* ======== 热力条（动态范围） ======== */}
       <div className="relative flex gap-[2px] w-full">
-        {blocks.map((block) => {
+        {visibleBlocks.map((block) => {
           const level = ratioToLevel(block.avgUsageRatio)
 
           return (
@@ -217,32 +281,31 @@ export default function InteractiveActivityHeatmap({ data, events }: Props) {
         })}
       </div>
 
-      {/* ======== 底部时间刻度 ======== */}
+      {/* ======== 底部时间刻度（动态） ======== */}
       <div className="relative w-full h-4 mt-1">
-        {TIME_TICKS.map((h) => {
-          const pct = (h / 24) * 100
+        {timeTicks.map((h) => {
+          const pct = ((h - rangeStart) / visibleSpan) * 100
           return (
             <span
               key={h}
               className="absolute text-[9px] text-gray-400 tabular-nums"
               style={{
                 left: `${pct}%`,
-                transform: h === 0 ? 'none' : h === 24 ? 'translateX(-100%)' : 'translateX(-50%)',
+                transform: pct === 0 ? 'none' : pct >= 100 ? 'translateX(-100%)' : 'translateX(-50%)',
               }}
             >
-              {h === 24 ? '24:00' : `${String(h).padStart(2, '0')}:00`}
+              {fmtHour(h)}
             </span>
           )
         })}
       </div>
 
-      {/* ======== 任务时间分布 ======== */}
-      {filteredTasks.length > 0 && (
+      {/* ======== 任务时间分布（和热力条同范围对齐） ======== */}
+      {taskEntries.length > 0 && (
         <div className="mt-3 space-y-2">
-          {filteredTasks.map((task) => {
+          {taskEntries.map((task) => {
             return (
               <div key={task.title}>
-                {/* 第一行：任务名 + 时长 */}
                 <div className="flex items-center justify-between mb-1">
                   <span className="text-[11px] text-gray-600 font-medium truncate max-w-[60%]" title={task.title}>
                     {task.title}
@@ -251,9 +314,9 @@ export default function InteractiveActivityHeatmap({ data, events }: Props) {
                     {`共 ${task.totalMinutes} 分钟`}
                   </span>
                 </div>
-                {/* 第二行：24 格时间条，全宽，和热力条对齐 */}
                 <div className="relative flex gap-[2px] w-full">
-                  {Array.from({ length: TOTAL_BLOCKS }, (_, h) => {
+                  {Array.from({ length: visibleSpan }, (_, i) => {
+                    const h = rangeStart + i
                     const ratio = task.hourMap.get(h) || 0
                     const hasActivity = ratio > 0
 
@@ -261,13 +324,13 @@ export default function InteractiveActivityHeatmap({ data, events }: Props) {
                       <div
                         key={h}
                         className="h-[14px] flex-1 rounded-[2px] overflow-hidden relative group bg-gray-50"
-                        title={hasActivity ? `${fmtHour(h)}–${fmtHour(h + 1 === 24 ? 0 : h + 1)}：${ratioToMinuteStr(ratio)}` : ''}
+                        title={hasActivity ? `${fmtHour(h)}–${fmtHour(h + 1)}：${ratioToMinuteStr(ratio)}` : ''}
                       >
                         {hasActivity && (
                           <div
                             className="h-full rounded-[2px] transition-all duration-300 bg-emerald-400"
                             style={{
-                              width: `${Math.max(ratio * 100, 10)}%`,  // 最小 10% 保证可见
+                              width: `${Math.max(ratio * 100, 10)}%`,
                             }}
                           />
                         )}
