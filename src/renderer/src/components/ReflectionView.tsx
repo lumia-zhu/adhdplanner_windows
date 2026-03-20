@@ -821,22 +821,50 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
             /* ---- 日视图 ---- */
             <div className={`p-6 space-y-6 transition-all duration-400 ${
               chatOpen
-                ? 'max-w-sm'
+                ? 'w-full'
                 : 'max-w-xl mx-auto'
             }`}>
-              {/* 圆环图（仅今天显示，历史日期没有任务快照） */}
+              {/* 圆环图 + 核心指标并排（chatOpen 时节省纵向空间） */}
               {isToday && (
-                <div id="chart-completion-rate" className="flex flex-col items-center">
+                <div id="chart-completion-rate" className={`${
+                  chatOpen
+                    ? 'flex items-center gap-6'
+                    : 'flex flex-col items-center'
+                }`}>
                   <DonutChart
                     percentage={completionRate}
-                    size={chatOpen ? 140 : 180}
-                    strokeWidth={chatOpen ? 12 : 14}
+                    size={chatOpen ? 120 : 180}
+                    strokeWidth={chatOpen ? 10 : 14}
                     label="任务完成率"
                   />
+                  {/* chatOpen 时把指标卡片内联到圆环右侧 */}
+                  {chatOpen && (
+                    <div id="chart-key-metrics" className="grid grid-cols-3 gap-3 flex-1">
+                      <div className="text-center bg-emerald-50 rounded-xl py-2.5 px-2">
+                        <p className="text-lg font-bold text-emerald-600">{summary?.stats.completedMicroSteps ?? 0}</p>
+                        <p className="text-[10px] text-emerald-500 mt-0.5">完成任务数</p>
+                      </div>
+                      <div className="text-center bg-blue-50 rounded-xl py-2.5 px-2">
+                        <p className="text-lg font-bold text-blue-600">
+                          {usageDurationStr.value}
+                          <span className="text-xs font-normal ml-0.5">{usageDurationStr.unit}</span>
+                        </p>
+                        <p className="text-[10px] text-blue-500 mt-0.5">电脑使用时长</p>
+                      </div>
+                      <div className="text-center bg-indigo-50 rounded-xl py-2.5 px-2">
+                        <p className="text-lg font-bold text-indigo-600">
+                          {summary?.stats.totalFocusMinutes ?? 0}
+                          <span className="text-xs font-normal ml-0.5">分钟</span>
+                        </p>
+                        <p className="text-[10px] text-indigo-500 mt-0.5">任务时长</p>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
-              {/* 核心指标卡片 */}
+              {/* 核心指标卡片（仅 chatOpen=false 时独立显示） */}
+              {(!chatOpen || !isToday) && (
               <div id="chart-key-metrics" className={`grid gap-3 w-full ${
                 chatOpen ? 'grid-cols-2' : 'grid-cols-3'
               }`}>
@@ -861,6 +889,7 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
                   <p className="text-[10px] text-indigo-500 mt-0.5">任务时长</p>
                 </div>
               </div>
+              )}
 
               {/* 分隔线 */}
               <div className="border-t border-gray-100" />
