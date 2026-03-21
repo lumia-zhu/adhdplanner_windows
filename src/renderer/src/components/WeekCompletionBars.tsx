@@ -15,6 +15,8 @@ interface Props {
 
 /** 柱状图高度（px） */
 const BAR_AREA_H = 100
+/** 顶部留白，给标签腾出空间 */
+const BAR_PAD_TOP = 18
 
 export default function WeekCompletionBars({ days }: Props) {
 
@@ -25,7 +27,7 @@ export default function WeekCompletionBars({ days }: Props) {
         {/* Y 轴刻度标签 */}
         <div
           className="flex flex-col justify-between flex-shrink-0 pr-1.5"
-          style={{ height: BAR_AREA_H }}
+          style={{ height: BAR_AREA_H + BAR_PAD_TOP, paddingTop: BAR_PAD_TOP }}
         >
           {[100, 75, 50, 25, 0].map(tick => (
             <span key={tick} className="text-[9px] text-gray-400 tabular-nums leading-none text-right w-[24px]">
@@ -35,7 +37,7 @@ export default function WeekCompletionBars({ days }: Props) {
         </div>
 
         {/* 柱子区域 */}
-        <div className="flex-1 relative" style={{ height: BAR_AREA_H }}>
+        <div className="flex-1 relative" style={{ height: BAR_AREA_H + BAR_PAD_TOP, paddingTop: BAR_PAD_TOP }}>
           {/* 水平参考线 */}
           {[0, 25, 50, 75, 100].map(tick => (
             <div

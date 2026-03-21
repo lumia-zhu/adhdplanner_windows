@@ -22,8 +22,8 @@ const PAD_B = 20
 const CHART_W = W - PAD_L - PAD_R
 const CHART_H = H - PAD_T - PAD_B
 
-const MAX_VAL = 60
-const Y_TICKS = [0, 15, 30, 45, 60]
+const MAX_VAL = 100
+const Y_TICKS = [0, 25, 50, 75, 100]
 
 const EXPECTED_RECORDS_PER_HOUR = 120
 const MAX_COMPARE = 3
@@ -41,15 +41,14 @@ const LINE_COLORS = [
 
 // ===================== 工具函数 =====================
 
-/** 将一天的 ActivityRecord 聚合为 24 小时各自的使用分钟数 */
+/** 将一天的 ActivityRecord 聚合为 24 小时各自的活跃占比（0~100%） */
 function toHourlyUsage(data: ActivityRecord[]): number[] {
   const buckets = Array.from({ length: 24 }, () => 0)
   for (const r of data) {
     const h = new Date(r.ts).getHours()
     buckets[h] += getActiveRatio(r)
   }
-  // totalRatio / 120 * 60 → 分钟
-  return buckets.map(total => (total / EXPECTED_RECORDS_PER_HOUR) * 60)
+  return buckets.map(total => Math.min((total / EXPECTED_RECORDS_PER_HOUR) * 100, 100))
 }
 
 /** 24 个点 → SVG 折线 path d */
@@ -187,7 +186,7 @@ export default function WeekRhythmChart({ days }: Props) {
         {peakHour.val > 0 && (
           <p className="text-[11px] text-gray-500">
             🌟 周平均使用高峰：<span className="font-semibold text-emerald-600">{peakHour.hour}:00</span>
-            <span className="text-gray-400 ml-1">（约 {Math.round(peakHour.val)} 分钟/小时）</span>
+            <span className="text-gray-400 ml-1">（{Math.round(peakHour.val)}% 活跃度）</span>
           </p>
         )}
         <div className="relative" ref={dropdownRef}>
@@ -271,7 +270,7 @@ export default function WeekRhythmChart({ days }: Props) {
                 stroke="#e5e7eb" strokeWidth={0.5} strokeDasharray={i === 0 ? undefined : '2,2'}
               />
               <text x={PAD_L - 4} y={y + 3} textAnchor="end" fontSize={7} fill="#9ca3af">
-                {tickVal}
+                {tickVal}%
               </text>
             </g>
           )
@@ -333,9 +332,9 @@ export default function WeekRhythmChart({ days }: Props) {
               {isHovered && (() => {
                 const showBelow = p.y - PAD_T < 20
                 // 计算 tooltip 内容
-                const lines: string[] = [`均值 ${Math.round(p.val)}min`]
+                const lines: string[] = [`均值 ${Math.round(p.val)}%`]
                 for (const cl of compareLines) {
-                  lines.push(`${cl.label} ${Math.round(cl.hourly[p.hour])}min`)
+                  lines.push(`${cl.label} ${Math.round(cl.hourly[p.hour])}%`)
                 }
                 const text = `${p.hour}:00 · ${lines.join(' | ')}`
                 const textWidth = Math.min(text.length * 3.5, 160)
@@ -395,7 +394,7 @@ export default function WeekRhythmChart({ days }: Props) {
 
       {/* y 轴说明 */}
       <p className="text-[10px] text-gray-400 mt-1 text-center">
-        纵轴：每小时使用时长（分钟） · 横轴：时间
+        纵轴：每小时活跃占比 · 横轴：时间
       </p>
     </div>
   )

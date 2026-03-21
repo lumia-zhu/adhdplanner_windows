@@ -16,22 +16,26 @@ import type { WeekDayData } from './WeekView'
 
 const TOTAL_HOURS = 24
 const EXPECTED_RECORDS_PER_HOUR = 120  // 每小时 120 条（每 30 秒一条）
+const MIN_SPAN = 12
+const DEFAULT_START = 7
+const DEFAULT_END = 23
 
 function ratioToLevel(usageRatio: number): number {
   if (usageRatio <= 0) return 0
-  if (usageRatio <= 0.33) return 1
-  if (usageRatio <= 0.67) return 2
-  return 3
+  if (usageRatio <= 0.25) return 1
+  if (usageRatio <= 0.50) return 2
+  if (usageRatio <= 0.75) return 3
+  return 4
 }
 
 const LEVEL_BG = [
   'bg-gray-100',        // 0: 未使用
-  'bg-emerald-200',     // 1: 低
-  'bg-emerald-400',     // 2: 中
-  'bg-emerald-600',     // 3: 高
+  'bg-emerald-100',     // 1: < 25%
+  'bg-emerald-300',     // 2: 25%~50%
+  'bg-emerald-500',     // 3: 50%~75%
+  'bg-emerald-700',     // 4: > 75%
 ]
-const LEVEL_LABELS = ['未使用', '< 20 分钟', '20~40 分钟', '> 40 分钟']
-const TIME_TICKS = [0, 6, 12, 18, 24]
+const LEVEL_LABELS = ['未使用', '< 25%', '25%~50%', '50%~75%', '> 75%']
 
 // ===================== 工具函数 =====================
 
@@ -101,8 +105,8 @@ function fmtHour(h: number): string {
   return `${String(h % 24).padStart(2, '0')}:00`
 }
 
-function ratioToMinuteStr(ratio: number): string {
-  return `${Math.round(ratio * 60)} 分钟`
+function ratioToPercentStr(ratio: number): string {
+  return `${Math.round(ratio * 100)}%`
 }
 
 // ===================== Props =====================
@@ -127,6 +131,60 @@ export default function WeekHeatmapGrid({ days }: Props) {
       levels: aggregateToHourlyLevels(d.activity),
     }))
   }, [days])
+
+  // ---- 自适应时间范围（扫描 7 天合集） ----
+  const { rangeStart, rangeEnd } = useMemo(() => {
+    let firstActive = 24
+    let lastActive = -1
+
+    for (const dl of dayLevels) {
+      dl.levels.forEach((lv, h) => {
+        if (lv > 0) {
+          firstActive = Math.min(firstActive, h)
+          lastActive = Math.max(lastActive, h)
+        }
+      })
+    }
+
+    if (firstActive > lastActive) {
+      return { rangeStart: DEFAULT_START, rangeEnd: DEFAULT_END }
+    }
+
+    let start = Math.max(0, firstActive - 1)
+    let end = Math.min(24, lastActive + 2)
+
+    const span = end - start
+    if (span < MIN_SPAN) {
+      const deficit = MIN_SPAN - span
+      const padBefore = Math.floor(deficit / 2)
+      const padAfter = deficit - padBefore
+      start = Math.max(0, start - padBefore)
+      end = Math.min(24, end + padAfter)
+      if (end - start < MIN_SPAN) {
+        if (start === 0) end = Math.min(24, start + MIN_SPAN)
+        else start = Math.max(0, end - MIN_SPAN)
+      }
+    }
+
+    return { rangeStart: start, rangeEnd: end }
+  }, [dayLevels])
+
+  const visibleSpan = rangeEnd - rangeStart
+
+  // ---- 动态时间刻度 ----
+  const timeTicks = useMemo(() => {
+    const step = visibleSpan <= 10 ? 2 : 3
+    const ticks: number[] = [rangeStart]
+    const firstTick = Math.ceil(rangeStart / step) * step
+    for (let h = firstTick; h < rangeEnd; h += step) {
+      if (h > rangeStart) ticks.push(h)
+    }
+    const lastTick = ticks[ticks.length - 1]
+    if (lastTick !== rangeEnd && rangeEnd - lastTick >= Math.ceil(step / 2)) {
+      ticks.push(rangeEnd)
+    }
+    return ticks
+  }, [rangeStart, rangeEnd, visibleSpan])
 
   // 稳定高效时段洞察
   const insight = useMemo(() => {
@@ -179,16 +237,9 @@ export default function WeekHeatmapGrid({ days }: Props) {
 
   return (
     <div className="space-y-2">
-      {/* 洞察文字 */}
-      {insight && (
-        <div className="text-[11px] text-emerald-600 bg-emerald-50 rounded-lg px-3 py-1.5 mb-1">
-          ✨ {insight}
-        </div>
-      )}
-
       {/* 图例 */}
       <div className="flex items-center gap-3 text-[10px] text-gray-400">
-        <span>每小时使用：</span>
+        <span>每小时活跃占比：</span>
         {LEVEL_BG.map((c, i) => (
           <div key={i} className="flex items-center gap-1">
             <div className={`w-3 h-3 rounded-sm ${c}`} />
@@ -211,22 +262,25 @@ export default function WeekHeatmapGrid({ days }: Props) {
               >
                 {/* 左侧日期标签 */}
                 <span
-                  className="text-[10px] text-gray-500 w-[50px] flex-shrink-0 text-right tabular-nums"
+                  className="text-[10px] text-gray-500 w-[80px] flex-shrink-0 text-right tabular-nums"
                   title={dl.dateFull}
                 >
                   {dl.dateLabel} {dl.weekdayShort}
                 </span>
 
-                {/* 24 小时格子 */}
+                {/* 动态范围格子 */}
                 <div className="flex-1 flex gap-[1px]">
-                  {dl.levels.map((lv, h) => (
-                    <div
-                      key={h}
-                      className={`h-4 flex-1 rounded-[2px] transition-all ${LEVEL_BG[lv]}
-                        ${isExpanded ? 'opacity-90' : 'hover:scale-y-125'}`}
-                      title={`${dl.dateFull} ${fmtHour(h)}–${fmtHour(h + 1)}: ${LEVEL_LABELS[lv]}`}
-                    />
-                  ))}
+                  {dl.levels.slice(rangeStart, rangeEnd).map((lv, i) => {
+                    const h = rangeStart + i
+                    return (
+                      <div
+                        key={h}
+                        className={`h-4 flex-1 rounded-[2px] transition-all ${LEVEL_BG[lv]}
+                          ${isExpanded ? 'opacity-90' : 'hover:scale-y-125'}`}
+                        title={`${dl.dateFull} ${fmtHour(h)}–${fmtHour(h + 1)}: ${LEVEL_LABELS[lv]}`}
+                      />
+                    )
+                  })}
                 </div>
 
                 {/* 展开箭头 */}
@@ -237,42 +291,34 @@ export default function WeekHeatmapGrid({ days }: Props) {
                 </span>
               </div>
 
-              {/* 展开：该天的任务时间分布 */}
+              {/* 展开：该天的任务时间分布（和主行完全对齐） */}
               {isExpanded && expandedTaskEntries && (
-                <div className="ml-[62px] mr-4 mt-1.5 mb-2 space-y-1.5 animate-in fade-in slide-in-from-top-1 duration-200">
+                <div className="mt-0.5 mb-1.5 space-y-0.5 animate-in fade-in slide-in-from-top-1 duration-200">
                   {expandedTaskEntries.length === 0 ? (
-                    <p className="text-[10px] text-gray-400 py-1">当天暂无任务数据</p>
+                    <p className="text-[10px] text-gray-400 py-1 pl-[86px]">当天暂无任务数据</p>
                   ) : (
                     expandedTaskEntries.map((task) => (
-                      <div key={task.title}>
-                        <div className="flex items-center justify-between mb-0.5">
-                          <span className="text-[10px] text-gray-600 font-medium truncate max-w-[55%]" title={task.title}>
-                            {task.title}
-                          </span>
-                          <span className="text-[9px] text-gray-400 tabular-nums flex-shrink-0 ml-2">
-                            共 {task.totalMinutes} 分钟
-                          </span>
-                        </div>
-                        {/* 24 格时间条 */}
-                        <div className="flex gap-[1px]">
-                          {Array.from({ length: TOTAL_HOURS }, (_, h) => {
+                      <div key={task.title} className="flex items-center gap-1.5 px-1">
+                        {/* 和主行日期标签同宽，确保格子对齐 */}
+                        <span className="text-[10px] text-gray-600 font-medium truncate w-[80px] flex-shrink-0 text-right" title={task.title}>
+                          {task.title}
+                        </span>
+                        <div className="flex gap-[1px] flex-1 min-w-0">
+                          {Array.from({ length: visibleSpan }, (_, i) => {
+                            const h = rangeStart + i
                             const ratio = task.hourMap.get(h) || 0
+                            const level = ratioToLevel(ratio)
                             return (
                               <div
                                 key={h}
-                                className="h-[10px] flex-1 rounded-[2px] bg-gray-50 overflow-hidden"
-                                title={ratio > 0 ? `${fmtHour(h)}–${fmtHour(h + 1)}: ${ratioToMinuteStr(ratio)}` : ''}
-                              >
-                                {ratio > 0 && (
-                                  <div
-                                    className="h-full rounded-[2px] bg-emerald-400"
-                                    style={{ width: `${Math.max(ratio * 100, 10)}%` }}
-                                  />
-                                )}
-                              </div>
+                                className={`h-[10px] flex-1 rounded-[2px] ${LEVEL_BG[level]}`}
+                                title={ratio > 0 ? `${fmtHour(h)}–${fmtHour(h + 1)}: ${ratioToPercentStr(ratio)}` : ''}
+                              />
                             )
                           })}
                         </div>
+                        {/* 和主行箭头同宽的占位 */}
+                        <span className="w-3 flex-shrink-0" />
                       </div>
                     ))
                   )}
@@ -283,20 +329,20 @@ export default function WeekHeatmapGrid({ days }: Props) {
         })}
       </div>
 
-      {/* 底部时间刻度 */}
-      <div className="relative w-full h-4 ml-[56px]" style={{ width: 'calc(100% - 70px)' }}>
-        {TIME_TICKS.map((h) => {
-          const pct = (h / 24) * 100
+      {/* 底部时间刻度（动态） */}
+      <div className="relative w-full h-4 ml-[86px]" style={{ width: 'calc(100% - 100px)' }}>
+        {timeTicks.map((h) => {
+          const pct = ((h - rangeStart) / visibleSpan) * 100
           return (
             <span
               key={h}
               className="absolute text-[9px] text-gray-400 tabular-nums"
               style={{
                 left: `${pct}%`,
-                transform: h === 0 ? 'none' : h === 24 ? 'translateX(-100%)' : 'translateX(-50%)',
+                transform: pct === 0 ? 'none' : pct >= 100 ? 'translateX(-100%)' : 'translateX(-50%)',
               }}
             >
-              {h === 24 ? '24:00' : `${String(h).padStart(2, '0')}:00`}
+              {fmtHour(h)}
             </span>
           )
         })}

@@ -180,11 +180,13 @@ interface WeekViewProps {
   weekEndDate: string    // 周范围的末日（默认今天）
   /** 数据加载完成后通知父组件（用于 AI 反思上下文构建） */
   onDataReady?: (data: WeekDayData[]) => void
+  /** AI 聊天侧边栏是否展开（影响布局宽度） */
+  chatOpen?: boolean
 }
 
 // ===================== 主组件 =====================
 
-export default function WeekView({ weekEndDate, onDataReady }: WeekViewProps) {
+export default function WeekView({ weekEndDate, onDataReady, chatOpen }: WeekViewProps) {
   const [weekData, setWeekData] = useState<WeekDayData[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -285,7 +287,9 @@ export default function WeekView({ weekEndDate, onDataReady }: WeekViewProps) {
   }
 
   return (
-    <div className="p-6 space-y-6 max-w-xl mx-auto">
+    <div className={`p-6 space-y-6 transition-all duration-400 ${
+      chatOpen ? 'w-full' : 'max-w-xl mx-auto'
+    }`}>
       {/* 每日完成率条形图 */}
       <div id="chart-week-completion">
         <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">

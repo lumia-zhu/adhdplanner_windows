@@ -24,12 +24,12 @@ interface Props {
 
 const DEFAULT_SHOW = 10
 
-/** 将秒数格式化为 "Xm Ys" 的形式 */
+/** 将秒数格式化为"第Xm Ys"，表示卡顿发生的时间点 */
 function formatOffset(sec: number): string {
   const m = Math.floor(sec / 60)
   const s = sec % 60
-  if (m === 0) return `${s}s`
-  return s > 0 ? `${m}m${s}s` : `${m}m`
+  if (m === 0) return `第${s}秒`
+  return s > 0 ? `第${m}分${s}秒` : `第${m}分钟`
 }
 
 export default function WeekTaskRanking({ days }: Props) {
@@ -84,9 +84,7 @@ export default function WeekTaskRanking({ days }: Props) {
               {/* 条形 + 卡顿标记 */}
               <div className="flex-1 h-[20px] rounded-lg overflow-hidden relative">
                 <div
-                  className={`h-full rounded-lg transition-all duration-700 ease-out relative overflow-hidden ${
-                    item.completed ? 'bg-blue-400/80' : 'bg-amber-400/70'
-                  }`}
+                  className="h-full rounded-lg transition-all duration-700 ease-out relative overflow-hidden bg-blue-400/80"
                   style={{ width: `${barWidthPct}%` }}
                 >
                   {hasStuck && item.stuckMarks!.map((mark, mi) => {
@@ -96,11 +94,9 @@ export default function WeekTaskRanking({ days }: Props) {
                     return (
                       <span
                         key={mi}
-                        className={`absolute top-0 h-full w-[6px] z-10 ${
-                          mark.resolved ? 'bg-red-400/90' : 'bg-gray-400/90'
-                        }`}
+                        className="absolute top-0 h-full w-[6px] z-10 bg-red-400/90"
                         style={{ left: `${pct}%`, transform: 'translateX(-50%)' }}
-                        title={`卡在：${mark.microAction}\n原因：${mark.reason}\n状态：${mark.resolved ? '已解决' : '未解决'}`}
+                        title={`卡在：${mark.microAction}\n原因：${mark.reason}`}
                       />
                     )
                   })}
@@ -132,13 +128,9 @@ export default function WeekTaskRanking({ days }: Props) {
                 {item.stuckMarks!.map((mark, mi) => (
                   <div
                     key={mi}
-                    className={`flex items-start gap-2 rounded-md px-2 py-1 text-[10px] ${
-                      mark.resolved ? 'bg-red-50/60' : 'bg-gray-50/80'
-                    }`}
+                    className="flex items-start gap-2 rounded-md px-2 py-1 text-[10px] bg-red-50/60"
                   >
-                    <span className={`font-mono flex-shrink-0 mt-px ${
-                      mark.resolved ? 'text-red-400' : 'text-gray-400'
-                    }`}>
+                    <span className="font-mono flex-shrink-0 mt-px text-red-400">
                       {formatOffset(mark.offsetSeconds)}
                     </span>
                     <div className="leading-snug">
@@ -168,19 +160,15 @@ export default function WeekTaskRanking({ days }: Props) {
         </button>
       )}
 
-      {/* 图例 */}
-      <div className="flex items-center gap-3 pt-0.5 flex-wrap">
-        {allTasks.some(d => d.completed) && allTasks.some(d => !d.completed) && (
-          <>
-            <span className="flex items-center gap-1 text-[10px] text-gray-400">
-              <span className="w-2.5 h-2.5 rounded-sm bg-blue-400/80" /> 已完成
-            </span>
-            <span className="flex items-center gap-1 text-[10px] text-gray-400">
-              <span className="w-2.5 h-2.5 rounded-sm bg-amber-400/70" /> 进行中
-            </span>
-          </>
-        )}
-      </div>
+      {/* 图例：仅在有卡顿时显示 */}
+      {allTasks.some(d => d.stuckMarks && d.stuckMarks.length > 0) && (
+        <div className="flex items-center gap-4 pt-0.5">
+          <span className="flex items-center gap-1.5 text-[10px] text-gray-400">
+            <span className="w-[6px] h-3 rounded-[2px] bg-red-400/90" /> 卡顿
+          </span>
+          <span className="text-[10px] text-gray-300">（点击条形查看）</span>
+        </div>
+      )}
     </div>
   )
 }

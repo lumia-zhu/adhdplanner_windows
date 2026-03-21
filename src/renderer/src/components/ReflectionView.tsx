@@ -816,7 +816,7 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
         >
           {viewMode === 'week' ? (
             /* ---- 周视图 ---- */
-            <WeekView weekEndDate={weekEndDate} onDataReady={handleWeekDataReady} />
+            <WeekView weekEndDate={weekEndDate} onDataReady={handleWeekDataReady} chatOpen={chatOpen} />
           ) : (
             /* ---- 日视图 ---- */
             <div className={`p-6 space-y-6 transition-all duration-400 ${
