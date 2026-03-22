@@ -1,47 +1,51 @@
 /**
- * 搬迁横幅组件
+ * 搬迁轻提示条 —— 显示在任务列表底部、新建输入框上方。
  *
- * 当检测到前几天有未完成的任务时，在主界面顶部显示一个横幅，
- * 让用户选择是否把那些任务搬到今天。
- *
- * 设计原则：
- *   - 简洁友好，不打断用户
- *   - 默认全选，用户可以取消不想搬的
- *   - 支持展开/收起查看详情
+ * 改进点：
+ *   - 聚合最近 7 天所有未完成任务（而非只显示一天）
+ *   - 底部位置不打扰主交互流程
+ *   - 收起态只有一行灰色小字，极其轻量
+ *   - 展开后按日期分组，支持勾选后批量搬迁
  */
 
 import { useState, useMemo } from 'react'
 import type { Task } from '../types'
 
-interface CarryOverBannerProps {
-  /** 来源日期（如 "2026-03-12"） */
+export interface CarryOverGroup {
   fromDate: string
-  /** 可搬迁的未完成任务列表 */
   tasks: Task[]
-  /** 确认搬迁（传入选中的 task id 数组） */
-  onCarryOver: (taskIds: string[]) => void
-  /** 用户不需要搬迁（今天不再提示） */
+}
+
+interface CarryOverBannerProps {
+  groups: CarryOverGroup[]
+  onCarryOver: (dateTaskMap: Record<string, string[]>) => void
   onDismiss: () => void
 }
 
-export default function CarryOverBanner({ fromDate, tasks, onCarryOver, onDismiss }: CarryOverBannerProps) {
-  // 是否展开详情
-  const [expanded, setExpanded] = useState(false)
-  // 选中的任务 ID 集合（默认全选）
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set(tasks.map(t => t.id)))
+function dateLabel(fromDate: string): string {
+  const now = new Date()
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const from = new Date(fromDate + 'T00:00:00')
+  const diffDays = Math.round((today.getTime() - from.getTime()) / 86400000)
+  if (diffDays === 1) return '昨天'
+  if (diffDays === 2) return '前天'
+  return `${from.getMonth() + 1}月${from.getDate()}日`
+}
 
-  // 格式化来源日期为友好文字
-  const fromLabel = useMemo(() => {
-    // ★ 两端都归零到凌晨 0 点，避免当前时刻影响天数计算（下午时"昨天"被误算为"前天"）
-    const now = new Date()
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-    const from = new Date(fromDate + 'T00:00:00')
-    const diffDays = Math.round((today.getTime() - from.getTime()) / 86400000)
-    if (diffDays === 1) return '昨天'
-    if (diffDays === 2) return '前天'
-    // 显示月日
-    return `${from.getMonth() + 1}月${from.getDate()}日`
-  }, [fromDate])
+export default function CarryOverBanner({ groups, onCarryOver, onDismiss }: CarryOverBannerProps) {
+  const [expanded, setExpanded] = useState(false)
+
+  const totalCount = useMemo(
+    () => groups.reduce((sum, g) => sum + g.tasks.length, 0),
+    [groups],
+  )
+
+  // 默认全选
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => {
+    const ids = new Set<string>()
+    groups.forEach(g => g.tasks.forEach(t => ids.add(t.id)))
+    return ids
+  })
 
   const toggleTask = (id: string) => {
     setSelectedIds(prev => {
@@ -52,95 +56,124 @@ export default function CarryOverBanner({ fromDate, tasks, onCarryOver, onDismis
     })
   }
 
-  const toggleAll = () => {
-    if (selectedIds.size === tasks.length) {
-      setSelectedIds(new Set())
-    } else {
-      setSelectedIds(new Set(tasks.map(t => t.id)))
-    }
-  }
-
   const handleConfirm = () => {
     if (selectedIds.size === 0) return
-    onCarryOver(Array.from(selectedIds))
+    const dateTaskMap: Record<string, string[]> = {}
+    for (const g of groups) {
+      const ids = g.tasks.filter(t => selectedIds.has(t.id)).map(t => t.id)
+      if (ids.length > 0) dateTaskMap[g.fromDate] = ids
+    }
+    onCarryOver(dateTaskMap)
   }
 
-  return (
-    <div className="mx-3 mt-2 mb-1 rounded-xl border border-amber-200 bg-amber-50/80 overflow-hidden
-                    shadow-sm animate-in slide-in-from-top duration-300">
-      {/* 主横幅 */}
-      <div className="flex items-center justify-between px-4 py-2.5">
-        <div className="flex items-center gap-2 text-sm text-amber-800">
-          <span className="text-base">📦</span>
+  const dayCount = groups.length
+
+  if (totalCount === 0) return null
+
+  // -------- 收起态：一行极简提示 --------
+  if (!expanded) {
+    return (
+      <div className="flex items-center justify-center gap-2 py-2 select-none">
+        <button
+          onClick={() => setExpanded(true)}
+          className="flex items-center gap-1.5 text-xxs text-gray-400 hover:text-amber-600
+                     transition-colors rounded-full px-3 py-1 hover:bg-amber-50/60"
+        >
+          <span className="text-sm">📦</span>
           <span>
-            {fromLabel}有 <strong>{tasks.length}</strong> 个未完成的任务
+            {dayCount === 1
+              ? `${dateLabel(groups[0].fromDate)}有 ${totalCount} 个未完成任务`
+              : `最近 ${dayCount} 天有 ${totalCount} 个未完成任务`
+            }
           </span>
-        </div>
+          <svg className="w-3 h-3 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+          </svg>
+        </button>
+        <button
+          onClick={onDismiss}
+          className="text-3xs text-gray-300 hover:text-gray-500 transition-colors px-1"
+          title="不需要，今天不再提示"
+        >
+          ✕
+        </button>
+      </div>
+    )
+  }
+
+  // -------- 展开态：按日期分组 --------
+  return (
+    <div className="mx-3 my-2 rounded-xl border border-amber-200/70 bg-amber-50/50 overflow-hidden
+                    shadow-sm animate-in fade-in slide-in-from-bottom-2 duration-200">
+      {/* 头部 */}
+      <div className="flex items-center justify-between px-4 py-2">
+        <button
+          onClick={() => setExpanded(false)}
+          className="flex items-center gap-1.5 text-xs text-amber-700"
+        >
+          <span className="text-sm">📦</span>
+          <span className="font-medium">
+            {dayCount === 1
+              ? `${dateLabel(groups[0].fromDate)}有 ${totalCount} 个未完成任务`
+              : `最近 ${dayCount} 天共 ${totalCount} 个未完成任务`
+            }
+          </span>
+          <svg className="w-3 h-3 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+          </svg>
+        </button>
         <div className="flex items-center gap-2">
-          {/* 查看详情 / 收起 */}
-          <button
-            onClick={() => setExpanded(!expanded)}
-            className="text-xs text-amber-600 hover:text-amber-800 transition-colors px-2 py-1"
-          >
-            {expanded ? '收起' : '查看'}
-          </button>
-          {/* 搬到今天 */}
           <button
             onClick={handleConfirm}
             disabled={selectedIds.size === 0}
-            className="text-xs font-medium px-3 py-1.5 rounded-xl
+            className="text-xxs font-medium px-3 py-1 rounded-lg
                        bg-amber-500 hover:bg-amber-600 active:scale-95
                        text-white disabled:opacity-40 disabled:cursor-not-allowed
                        transition-all duration-150"
           >
-            搬到今天{selectedIds.size < tasks.length && selectedIds.size > 0
-              ? ` (${selectedIds.size})`
-              : ''}
+            搬到今天{selectedIds.size < totalCount && selectedIds.size > 0
+              ? ` (${selectedIds.size})` : ''}
           </button>
-          {/* 不需要 */}
           <button
             onClick={onDismiss}
-            className="text-xs text-gray-400 hover:text-gray-600 transition-colors px-1 py-1"
-            title="不需要，今天不再提示"
+            className="text-xxs text-gray-400 hover:text-gray-600 transition-colors px-1"
+            title="不需要"
           >
             ✕
           </button>
         </div>
       </div>
 
-      {/* 展开的任务列表 */}
-      {expanded && (
-        <div className="border-t border-amber-200/60 px-4 py-2 space-y-1">
-          {/* 全选/取消全选 */}
-          <button
-            onClick={toggleAll}
-            className="text-xs text-amber-600 hover:text-amber-800 mb-1"
-          >
-            {selectedIds.size === tasks.length ? '取消全选' : '全选'}
-          </button>
-
-          {tasks.map(task => (
-            <label
-              key={task.id}
-              className="flex items-center gap-2 py-1 px-1 rounded hover:bg-amber-100/50
-                         cursor-pointer transition-colors"
-            >
-              <input
-                type="checkbox"
-                checked={selectedIds.has(task.id)}
-                onChange={() => toggleTask(task.id)}
-                className="w-3.5 h-3.5 rounded accent-amber-500"
-              />
-              <span className="text-sm text-gray-700 truncate">{task.title}</span>
-              {task.subtasks && task.subtasks.length > 0 && (
-                <span className="text-xs text-gray-400 flex-shrink-0">
-                  ({task.subtasks.filter(s => s.completed).length}/{task.subtasks.length})
-                </span>
-              )}
-            </label>
-          ))}
-        </div>
-      )}
+      {/* 按日期分组的任务列表 */}
+      <div className="border-t border-amber-200/50 px-4 py-2 space-y-2 max-h-[200px] overflow-y-auto">
+        {groups.map(group => (
+          <div key={group.fromDate}>
+            <div className="text-3xs text-amber-500 font-medium mb-1">
+              {dateLabel(group.fromDate)}
+            </div>
+            {group.tasks.map(task => (
+              <label
+                key={task.id}
+                className="flex items-center gap-2 py-0.5 px-1 rounded hover:bg-amber-100/40
+                           cursor-pointer transition-colors"
+              >
+                <input
+                  type="checkbox"
+                  checked={selectedIds.has(task.id)}
+                  onChange={() => toggleTask(task.id)}
+                  className="w-3 h-3 rounded accent-amber-500"
+                />
+                <span className="text-xxs text-gray-600 truncate">{task.title}</span>
+                {task.subtasks && task.subtasks.length > 0 && (
+                  <span className="text-3xs text-gray-400 flex-shrink-0">
+                    ({task.subtasks.filter(s => s.completed).length}/{task.subtasks.length})
+                  </span>
+                )}
+              </label>
+            ))}
+          </div>
+        ))}
+      </div>
     </div>
   )
 }

@@ -26,6 +26,8 @@ import type { Task, Subtask } from '../types'
 import { PRIORITY_CONFIG } from '../types'
 import { triggerEffect } from '../effects'
 import MiniCalendar from './MiniCalendar'
+import CarryOverBanner from './CarryOverBanner'
+import type { CarryOverGroup } from './CarryOverBanner'
 
 // ===================== 类型 =====================
 
@@ -38,6 +40,12 @@ interface NoteEditorProps {
   onPrefetchTask?: (taskId: string) => void
   /** 创建新任务并立即开始专注（底部输入框 ▶ 按钮） */
   onCreateAndFocus?: (title: string) => void
+  /** 可搬迁的任务分组（显示在任务列表底部） */
+  carryOverGroups?: CarryOverGroup[]
+  /** 确认搬迁（传入 { fromDate → taskIds[] } 映射） */
+  onCarryOver?: (dateTaskMap: Record<string, string[]>) => void
+  /** 忽略搬迁 */
+  onDismissCarryOver?: () => void
   /** 是否是今天（历史日期时隐藏新建输入框和专注按钮） */
   isToday?: boolean
   /** 当前显示的日期（YYYY-MM-DD），用于日期区域显示 */
@@ -102,6 +110,7 @@ function getGreeting(): string {
 
 export default function NoteEditor({
   tasks, setTasks, onFocusTask, onResumePaused, onPrefetchTask, onCreateAndFocus,
+  carryOverGroups, onCarryOver, onDismissCarryOver,
   isToday = true, currentDate, onPrevDate, onNextDate, onGoToday, onJumpToDate,
 }: NoteEditorProps) {
   // 底部"新行"输入框文本
@@ -520,15 +529,13 @@ export default function NoteEditor({
             {tasks.length === 0 && !newLineText && (
               <div className="flex flex-col items-center justify-center py-16 select-none">
                 <p className="text-gray-300 text-sm">
-                  {isToday ? '开始输入你的第一个任务吧' : '这一天没有任务记录'}
+                  开始输入你的第一个任务吧
                 </p>
-                {isToday && (
-                  <p className="text-gray-300 text-xs mt-1.5">
+                <p className="text-gray-300 text-xs mt-1.5">
                     按 <kbd className="px-1 py-0.5 bg-gray-100 rounded text-gray-400 text-2xs">Enter</kbd> 添加
                     {' · '}
                     按 <kbd className="px-1 py-0.5 bg-gray-100 rounded text-gray-400 text-2xs">Tab</kbd> 创建子任务
                   </p>
-                )}
               </div>
             )}
 
@@ -559,8 +566,17 @@ export default function NoteEditor({
               )
             })}
 
-            {/* ===== 底部新行输入（仅今天显示）===== */}
-            {isToday && (
+            {/* ===== 搬迁轻提示（任务列表底部，新建输入框上方）===== */}
+            {isToday && carryOverGroups && carryOverGroups.length > 0 && onCarryOver && onDismissCarryOver && (
+              <CarryOverBanner
+                groups={carryOverGroups}
+                onCarryOver={onCarryOver}
+                onDismiss={onDismissCarryOver}
+              />
+            )}
+
+            {/* ===== 底部新行输入 ===== */}
+            {(
               <div className={`mt-4 transition-all ${
                 // 与上方任务文本列对齐：普通任务约 52px，子任务约 74px
                 newLineIndented ? 'ml-[74px]' : 'ml-[52px]'
@@ -600,8 +616,8 @@ export default function NoteEditor({
                         : 'text-md font-medium text-gray-800'
                     }`}
                   />
-                  {/* ★ ▶ 一键开始按钮：输入文字后出现，点击 = 创建任务 + 立即进入专注 */}
-                  {!newLineIndented && newLineText.trim() && onCreateAndFocus && (
+                  {/* ★ ▶ 一键开始按钮：输入文字后出现，仅今天显示，点击 = 创建任务 + 立即进入专注 */}
+                  {isToday && !newLineIndented && newLineText.trim() && onCreateAndFocus && (
                     <>
                       <button
                         onMouseDown={(e) => e.preventDefault()}  /* 阻止输入框失焦，避免 onBlur 重复创建 */

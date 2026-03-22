@@ -5,6 +5,18 @@ import { contextBridge, ipcRenderer } from 'electron'
  * 就像一个"翻译官"，让前端能安全地使用系统功能
  */
 contextBridge.exposeInMainWorld('electronAPI', {
+  // -------- 认证 --------
+  /** 注册 */
+  authSignUp: (email: string, password: string): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke('auth:signUp', email, password),
+  /** 登录 */
+  authSignIn: (email: string, password: string): Promise<{ ok: boolean; error?: string; user?: unknown }> =>
+    ipcRenderer.invoke('auth:signIn', email, password),
+  /** 退出登录 */
+  authSignOut: (): Promise<void> => ipcRenderer.invoke('auth:signOut'),
+  /** 获取当前登录用户 */
+  authGetUser: (): Promise<{ user: unknown | null }> => ipcRenderer.invoke('auth:getUser'),
+
   // -------- 任务数据操作（按日期存储） --------
   /** 加载指定日期的任务列表（不传 date 则默认今天） */
   loadTasks: (date?: string): Promise<unknown[]> => ipcRenderer.invoke('tasks:load', date),
@@ -12,13 +24,21 @@ contextBridge.exposeInMainWorld('electronAPI', {
   /** 保存任务列表到指定日期的文件 */
   saveTasks: (date: string, tasks: unknown[]): Promise<boolean> => ipcRenderer.invoke('tasks:save', date, tasks),
 
-  /** 查找可搬迁的任务（最近 7 天内的未完成任务） */
+  /** 查找可搬迁的任务（最近 7 天内第一天有未完成任务的，旧版兼容） */
   findCarryOver: (today?: string): Promise<{ fromDate: string; tasks: unknown[] } | null> =>
     ipcRenderer.invoke('tasks:findCarryOver', today),
+
+  /** 查找所有可搬迁的任务（聚合最近 7 天，按日期分组） */
+  findAllCarryOver: (today?: string): Promise<{ fromDate: string; tasks: unknown[] }[]> =>
+    ipcRenderer.invoke('tasks:findAllCarryOver', today),
 
   /** 执行搬迁：把指定日期的指定任务复制到今天 */
   carryOverTasks: (fromDate: string, taskIds: string[], today?: string): Promise<boolean> =>
     ipcRenderer.invoke('tasks:carryOver', fromDate, taskIds, today),
+
+  /** 执行多天搬迁：传入 { fromDate → taskIds[] } 映射 */
+  multiCarryOverTasks: (dateTaskMap: Record<string, string[]>, today?: string): Promise<boolean> =>
+    ipcRenderer.invoke('tasks:multiCarryOver', dateTaskMap, today),
 
   // -------- 窗口控制 --------
   /** 最小化窗口到任务栏 */
