@@ -53,21 +53,23 @@ export default function DonutChart({
             stroke={COLORS.track}
             strokeWidth={strokeWidth}
           />
-          {/* 进度圆 */}
-          <circle
-            cx={size / 2}
-            cy={size / 2}
-            r={radius}
-            fill="none"
-            stroke={color}
-            strokeWidth={strokeWidth}
-            strokeLinecap="round"
-            strokeDasharray={circumference}
-            strokeDashoffset={offset}
-            style={{
-              transition: 'stroke-dashoffset 1s ease-in-out, stroke 0.5s ease',
-            }}
-          />
+          {/* 进度圆（0% 时不渲染，避免空弧仍播放过渡动画） */}
+          {percentage > 0 && (
+            <circle
+              cx={size / 2}
+              cy={size / 2}
+              r={radius}
+              fill="none"
+              stroke={color}
+              strokeWidth={strokeWidth}
+              strokeLinecap="round"
+              strokeDasharray={circumference}
+              strokeDashoffset={offset}
+              style={{
+                transition: 'stroke-dashoffset 1s ease-in-out, stroke 0.5s ease',
+              }}
+            />
+          )}
         </svg>
 
         {/* 中心数字 */}

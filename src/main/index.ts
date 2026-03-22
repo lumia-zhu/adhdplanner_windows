@@ -1,6 +1,35 @@
 import { app, shell, BrowserWindow, ipcMain, Tray, Menu, nativeImage, net, Notification, powerMonitor, screen } from 'electron'
 import { join } from 'path'
 import fs from 'fs'
+import os from 'os'
+
+// ===================== 安全写入工具 =====================
+
+/**
+ * 原子写入 JSON：先写临时文件 → fsync 确保落盘 → rename 覆盖目标。
+ * rename 在同一磁盘分区上是原子操作，断电/崩溃时不会产生半截文件。
+ */
+function safeWriteJSON(filePath: string, data: unknown, pretty = true): void {
+  const content = pretty ? JSON.stringify(data, null, 2) : JSON.stringify(data)
+  const tmpPath = filePath + '.tmp'
+  const fd = fs.openSync(tmpPath, 'w')
+  try {
+    fs.writeSync(fd, content, undefined, 'utf-8')
+    fs.fdatasyncSync(fd)
+  } finally {
+    fs.closeSync(fd)
+  }
+  fs.renameSync(tmpPath, filePath)
+}
+
+// ===================== 全局异常兜底（防止闪退） =====================
+
+process.on('uncaughtException', (err) => {
+  console.error('[FATAL] Uncaught exception:', err)
+})
+process.on('unhandledRejection', (reason) => {
+  console.error('[FATAL] Unhandled rejection:', reason)
+})
 
 // ===================== Chromium flags (must be set before app.whenReady) =====================
 
@@ -50,7 +79,7 @@ function migrateTasksIfNeeded(): void {
       const todayPath = getDailyTasksPath(today)
       // 只在今天的文件不存在时才迁移（避免重复）
       if (!fs.existsSync(todayPath)) {
-        fs.writeFileSync(todayPath, JSON.stringify(data, null, 2), 'utf-8')
+        safeWriteJSON(todayPath, data)
         console.log(`[Migration] Migrated tasks.json (${data.length} items) to tasks-${today}.json`)
       }
     }
@@ -75,7 +104,7 @@ function loadAIConfig(): Record<string, string> {
 
 function saveAIConfig(config: Record<string, string>): boolean {
   try {
-    fs.writeFileSync(getAIConfigPath(), JSON.stringify(config, null, 2), 'utf-8')
+    safeWriteJSON(getAIConfigPath(), config)
     return true
   } catch (e) { console.error('[saveAIConfig]', e); return false }
 }
@@ -92,7 +121,7 @@ function loadTasks(date: string): unknown[] {
 /** 保存任务列表到指定日期的文件 */
 function saveTasks(date: string, tasks: unknown[]): boolean {
   try {
-    fs.writeFileSync(getDailyTasksPath(date), JSON.stringify(tasks, null, 2), 'utf-8')
+    safeWriteJSON(getDailyTasksPath(date), tasks)
     return true
   } catch (e) { console.error('[saveTasks]', e); return false }
 }
@@ -178,7 +207,7 @@ function loadProfile(): Record<string, unknown> {
 
 function saveProfile(profile: Record<string, unknown>): boolean {
   try {
-    fs.writeFileSync(getProfilePath(), JSON.stringify(profile, null, 2), 'utf-8')
+    safeWriteJSON(getProfilePath(), profile)
     return true
   } catch (e) { console.error('[saveProfile]', e); return false }
 }
@@ -212,7 +241,7 @@ function appendActivityRecords(date: string, records: ActivityRecord[]): boolean
       existing = JSON.parse(fs.readFileSync(p, 'utf-8'))
     }
     const merged = [...existing, ...records]
-    fs.writeFileSync(p, JSON.stringify(merged), 'utf-8') // 不缩进，节省磁盘
+    safeWriteJSON(p, merged, false) // 不缩进，节省磁盘
     return true
   } catch (e) {
     console.error('[Activity] Failed to append records:', e)
@@ -286,7 +315,7 @@ function appendTrackerEvents(date: string, events: unknown[]): boolean {
       existing = JSON.parse(fs.readFileSync(p, 'utf-8'))
     }
     const merged = [...existing, ...events]
-    fs.writeFileSync(p, JSON.stringify(merged, null, 2), 'utf-8')
+    safeWriteJSON(p, merged)
     return true
   } catch (e) {
     console.error('[Tracker] Failed to append events:', e)
@@ -508,18 +537,19 @@ function getNowHHMM(): string {
  * 如果在小组件模式会先退出小组件
  */
 function showReflectionView(): void {
-  if (!mainWindow) return
+  if (!mainWindow || mainWindow.isDestroyed()) return
   // 如果在小组件模式，先退出
   if (isWidgetMode) {
     exitWidget()
-    mainWindow.webContents.send('widget:exit')
+    safeWinOp('showReflection:exitWidget', (win) => win.webContents.send('widget:exit'))
   }
   // 显示并聚焦窗口
-  mainWindow.show()
-  mainWindow.focus()
+  safeWinOp('showReflection', (win) => {
+    win.show()
+    win.focus()
+    win.webContents.send('navigate:reflection')
+  })
   updateTrayMenu()
-  // 通知前端打开反思页面
-  mainWindow.webContents.send('navigate:reflection')
 }
 
 /** 每分钟检查一次是否到了反思提醒时间 */
@@ -573,8 +603,8 @@ function loadWidgetPos(): { x: number; y: number } | null {
 }
 
 function saveWidgetPos(x: number, y: number): void {
-  try { fs.writeFileSync(getWidgetPosPath(), JSON.stringify({ x, y }), 'utf-8') }
-  catch { /* 忽略 */ }
+  try { safeWriteJSON(getWidgetPosPath(), { x, y }) }
+  catch (e) { console.error('[saveWidgetPos]', e) }
 }
 
 // ===================== 托盘图标（32×32 PNG，任务清单样式）=====================
@@ -626,6 +656,14 @@ function createMainWindow(): void {
   mainWindow.on('close', (e) => {
     if (!forceQuit) {
       e.preventDefault()       // 阻止真正关闭
+      // ★ 如果在 widget 模式，先退出（停止心跳守护，否则心跳会 3 秒后把窗口拉回来）
+      if (isWidgetMode) {
+        stopWidgetHeartbeat()
+        isWidgetMode = false
+        mainWindow?.off('moved', onWidgetMoved)
+        mainWindow?.off('minimize', onWidgetMinimize)
+        mainWindow?.webContents.send('widget:exit')
+      }
       mainWindow?.hide()       // 隐藏到托盘
       updateTrayMenu()         // 更新菜单显示"显示窗口"
     }
@@ -662,14 +700,15 @@ function updateTrayMenu(): void {
     {
       label: isVisible ? '隐藏主窗口' : '显示主窗口',
       click: () => {
-        if (mainWindow?.isVisible()) {
-          mainWindow.hide()
-        } else {
-          mainWindow?.show()
-          mainWindow?.focus()
-          // 如果在小组件模式，先退出小组件
-          if (isWidgetMode) exitWidget()
-        }
+        safeWinOp('tray:toggleVisible', (win) => {
+          if (win.isVisible()) {
+            win.hide()
+          } else {
+            win.show()
+            win.focus()
+            if (isWidgetMode) exitWidget()
+          }
+        })
         updateTrayMenu()
       },
     },
@@ -680,10 +719,10 @@ function updateTrayMenu(): void {
       click: () => {
         if (isWidgetMode) {
           exitWidget()
-          mainWindow?.webContents.send('widget:exit') // 通知前端切换 UI
+          safeWinOp('tray:exitWidget', (win) => win.webContents.send('widget:exit'))
         } else {
           enterWidget()
-          mainWindow?.webContents.send('widget:enter') // 通知前端切换 UI
+          safeWinOp('tray:enterWidget', (win) => win.webContents.send('widget:enter'))
         }
         updateTrayMenu()
       },
@@ -723,12 +762,14 @@ function createTray(): void {
 
   // 双击托盘图标：显示/隐藏主窗口
   tray.on('double-click', () => {
-    if (mainWindow?.isVisible()) {
-      mainWindow.hide()
-    } else {
-      mainWindow?.show()
-      mainWindow?.focus()
-    }
+    safeWinOp('tray:dblclick', (win) => {
+      if (win.isVisible()) {
+        win.hide()
+      } else {
+        win.show()
+        win.focus()
+      }
+    })
     updateTrayMenu()
   })
 }
@@ -905,14 +946,16 @@ function enterWidget(): void {
 }
 
 function exitWidget(): void {
-  if (!mainWindow || !isWidgetMode) return
+  if (!mainWindow || mainWindow.isDestroyed() || !isWidgetMode) return
   isWidgetMode = false
 
   // ★ 停止心跳守护
   stopWidgetHeartbeat()
 
-  const [cx, cy] = mainWindow.getPosition()
-  saveWidgetPos(cx, cy)
+  try {
+    const [cx, cy] = mainWindow.getPosition()
+    saveWidgetPos(cx, cy)
+  } catch { /* 窗口已销毁时忽略 */ }
   mainWindow.off('moved', onWidgetMoved)
   mainWindow.off('minimize', onWidgetMinimize)  // ★ 移除最小化拦截
 
@@ -973,6 +1016,7 @@ function setupIPC(): void {
   // -------- 小组件动态调整大小 --------
   ipcMain.on('window:resizeWidget', (_, width: number, height: number) => {
     if (!mainWindow || mainWindow.isDestroyed() || !isWidgetMode) return
+    if (!Number.isFinite(width) || !Number.isFinite(height) || width < 1 || height < 1) return
 
     const sw = scaled(width)
     const sh = scaled(height)
@@ -1019,13 +1063,15 @@ function setupIPC(): void {
 
   // -------- 主窗口动态调整大小（反思侧边栏展开/收起） --------
   ipcMain.on('window:resizeMain', (_, width: number, height: number) => {
-    if (!mainWindow || isWidgetMode) return
-    const [, curH] = mainWindow.getSize()
-    const sw = scaled(width)
-    const sh = height ? scaled(height) : curH
-    // 左边缘不动，向右侧扩展/收缩
-    mainWindow.setMinimumSize(Math.min(sw, scaled(MAIN_WIDTH)), scaled(MAIN_HEIGHT))
-    mainWindow.setSize(sw, sh)
+    if (!mainWindow || mainWindow.isDestroyed() || isWidgetMode) return
+    if (!Number.isFinite(width) || width < 1) return
+    safeWinOp('resizeMain', (win) => {
+      const [, curH] = win.getSize()
+      const sw = scaled(width)
+      const sh = height && Number.isFinite(height) ? scaled(height) : curH
+      win.setMinimumSize(Math.min(sw, scaled(MAIN_WIDTH)), scaled(MAIN_HEIGHT))
+      win.setSize(sw, sh)
+    })
   })
 
   // -------- 用户个人资料 --------
@@ -1073,7 +1119,7 @@ function setupIPC(): void {
   // -------- 反思聊天记录 --------
   ipcMain.handle('reflection:save', (_, key: string, data: unknown) => {
     try {
-      fs.writeFileSync(getReflectionChatPath(key), JSON.stringify(data, null, 2), 'utf-8')
+      safeWriteJSON(getReflectionChatPath(key), data)
       return true
     } catch (e) { console.error('[reflection:save]', e); return false }
   })
@@ -1097,11 +1143,11 @@ function setupIPC(): void {
 
 // When a second instance is launched, focus the existing window instead
 app.on('second-instance', () => {
-  if (mainWindow) {
-    if (mainWindow.isMinimized()) mainWindow.restore()
-    mainWindow.show()
-    mainWindow.focus()
-  }
+  safeWinOp('second-instance', (win) => {
+    if (win.isMinimized()) win.restore()
+    win.show()
+    win.focus()
+  })
 })
 
 app.whenReady().then(() => {
@@ -1153,6 +1199,8 @@ app.whenReady().then(() => {
         // ★ 唤醒后重启心跳守护（可能因休眠而暂停）
         startWidgetHeartbeat()
       }
+      // ★ 重新应用 UI 缩放（Chromium 在休眠/唤醒后可能丢失 zoomFactor）
+      win.webContents.setZoomFactor(uiScale)
       // 通知渲染进程重新同步模式（触发前端 session 恢复）
       win.webContents.send('window:modeSync', { isWidgetMode })
     })
@@ -1171,7 +1219,15 @@ app.whenReady().then(() => {
         refreshDragRegion()  // ★ 解锁后刷新拖拽区域
         startWidgetHeartbeat()
       }
-      win.webContents.send('window:modeSync', { isWidgetMode })
+      // ★ 重新应用 UI 缩放（锁屏解锁后 Chromium 渲染上下文可能重置）
+      win.webContents.setZoomFactor(uiScale)
+      // ★ 延迟强制重绘，防止渲染上下文未完全恢复导致白屏
+      setTimeout(() => {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.invalidate()
+          mainWindow.webContents.send('window:modeSync', { isWidgetMode })
+        }
+      }, 200)
     })
     validateWidgetBounds()
   })
