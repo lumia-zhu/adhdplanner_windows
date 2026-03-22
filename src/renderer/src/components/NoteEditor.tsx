@@ -152,7 +152,8 @@ export default function NoteEditor({
       } else {
         const t = { ...next[line.taskIndex] }
         const subs = [...(t.subtasks ?? [])]
-        subs[line.subtaskIndex!] = { ...subs[line.subtaskIndex!], title: text }
+        const si = line.subtaskIndex ?? 0
+        subs[si] = { ...subs[si], title: text }
         t.subtasks = subs
         next[line.taskIndex] = t
       }
@@ -257,7 +258,7 @@ export default function NoteEditor({
   const convertToTask = useCallback((line: FlatLine): string | null => {
     if (line.type !== 'subtask') return null
     const task = tasks[line.taskIndex]
-    const sub = (task.subtasks ?? [])[line.subtaskIndex!]
+    const sub = (task.subtasks ?? [])[line.subtaskIndex ?? 0]
     if (!sub) return null
 
     setTasks(prev => {
@@ -300,7 +301,7 @@ export default function NoteEditor({
       e.preventDefault()
       if (line.type === 'subtask' && input.value === '') {
         // 空子任务按 Enter → 删除空子任务，跳到底部输入
-        deleteSubtaskRaw(line.taskIndex, line.subtaskIndex!)
+        deleteSubtaskRaw(line.taskIndex, line.subtaskIndex ?? 0)
       }
       // 所有情况都跳到底部新行输入框
       setPendingFocusId('__new_line__')
@@ -827,7 +828,7 @@ function LineRow({
   onTextChange, onKeyDown, onToggle, onCyclePriority, onFocus, onHoverFocus, onDelete,
 }: LineRowProps) {
   const isSub = line.type === 'subtask'
-  const sub = isSub ? (task.subtasks ?? [])[line.subtaskIndex!] : null
+  const sub = isSub ? (task.subtasks ?? [])[line.subtaskIndex ?? 0] : null
   const text = isSub ? (sub?.title ?? '') : task.title
   const completed = isSub ? (sub?.completed ?? false) : task.completed
   const dotColor = PRIORITY_CONFIG[task.priority].dot

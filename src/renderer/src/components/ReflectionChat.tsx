@@ -88,7 +88,8 @@ function parseChartRefs(
     ]
     for (const [keywords, id] of keywordRules) {
       if (keywords.some(kw => inner.includes(kw))) {
-        const entry = CHART_ID_MAP[id]!
+        const entry = CHART_ID_MAP[id]
+        if (!entry) continue
         return (
           <button
             key={i}
@@ -262,7 +263,7 @@ export default function ReflectionChat({
     if (screenshotBase64) {
       const todayStr = new Date().toISOString().slice(0, 10)
       const dateIsToday = !selectedDate || selectedDate === todayStr
-      const dateLabel = dateIsToday ? '今天' : selectedDate!
+      const dateLabel = dateIsToday ? '今天' : (selectedDate ?? todayStr)
       const multimodalContent: MessageContentPart[] = [
         { type: 'image_url', image_url: { url: screenshotBase64 } },
         { type: 'text', text: `上面是我${dateLabel}的数据仪表板截图，包含${dateIsToday ? '任务完成率、' : ''}核心指标卡片、任务用时条形图、活动热力图和使用节奏曲线。请结合这些可视化数据，开始我们的反思对话吧。` },

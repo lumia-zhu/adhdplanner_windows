@@ -224,7 +224,7 @@ export function buildDailySummary(date: string, events: TrackEvent[]): DailySumm
   // 平均时间偏差
   const deltas = microStepTrail
     .filter(m => m.timeDeltaSeconds != null)
-    .map(m => m.timeDeltaSeconds!)
+    .map(m => m.timeDeltaSeconds ?? 0)
   const avgDelta = deltas.length > 0
     ? Math.round(deltas.reduce((a, b) => a + b, 0) / deltas.length)
     : null

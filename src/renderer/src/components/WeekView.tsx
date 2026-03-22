@@ -101,7 +101,7 @@ function buildTaskDurationsFromEvents(
       const p = e.payload as { sessionId: string; taskTitle: string; totalDurationSeconds: number; endReason: string }
       durationMap.set(p.taskTitle, (durationMap.get(p.taskTitle) || 0) + p.totalDurationSeconds)
       if (!sessionOrderByTask.has(p.taskTitle)) sessionOrderByTask.set(p.taskTitle, [])
-      sessionOrderByTask.get(p.taskTitle)!.push({ sessionId: p.sessionId, durationSec: p.totalDurationSeconds })
+      sessionOrderByTask.get(p.taskTitle)?.push({ sessionId: p.sessionId, durationSec: p.totalDurationSeconds })
       if (p.endReason === 'task_done') everTaskDone.add(p.taskTitle)
     }
     if (e.type === 'session.macro_completed') {
@@ -150,7 +150,7 @@ function buildTaskDurationsFromEvents(
 
       const mark: StuckMark = { offsetSeconds, microAction: p.microAction, reason, resolved }
       if (!stuckMarksByTask.has(taskTitle)) stuckMarksByTask.set(taskTitle, [])
-      stuckMarksByTask.get(taskTitle)!.push(mark)
+      stuckMarksByTask.get(taskTitle)?.push(mark)
     }
   }
 

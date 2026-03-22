@@ -87,7 +87,7 @@ export default function WeekTaskRanking({ days }: Props) {
                   className="h-full rounded-lg transition-all duration-700 ease-out relative overflow-hidden bg-blue-400/80"
                   style={{ width: `${barWidthPct}%` }}
                 >
-                  {hasStuck && item.stuckMarks!.map((mark, mi) => {
+                  {hasStuck && (item.stuckMarks ?? []).map((mark, mi) => {
                     const pct = totalSec > 0
                       ? Math.min(Math.max((mark.offsetSeconds / totalSec) * 100, 1), 97)
                       : 50
@@ -125,7 +125,7 @@ export default function WeekTaskRanking({ days }: Props) {
             {/* 展开：卡顿详情 */}
             {isExpanded && hasStuck && (
               <div className="ml-[112px] mt-1.5 mb-1 space-y-1 animate-in fade-in slide-in-from-top-1 duration-200">
-                {item.stuckMarks!.map((mark, mi) => (
+                {(item.stuckMarks ?? []).map((mark, mi) => (
                   <div
                     key={mi}
                     className="flex items-start gap-2 rounded-md px-2.5 py-1.5 text-xxs bg-red-50/60"

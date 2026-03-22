@@ -71,7 +71,7 @@ function buildTaskHourRatioMap(events: TrackEvent[]): Map<string, Map<number, nu
 
   function addMinutes(title: string, hour: number, minutes: number) {
     if (!result.has(title)) result.set(title, new Map())
-    const hourMap = result.get(title)!
+    const hourMap = result.get(title) ?? new Map()
     const cur = hourMap.get(hour) || 0
     hourMap.set(hour, Math.min(cur + minutes / 60, 1))
   }

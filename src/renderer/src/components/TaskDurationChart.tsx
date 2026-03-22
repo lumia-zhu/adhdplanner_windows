@@ -79,7 +79,7 @@ export default function TaskDurationChart({ data }: TaskDurationChartProps) {
                   style={{ width: `${barWidthPct}%` }}
                 >
                   {/* 卡顿段：和条形一样高，像条形中间的一小截变了色 */}
-                  {hasStuck && item.stuckMarks!.map((mark, mi) => {
+                  {hasStuck && (item.stuckMarks ?? []).map((mark, mi) => {
                     const pct = totalSec > 0
                       ? Math.min(Math.max((mark.offsetSeconds / totalSec) * 100, 1), 97)
                       : 50
@@ -114,7 +114,7 @@ export default function TaskDurationChart({ data }: TaskDurationChartProps) {
             {/* 展开区域：卡顿详情列表 */}
             {isExpanded && hasStuck && (
               <div className="ml-[112px] mt-1.5 mb-1 space-y-1 animate-in fade-in slide-in-from-top-1 duration-200">
-                {item.stuckMarks!.map((mark, mi) => (
+                {(item.stuckMarks ?? []).map((mark, mi) => (
                   <div
                     key={mi}
                     className="flex items-start gap-2 rounded-md px-2.5 py-1.5 text-xxs bg-red-50/60"

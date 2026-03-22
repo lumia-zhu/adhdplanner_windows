@@ -652,6 +652,23 @@ function createMainWindow(): void {
     mainWindow?.show()
   })
 
+  // ★ 渲染进程崩溃自动恢复：重新加载页面而非白屏
+  mainWindow.webContents.on('render-process-gone', (_e, details) => {
+    console.error('[Crash] Render process gone:', details.reason)
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      setTimeout(() => {
+        mainWindow?.webContents.reload()
+        console.log('[Crash] Page reloaded after render-process-gone')
+      }, 500)
+    }
+  })
+  mainWindow.webContents.on('unresponsive', () => {
+    console.error('[Crash] Renderer unresponsive, reloading...')
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.reload()
+    }
+  })
+
   // ★ 关键改动：点「×」关闭时不退出，而是隐藏到托盘
   mainWindow.on('close', (e) => {
     if (!forceQuit) {
@@ -1087,8 +1104,11 @@ function setupIPC(): void {
   ipcMain.handle('ai:loadConfig', () => loadAIConfig())
   ipcMain.handle('ai:saveConfig', (_, config: Record<string, string>) => saveAIConfig(config))
 
-  // -------- AI 请求代理（绕过 CORS） --------
+  // -------- AI 请求代理（绕过 CORS，30 秒超时） --------
   ipcMain.handle('ai:request', async (_, payload: { url: string; apiKey: string; body: string }) => {
+    const AI_TIMEOUT_MS = 30_000
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), AI_TIMEOUT_MS)
     try {
       const resp = await net.fetch(payload.url, {
         method: 'POST',
@@ -1097,6 +1117,7 @@ function setupIPC(): void {
           'Authorization': `Bearer ${payload.apiKey}`,
         },
         body: payload.body,
+        signal: controller.signal as AbortSignal,
       })
 
       const text = await resp.text()
@@ -1105,8 +1126,15 @@ function setupIPC(): void {
         return { ok: false, status: resp.status, body: text }
       }
       return { ok: true, status: resp.status, body: text }
-    } catch (e) {
-      return { ok: false, status: 0, body: String(e) }
+    } catch (e: unknown) {
+      const isTimeout = e instanceof Error && e.name === 'AbortError'
+      return {
+        ok: false,
+        status: 0,
+        body: isTimeout ? 'AI 请求超时（30 秒无响应）' : String(e),
+      }
+    } finally {
+      clearTimeout(timer)
     }
   })
 

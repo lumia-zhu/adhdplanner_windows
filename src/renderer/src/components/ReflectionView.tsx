@@ -312,7 +312,7 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
         if (!sessionOrderByTask.has(p.taskTitle)) {
           sessionOrderByTask.set(p.taskTitle, [])
         }
-        sessionOrderByTask.get(p.taskTitle)!.push({
+        sessionOrderByTask.get(p.taskTitle)?.push({
           sessionId: p.sessionId,
           durationSec: p.totalDurationSeconds,
         })
@@ -407,7 +407,7 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
         if (!stuckMarksByTask.has(taskTitle)) {
           stuckMarksByTask.set(taskTitle, [])
         }
-        stuckMarksByTask.get(taskTitle)!.push(mark)
+        stuckMarksByTask.get(taskTitle)?.push(mark)
       }
     }
 
