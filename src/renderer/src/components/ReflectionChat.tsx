@@ -367,7 +367,7 @@ export default function ReflectionChat({
         {/* 历史记录恢复提示 */}
         {restored && (
           <div className="flex justify-center">
-            <div className="flex items-center gap-2 bg-amber-50 border border-amber-200/60 text-amber-600 text-[11px] px-3 py-1.5 rounded-full">
+            <div className="flex items-center gap-2 bg-amber-50 border border-amber-200/60 text-amber-600 text-xxs px-3 py-1.5 rounded-full">
               <span>📋 这是上次的对话记录</span>
               <button
                 onClick={handleRestart}
@@ -440,7 +440,7 @@ export default function ReflectionChat({
               placeholder={isReady ? '说说你的想法…' : '等待 AI 回复…'}
               disabled={!isReady || loading}
               maxLength={500}
-              className="flex-1 px-4 py-2.5 text-sm rounded-xl border border-gray-200
+              className="flex-1 px-4 py-2.5 text-sm rounded-lg border border-gray-200
                          focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100
                          outline-none bg-gray-50 focus:bg-white transition-all
                          disabled:opacity-50 disabled:cursor-not-allowed

@@ -1365,7 +1365,7 @@ export default function App() {
         {/* 状态栏 */}
         {tasks.length > 0 && (
           <div className="px-5 py-1.5 flex items-center justify-between">
-            <span className="text-xs text-gray-400">
+            <span className="text-xxs text-gray-400">
               {isToday
                 ? completedTasks.length === 0
                   ? `今天还有 ${pendingTasks.length} 件事等你`
@@ -1385,13 +1385,13 @@ export default function App() {
                         style={{ width: `${(completedTasks.length / tasks.length) * 100}%` }}
                       />
                     </div>
-                    <span className="text-xs text-gray-400">
+                    <span className="text-xxs text-gray-400">
                       {Math.round((completedTasks.length / tasks.length) * 100)}%
                     </span>
                   </div>
                   <button
                     onClick={handleClearCompleted}
-                    className="text-xs text-gray-400 hover:text-red-400 transition-colors"
+                    className="text-xxs text-gray-400 hover:text-red-400 transition-colors"
                   >
                     清除已完成
                   </button>

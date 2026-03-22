@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow, ipcMain, Tray, Menu, nativeImage, net, Notification, powerMonitor } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, Tray, Menu, nativeImage, net, Notification, powerMonitor, screen } from 'electron'
 import { join } from 'path'
 import fs from 'fs'
 
@@ -312,6 +312,28 @@ const MAIN_HEIGHT = 680
 const WIDGET_WIDTH  = 380
 const WIDGET_HEIGHT = 66
 
+// ===================== 屏幕自适应缩放 =====================
+
+let uiScale = 1.0
+
+/**
+ * 根据主显示器的「逻辑工作区宽度」（已经过系统 DPI 缩放）计算 UI 缩放因子。
+ * 小屏 / 低分辨率保持 1.0，大屏高分辨率适度放大，确保文字和控件不会因为
+ * 屏幕物理尺寸增大而显得过小。
+ */
+function computeUIScale(): number {
+  const { width } = screen.getPrimaryDisplay().workAreaSize
+  if (width <= 1920) return 1.0
+  if (width <= 2560) return 1.1
+  if (width <= 3200) return 1.2
+  return 1.3
+}
+
+/** 将设计尺寸乘以 uiScale 并取整 */
+function scaled(n: number): number {
+  return Math.round(n * uiScale)
+}
+
 // ===================== 活跃度采样引擎 =====================
 
 /**
@@ -578,8 +600,8 @@ function buildTrayIcon(): Electron.NativeImage {
 
 function createMainWindow(): void {
   mainWindow = new BrowserWindow({
-    width: MAIN_WIDTH,
-    height: MAIN_HEIGHT,
+    width: scaled(MAIN_WIDTH),
+    height: scaled(MAIN_HEIGHT),
     show: false,
     frame: false,
     resizable: true,   // ★ 必须为 true，否则 Windows 系统最小高度限制会阻止 setSize() 缩小到 44px
@@ -595,7 +617,10 @@ function createMainWindow(): void {
     },
   })
 
-  mainWindow.on('ready-to-show', () => mainWindow?.show())
+  mainWindow.on('ready-to-show', () => {
+    mainWindow?.webContents.setZoomFactor(uiScale)
+    mainWindow?.show()
+  })
 
   // ★ 关键改动：点「×」关闭时不退出，而是隐藏到托盘
   mainWindow.on('close', (e) => {
@@ -796,7 +821,6 @@ function validateWidgetBounds(): void {
   if (!mainWindow || mainWindow.isDestroyed() || !isWidgetMode) return
 
   try {
-    const { screen } = require('electron')
     const { width: sw, height: sh } = screen.getPrimaryDisplay().workAreaSize
     const [x, y] = mainWindow.getPosition()
     const [w, h] = mainWindow.getSize()
@@ -840,24 +864,24 @@ function enterWidget(): void {
   if (!mainWindow || isWidgetMode) return
   isWidgetMode = true
 
-  const { screen } = require('electron')
   const { width: sw, height: sh } = screen.getPrimaryDisplay().workAreaSize
   const saved = loadWidgetPos()
 
-  // ★ 默认位置：屏幕顶部水平居中
-  const defaultX = Math.round((sw - WIDGET_WIDTH) / 2)
+  // ★ 默认位置：屏幕顶部水平居中（用缩放后的实际窗口宽度计算）
+  const scaledW = scaled(WIDGET_WIDTH)
+  const scaledH = scaled(WIDGET_HEIGHT)
+  const defaultX = Math.round((sw - scaledW) / 2)
   const defaultY = 8
 
   let x = saved ? saved.x : defaultX
   let y = saved ? saved.y : defaultY
 
   // ★ 边界校验：确保 widget 在可见屏幕范围内（至少露出一半宽度 + 完整高度）
-  const halfW = Math.round(WIDGET_WIDTH / 2)
-  if (x < -halfW || x > sw - halfW || y < 0 || y > sh - WIDGET_HEIGHT) {
-    // 保存的位置跑到屏幕外了 → 重置到默认位置
+  const halfW = Math.round(scaledW / 2)
+  if (x < -halfW || x > sw - halfW || y < 0 || y > sh - scaledH) {
     x = defaultX
     y = defaultY
-    saveWidgetPos(x, y) // 覆盖掉错误的保存值
+    saveWidgetPos(x, y)
   }
 
   // ★ 先放开约束 → 设置新尺寸 → 再锁定，避免 min>max 冲突导致 Windows 上窗口消失
@@ -866,9 +890,9 @@ function enterWidget(): void {
     win.setMaximumSize(9999, 9999)
     win.setAlwaysOnTop(true, 'floating')
     win.setVisibleOnAllWorkspaces(true)
-    win.setSize(WIDGET_WIDTH, WIDGET_HEIGHT)
-    win.setMinimumSize(WIDGET_WIDTH, WIDGET_HEIGHT)
-    win.setMaximumSize(WIDGET_WIDTH, WIDGET_HEIGHT)
+    win.setSize(scaledW, scaledH)
+    win.setMinimumSize(scaledW, scaledH)
+    win.setMaximumSize(scaledW, scaledH)
     win.setPosition(x, y)
     win.show()
   })
@@ -892,7 +916,6 @@ function exitWidget(): void {
   mainWindow.off('moved', onWidgetMoved)
   mainWindow.off('minimize', onWidgetMinimize)  // ★ 移除最小化拦截
 
-  const { screen } = require('electron')
   const { width: sw, height: sh } = screen.getPrimaryDisplay().workAreaSize
 
   // ★ 先放开约束 → 设置新尺寸 → 再锁定，避免 min>max 冲突
@@ -901,9 +924,9 @@ function exitWidget(): void {
     win.setMaximumSize(0, 0)    // 0,0 表示取消最大尺寸限制
     win.setAlwaysOnTop(true, 'floating')
     win.setVisibleOnAllWorkspaces(false)
-    win.setSize(MAIN_WIDTH, MAIN_HEIGHT)
-    win.setMinimumSize(MAIN_WIDTH, MAIN_HEIGHT)
-    win.setPosition(Math.round((sw - MAIN_WIDTH) / 2), Math.round((sh - MAIN_HEIGHT) / 2))
+    win.setSize(scaled(MAIN_WIDTH), scaled(MAIN_HEIGHT))
+    win.setMinimumSize(scaled(MAIN_WIDTH), scaled(MAIN_HEIGHT))
+    win.setPosition(Math.round((sw - scaled(MAIN_WIDTH)) / 2), Math.round((sh - scaled(MAIN_HEIGHT)) / 2))
   })
 }
 
@@ -951,13 +974,16 @@ function setupIPC(): void {
   ipcMain.on('window:resizeWidget', (_, width: number, height: number) => {
     if (!mainWindow || mainWindow.isDestroyed() || !isWidgetMode) return
 
+    const sw = scaled(width)
+    const sh = scaled(height)
+
     safeWinOp('resizeWidget', (win) => {
       // ★ 先放开约束，再设置新尺寸，最后锁定 —— 避免 min>max 冲突导致 Windows 上窗口消失
       win.setMinimumSize(1, 1)
       win.setMaximumSize(9999, 9999)
-      win.setSize(width, height)
-      win.setMinimumSize(width, height)
-      win.setMaximumSize(width, height)
+      win.setSize(sw, sh)
+      win.setMinimumSize(sw, sh)
+      win.setMaximumSize(sw, sh)
 
       // ★ 每次 resize 后都刷新 alwaysOnTop（防止 Windows 在调整大小时丢失置顶）
       win.setAlwaysOnTop(true, 'floating')
@@ -995,9 +1021,11 @@ function setupIPC(): void {
   ipcMain.on('window:resizeMain', (_, width: number, height: number) => {
     if (!mainWindow || isWidgetMode) return
     const [, curH] = mainWindow.getSize()
+    const sw = scaled(width)
+    const sh = height ? scaled(height) : curH
     // 左边缘不动，向右侧扩展/收缩
-    mainWindow.setMinimumSize(Math.min(width, MAIN_WIDTH), MAIN_HEIGHT)
-    mainWindow.setSize(width, height || curH)
+    mainWindow.setMinimumSize(Math.min(sw, scaled(MAIN_WIDTH)), scaled(MAIN_HEIGHT))
+    mainWindow.setSize(sw, sh)
   })
 
   // -------- 用户个人资料 --------
@@ -1087,6 +1115,9 @@ app.whenReady().then(() => {
   // ★ 一次性迁移：旧版 tasks.json → 按日期的 tasks-YYYY-MM-DD.json
   migrateTasksIfNeeded()
 
+  uiScale = computeUIScale()
+  console.log(`[UIScale] workArea=${screen.getPrimaryDisplay().workAreaSize.width}, uiScale=${uiScale}`)
+
   setupIPC()
   createMainWindow()
   createTray()
@@ -1098,7 +1129,6 @@ app.whenReady().then(() => {
 
   // ---- 显示器变化时重新校验 widget 位置 ----
   // 比如外接显示器断开，widget 飞到屏幕外
-  const { screen } = require('electron')
   screen.on('display-removed', () => {
     console.log('[Display] Display removed, validating widget bounds')
     validateWidgetBounds()

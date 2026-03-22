@@ -102,7 +102,7 @@ export default function ActivityRhythmChart({ data }: Props) {
     <div>
       {/* 高峰提示 */}
       {peakHour.val > 0 && (
-        <p className="text-[11px] text-gray-500 mb-2">
+        <p className="text-xxs text-gray-500 mb-2">
           🌟 今日使用高峰：<span className="font-semibold text-emerald-600">{peakHour.hour}:00</span> 时段
           <span className="text-gray-400 ml-1">（{Math.round(peakHour.val)}% 活跃度）</span>
         </p>
@@ -214,7 +214,7 @@ export default function ActivityRhythmChart({ data }: Props) {
       </svg>
 
       {/* y 轴说明 */}
-      <p className="text-[10px] text-gray-400 mt-1 text-center">
+      <p className="text-2xs text-gray-400 mt-1 text-center">
         纵轴：每小时活跃占比 · 横轴：时间
       </p>
     </div>

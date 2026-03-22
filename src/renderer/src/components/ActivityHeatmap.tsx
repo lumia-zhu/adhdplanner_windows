@@ -122,7 +122,7 @@ export default function ActivityHeatmap({ data }: Props) {
   return (
     <div className="relative">
       {/* 图例 */}
-      <div className="flex items-center gap-3 mb-2.5 text-[10px] text-gray-400">
+      <div className="flex items-center gap-3 mb-2.5 text-2xs text-gray-400">
         <span>每小时使用时长：</span>
         {LEVEL_COLORS.map((c, i) => (
           <div key={i} className="flex items-center gap-1">
@@ -167,7 +167,7 @@ export default function ActivityHeatmap({ data }: Props) {
           return (
             <span
               key={h}
-              className="absolute text-[9px] text-gray-400 tabular-nums"
+              className="absolute text-3xs text-gray-400 tabular-nums"
               style={{
                 left: `${pct}%`,
                 transform: h === 0 ? 'none' : h === 24 ? 'translateX(-100%)' : 'translateX(-50%)',
@@ -182,7 +182,7 @@ export default function ActivityHeatmap({ data }: Props) {
       {/* 悬浮提示 */}
       {tooltip && (
         <div
-          className="fixed z-50 px-2.5 py-1.5 rounded-lg bg-gray-800 text-white text-[10px]
+          className="fixed z-50 px-2.5 py-1.5 rounded-lg bg-gray-800 text-white text-2xs
                      shadow-lg pointer-events-none whitespace-nowrap"
           style={{
             left: tooltip.x,

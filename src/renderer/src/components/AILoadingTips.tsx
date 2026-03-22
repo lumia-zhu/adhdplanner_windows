@@ -69,7 +69,7 @@ export default function AILoadingTips({ variant, title, compact = false }: AILoa
       <div className={`flex flex-col items-center ${compact ? 'min-h-[28px]' : 'min-h-[34px]'}`}>
         <p
           key={`${variant}-${tipIndex}`}
-          className={`${compact ? 'text-[12px]' : 'text-[13px]'} leading-relaxed
+          className={`${compact ? 'text-xs' : 'text-s'} leading-relaxed
                      ${isStart ? 'text-emerald-400/85' : 'text-amber-400/85'}
                      animate-in fade-in duration-300`}
         >

@@ -704,7 +704,7 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
                 {!isToday && (
                   <button
                     onClick={goToday}
-                    className="ml-1 px-2 py-0.5 rounded-full text-[10px] font-semibold
+                    className="ml-1 px-2 py-0.5 rounded-full text-2xs font-semibold
                                bg-indigo-50 text-indigo-500 hover:bg-indigo-100 transition-colors"
                   >
                     今天
@@ -750,7 +750,7 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
                 {weekEndDate !== today && (
                   <button
                     onClick={() => { setWeekEndDate(getToday()); resetChatOnDateChange() }}
-                    className="ml-1 px-2 py-0.5 rounded-full text-[10px] font-semibold
+                    className="ml-1 px-2 py-0.5 rounded-full text-2xs font-semibold
                                bg-indigo-50 text-indigo-500 hover:bg-indigo-100 transition-colors"
                   >
                     本周
@@ -765,7 +765,7 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
                   setViewMode('day')
                   resetChatOnDateChange()
                 }}
-                className={`px-2 py-0.5 rounded text-[10px] font-medium transition-all
+                className={`px-2 py-0.5 rounded text-2xs font-medium transition-all
                   ${viewMode === 'day'
                     ? 'bg-white text-gray-700 shadow-sm'
                     : 'text-gray-400 hover:text-gray-600'
@@ -779,7 +779,7 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
                   setWeekEndDate(selectedDate)
                   resetChatOnDateChange()
                 }}
-                className={`px-2 py-0.5 rounded text-[10px] font-medium transition-all
+                className={`px-2 py-0.5 rounded text-2xs font-medium transition-all
                   ${viewMode === 'week'
                     ? 'bg-white text-gray-700 shadow-sm'
                     : 'text-gray-400 hover:text-gray-600'
@@ -842,21 +842,21 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
                     <div id="chart-key-metrics" className="grid grid-cols-3 gap-3 flex-1">
                       <div className="text-center bg-emerald-50 rounded-xl py-2.5 px-2">
                         <p className="text-lg font-bold text-emerald-600">{summary?.stats.completedMicroSteps ?? 0}</p>
-                        <p className="text-[10px] text-emerald-500 mt-0.5">完成任务数</p>
+                        <p className="text-2xs text-emerald-500 mt-0.5">完成任务数</p>
                       </div>
                       <div className="text-center bg-blue-50 rounded-xl py-2.5 px-2">
                         <p className="text-lg font-bold text-blue-600">
                           {usageDurationStr.value}
                           <span className="text-xs font-normal ml-0.5">{usageDurationStr.unit}</span>
                         </p>
-                        <p className="text-[10px] text-blue-500 mt-0.5">电脑使用时长</p>
+                        <p className="text-2xs text-blue-500 mt-0.5">电脑使用时长</p>
                       </div>
                       <div className="text-center bg-indigo-50 rounded-xl py-2.5 px-2">
                         <p className="text-lg font-bold text-indigo-600">
                           {summary?.stats.totalFocusMinutes ?? 0}
                           <span className="text-xs font-normal ml-0.5">分钟</span>
                         </p>
-                        <p className="text-[10px] text-indigo-500 mt-0.5">任务时长</p>
+                        <p className="text-2xs text-indigo-500 mt-0.5">任务时长</p>
                       </div>
                     </div>
                   )}
@@ -872,21 +872,21 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
                   <p className="text-lg font-bold text-emerald-600">
                     {summary?.stats.completedMicroSteps ?? 0}
                   </p>
-                  <p className="text-[10px] text-emerald-500 mt-0.5">完成任务数</p>
+                  <p className="text-2xs text-emerald-500 mt-0.5">完成任务数</p>
                 </div>
                 <div className="text-center bg-blue-50 rounded-xl py-2.5 px-2">
                   <p className="text-lg font-bold text-blue-600">
                     {usageDurationStr.value}
                     <span className="text-xs font-normal ml-0.5">{usageDurationStr.unit}</span>
                   </p>
-                  <p className="text-[10px] text-blue-500 mt-0.5">电脑使用时长</p>
+                  <p className="text-2xs text-blue-500 mt-0.5">电脑使用时长</p>
                 </div>
                 <div className="text-center bg-indigo-50 rounded-xl py-2.5 px-2">
                   <p className="text-lg font-bold text-indigo-600">
                     {summary?.stats.totalFocusMinutes ?? 0}
                     <span className="text-xs font-normal ml-0.5">分钟</span>
                   </p>
-                  <p className="text-[10px] text-indigo-500 mt-0.5">任务时长</p>
+                  <p className="text-2xs text-indigo-500 mt-0.5">任务时长</p>
                 </div>
               </div>
               )}
@@ -938,7 +938,7 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
                       {summary.leftoverTasks.map((t, i) => (
                         <span
                           key={i}
-                          className="text-[11px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-500"
+                          className="text-xxs px-2 py-0.5 rounded-full bg-gray-100 text-gray-500"
                         >
                           {t}
                         </span>

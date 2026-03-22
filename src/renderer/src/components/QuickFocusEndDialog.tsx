@@ -80,7 +80,7 @@ export default function QuickFocusEndDialog({
             onChange={e => setTitle(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder="例如：写论文第三章、整理笔记..."
-            className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm
+            className="w-full px-3 py-2.5 rounded-lg border border-gray-200 text-sm
                        focus:outline-none focus:ring-2 focus:ring-emerald-300 focus:border-emerald-400
                        placeholder:text-gray-300 transition-all"
             maxLength={100}

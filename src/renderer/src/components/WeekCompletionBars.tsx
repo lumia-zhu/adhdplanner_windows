@@ -30,7 +30,7 @@ export default function WeekCompletionBars({ days }: Props) {
           style={{ height: BAR_AREA_H + BAR_PAD_TOP, paddingTop: BAR_PAD_TOP }}
         >
           {[100, 75, 50, 25, 0].map(tick => (
-            <span key={tick} className="text-[9px] text-gray-400 tabular-nums leading-none text-right w-[24px]">
+            <span key={tick} className="text-3xs text-gray-400 tabular-nums leading-none text-right w-[24px]">
               {tick}%
             </span>
           ))}
@@ -70,7 +70,7 @@ export default function WeekCompletionBars({ days }: Props) {
                         style={{ height: `${Math.max(pct, 3)}%` }}
                       >
                         {/* 柱顶百分比（hover 或 > 0 时显示） */}
-                        <span className="absolute -top-4 left-1/2 -translate-x-1/2 text-[9px] text-gray-500 font-mono tabular-nums whitespace-nowrap">
+                        <span className="absolute -top-4 left-1/2 -translate-x-1/2 text-3xs text-gray-500 font-mono tabular-nums whitespace-nowrap">
                           {pct}%
                         </span>
                       </div>
@@ -93,11 +93,11 @@ export default function WeekCompletionBars({ days }: Props) {
       <div className="flex ml-[28px]">
         {days.map(day => (
           <div key={day.date} className="flex-1 text-center">
-            <span className="text-[10px] text-gray-500 tabular-nums leading-tight">
+            <span className="text-2xs text-gray-500 tabular-nums leading-tight">
               {day.dateLabel}
             </span>
             <br />
-            <span className="text-[9px] text-gray-400">
+            <span className="text-3xs text-gray-400">
               {day.weekdayShort}
             </span>
           </div>

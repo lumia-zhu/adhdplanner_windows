@@ -66,7 +66,7 @@ export default function TaskDurationChart({ data }: TaskDurationChartProps) {
             >
               {/* 左侧：任务名（允许折行，不截断） */}
               <span
-                className="text-[11px] text-gray-600 w-[100px] text-right flex-shrink-0 leading-tight break-words"
+                className="text-xxs text-gray-600 w-[100px] text-right flex-shrink-0 leading-tight break-words"
               >
                 {item.title}
               </span>
@@ -96,14 +96,14 @@ export default function TaskDurationChart({ data }: TaskDurationChartProps) {
 
                 {/* 有卡顿时显示展开箭头提示 */}
                 {hasStuck && (
-                  <span className="absolute -right-4 top-1/2 -translate-y-1/2 text-[9px] text-gray-400 select-none">
+                  <span className="absolute -right-4 top-1/2 -translate-y-1/2 text-3xs text-gray-400 select-none">
                     {isExpanded ? '▲' : '▼'}
                   </span>
                 )}
               </div>
 
               {/* 右侧：时长标注（≥60秒显示分钟，<60秒显示秒数） */}
-              <span className="text-[11px] text-gray-500 w-[44px] flex-shrink-0 text-right font-mono">
+              <span className="text-xxs text-gray-500 w-[44px] flex-shrink-0 text-right font-mono">
                 {item.durationSec >= 60
                   ? `${item.durationMin} min`
                   : `${item.durationSec}s`
@@ -117,7 +117,7 @@ export default function TaskDurationChart({ data }: TaskDurationChartProps) {
                 {item.stuckMarks!.map((mark, mi) => (
                   <div
                     key={mi}
-                    className="flex items-start gap-2 rounded-md px-2.5 py-1.5 text-[11px] bg-red-50/60"
+                    className="flex items-start gap-2 rounded-md px-2.5 py-1.5 text-xxs bg-red-50/60"
                   >
                     <span className="font-mono flex-shrink-0 mt-px text-red-400">
                       {formatOffset(mark.offsetSeconds)}
@@ -142,10 +142,10 @@ export default function TaskDurationChart({ data }: TaskDurationChartProps) {
       {/* 图例：仅在有卡顿时显示 */}
       {data.some(d => d.stuckMarks && d.stuckMarks.length > 0) && (
         <div className="flex items-center gap-4 pt-1">
-          <span className="flex items-center gap-1.5 text-[10px] text-gray-400">
+          <span className="flex items-center gap-1.5 text-2xs text-gray-400">
             <span className="w-[8px] h-3 rounded-[2px] bg-red-400/90" /> 卡顿
           </span>
-          <span className="text-[10px] text-gray-300">（点击条形查看）</span>
+          <span className="text-2xs text-gray-300">（点击条形查看）</span>
         </div>
       )}
     </div>

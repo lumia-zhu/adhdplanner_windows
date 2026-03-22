@@ -145,7 +145,7 @@ const MiniCalendar = React.forwardRef<HTMLDivElement, MiniCalendarProps>(
         {/* 星期标头 */}
         <div className="grid grid-cols-7 mb-1">
           {WEEKDAY_LABELS.map(w => (
-            <div key={w} className="text-center text-[10px] text-gray-400 font-medium py-1">{w}</div>
+            <div key={w} className="text-center text-2xs text-gray-400 font-medium py-1">{w}</div>
           ))}
         </div>
 
@@ -183,7 +183,7 @@ const MiniCalendar = React.forwardRef<HTMLDivElement, MiniCalendarProps>(
         <div className="flex items-center justify-center gap-2 mt-2 pt-2 border-t border-gray-100">
           <button
             onClick={() => onSelect(today)}
-            className="text-[11px] text-indigo-500 hover:text-indigo-700 font-medium
+            className="text-xxs text-indigo-500 hover:text-indigo-700 font-medium
                        px-2.5 py-1 rounded-lg hover:bg-indigo-50 transition-colors"
           >
             回到今天

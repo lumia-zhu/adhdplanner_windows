@@ -37,21 +37,21 @@ export default function WeekMetricCards({ days }: Props) {
         <p className="text-lg font-bold text-emerald-600">
           {avgCompleted}
         </p>
-        <p className="text-[10px] text-emerald-500 mt-0.5">日均完成任务</p>
+        <p className="text-2xs text-emerald-500 mt-0.5">日均完成任务</p>
       </div>
       <div className="text-center bg-blue-50 rounded-xl py-2.5 px-2">
         <p className="text-lg font-bold text-blue-600">
           {usageStr.value}
           <span className="text-xs font-normal ml-0.5">{usageStr.unit}</span>
         </p>
-        <p className="text-[10px] text-blue-500 mt-0.5">日均使用时长</p>
+        <p className="text-2xs text-blue-500 mt-0.5">日均使用时长</p>
       </div>
       <div className="text-center bg-indigo-50 rounded-xl py-2.5 px-2">
         <p className="text-lg font-bold text-indigo-600">
           {avgFocusMin}
           <span className="text-xs font-normal ml-0.5">分钟</span>
         </p>
-        <p className="text-[10px] text-indigo-500 mt-0.5">日均任务时长</p>
+        <p className="text-2xs text-indigo-500 mt-0.5">日均任务时长</p>
       </div>
     </div>
   )

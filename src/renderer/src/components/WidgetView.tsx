@@ -30,7 +30,7 @@ const BAR_W = 380
 const BAR_H_THIN = 66
 const BAR_H_RELAY = 280
 const BAR_H_STUCK = 340
-const BAR_H_FIRST_STEP = 92   // 简化模式：父任务 + 当前步骤 + 按钮行
+const BAR_H_FIRST_STEP = 102  // 简化模式：父任务 + 当前步骤 + 按钮行
 
 // ★ Feature Flag：关闭逐步拆解（relay 循环），简化为"理解 → 第一步 → 完成 → 退出"
 // 设为 true 可恢复完整的 step-by-step 接力模式
@@ -303,7 +303,7 @@ function FocusDynamicBar({
         if (isFlowMode) {
           // 任务结构视图：基础高度 + 每个子任务 36px + 可选第一步提示行，上限 300px
           const hintH = session.firstStepHint ? 28 : 0
-          const baseH = 110 + hintH  // 顶部任务名 + 提示行 + 底部按钮
+          const baseH = 128 + hintH  // 顶部任务名 + 提示行 + 底部按钮
           const subsH = taskSubtasks.length * 36
           execHeight = Math.min(baseH + subsH, 300)
         } else {
@@ -508,25 +508,28 @@ function FocusDynamicBar({
             {/* Row 1: 父任务名（居中）+ 计时器 */}
             <div className="flex items-center">
               <div className="w-[48px] flex-shrink-0" />
-              <p className="flex-1 text-[12px] text-gray-500 text-center truncate">{taskTitle}</p>
-              <span className="w-[48px] text-[11px] text-gray-400 font-mono text-right flex-shrink-0
+              <p className="flex-1 text-xs text-gray-500 text-center truncate">{taskTitle}</p>
+              <span className="w-[48px] text-xxs text-gray-400 font-mono text-right flex-shrink-0
                                bg-gray-100/80 px-1.5 py-0.5 rounded-md">{timeStr}</span>
             </div>
 
             {/* Row 2: 当前步骤（居中，加粗，行动焦点） */}
-            <p className="text-[14px] text-gray-800 font-semibold text-center mt-1 leading-snug">
+            <p className="text-sm text-gray-800 font-semibold text-center mt-1 leading-snug">
               🎯 {currentMicroTask}
             </p>
 
             {/* Row 3: 暂停 | 完成这一步 | 卡住了? */}
-            <div className="flex items-center mt-2">
-              <div className="w-[60px] flex items-center flex-shrink-0">
+            <div className="flex items-center mt-2.5">
+              <div className="w-[72px] flex items-center flex-shrink-0">
                 <button
                   onClick={onPause}
-                  className="no-drag text-[11px] text-gray-400
-                             hover:text-blue-500 active:scale-95 transition-all whitespace-nowrap"
+                  className="no-drag flex items-center gap-1 text-2xs text-gray-400
+                             hover:text-blue-500 active:scale-95 transition-colors whitespace-nowrap"
                   title="暂停，去处理别的事"
                 >
+                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M10 9v6m4-6v6" />
+                  </svg>
                   暂停
                 </button>
               </div>
@@ -534,7 +537,7 @@ function FocusDynamicBar({
                 <button
                   onClick={handleMicroDoneClick}
                   disabled={showMicroDone}
-                  className={`no-drag px-6 py-1.5 rounded-xl
+                  className={`no-drag px-5 py-1.5 rounded-xl
                              text-xs font-semibold transition-all
                              ${showMicroDone
                                ? 'bg-teal-400 text-white scale-110 shadow-md shadow-teal-200/60'
@@ -544,13 +547,17 @@ function FocusDynamicBar({
                   {showMicroDone ? '✅' : '完成这一步'}
                 </button>
               </div>
-              <div className="w-[60px] flex items-center justify-end flex-shrink-0">
+              <div className="w-[72px] flex items-center justify-end flex-shrink-0">
                 <button
                   onClick={onStuck}
-                  className="no-drag text-[11px] text-amber-500
-                             hover:text-amber-600 active:scale-95 transition-all whitespace-nowrap"
+                  className="no-drag flex items-center gap-1 text-2xs text-gray-400
+                             hover:text-amber-500 active:scale-95 transition-colors whitespace-nowrap"
                   title="卡住了？让AI帮你换条路"
                 >
+                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                      d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                  </svg>
                   卡住了?
                 </button>
               </div>
@@ -570,17 +577,17 @@ function FocusDynamicBar({
           {/* 顶部：主任务名 + 计时器 —— ★ 这是拖拽手柄区域，不加 no-drag */}
           <div className="px-4 pt-3 pb-2 border-b border-gray-100/60">
             <div className="flex items-center justify-between">
-              <span className="text-[10px] text-gray-400 font-medium tracking-wide">📋 当前任务</span>
-              <span className="text-[11px] text-gray-400 font-mono
+              <span className="text-2xs text-gray-400 font-medium tracking-wide">📋 当前任务</span>
+              <span className="text-xxs text-gray-400 font-mono
                                bg-gray-100/80 px-1.5 py-0.5 rounded-md">{timeStr}</span>
             </div>
-            <p className="text-[14px] text-gray-800 font-semibold mt-1 leading-snug text-center">{taskTitle}</p>
+            <p className="text-sm text-gray-800 font-semibold mt-1 leading-snug text-center">{taskTitle}</p>
           </div>
 
           {/* AI 第一步提示行（非强制，仅展示） */}
           {session.firstStepHint && (
             <div className="px-4 pt-0.5 pb-1">
-              <p className="text-[11px] text-gray-400 leading-snug truncate text-center">
+              <p className="text-xxs text-gray-400 leading-snug truncate text-center">
                 第一步：{session.firstStepHint}
               </p>
             </div>
@@ -606,7 +613,7 @@ function FocusDynamicBar({
                                  text-emerald-500 focus:ring-emerald-200
                                  cursor-pointer flex-shrink-0"
                     />
-                    <span className={`text-[13px] leading-snug ${
+                    <span className={`text-s leading-snug ${
                       checked
                         ? 'text-gray-400 line-through'
                         : 'text-gray-700'
@@ -620,14 +627,17 @@ function FocusDynamicBar({
           )}
 
           {/* 底部：暂停 + 完成主任务 + 卡住了 */}
-          <div className="no-drag px-4 pb-3 pt-2 border-t border-gray-100/60 flex items-center">
-            <div className="w-[60px] flex items-center flex-shrink-0">
+          <div className="no-drag px-4 pb-3.5 pt-2.5 border-t border-gray-100/60 flex items-center">
+            <div className="w-[72px] flex items-center flex-shrink-0">
               <button
                 onClick={onPause}
-                className="text-[11px] text-gray-400 hover:text-blue-500
-                           active:scale-95 transition-all whitespace-nowrap"
+                className="flex items-center gap-1 text-2xs text-gray-400 hover:text-blue-500
+                           active:scale-95 transition-colors whitespace-nowrap"
                 title="暂停，去处理别的事"
               >
+                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M10 9v6m4-6v6" />
+                </svg>
                 暂停
               </button>
             </div>
@@ -637,7 +647,7 @@ function FocusDynamicBar({
                   triggerEffect(e.currentTarget)
                   onTaskDone()
                 }}
-                className="px-5 py-2 rounded-xl bg-emerald-500 text-white text-xs font-semibold
+                className="px-4 py-2 rounded-xl bg-emerald-500 text-white text-xs font-semibold
                            shadow-sm shadow-emerald-200/50
                            hover:bg-emerald-600 hover:shadow-md hover:shadow-emerald-200/60
                            active:scale-95 transition-all"
@@ -645,13 +655,17 @@ function FocusDynamicBar({
                 ✓ 完成主任务
               </button>
             </div>
-            <div className="w-[60px] flex items-center justify-end flex-shrink-0">
+            <div className="w-[72px] flex items-center justify-end flex-shrink-0">
               <button
                 onClick={onStuck}
-                className="text-[11px] text-amber-500
-                           hover:text-amber-600 active:scale-95 transition-all whitespace-nowrap"
+                className="flex items-center gap-1 text-2xs text-gray-400
+                           hover:text-amber-500 active:scale-95 transition-colors whitespace-nowrap"
                 title="卡住了？让AI帮你换条路"
               >
+                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                    d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                </svg>
                 卡住了?
               </button>
             </div>
@@ -675,22 +689,22 @@ function FocusDynamicBar({
             {isFlowMode ? (
               <div className="w-5 h-5 rounded-md bg-gradient-to-br from-violet-500 to-violet-600
                               flex items-center justify-center">
-                <span className="text-white text-[10px]">🚀</span>
+                <span className="text-white text-2xs">🚀</span>
               </div>
             ) : (
               <div className="w-5 h-5 rounded-md bg-gradient-to-br from-emerald-500 to-emerald-600
                               flex items-center justify-center">
-                <span className="text-white text-[10px]">🎯</span>
+                <span className="text-white text-2xs">🎯</span>
               </div>
             )}
           </div>
           {/* 中区：任务名 */}
-          <span className="flex-1 min-w-0 text-[15px] text-gray-800 font-semibold truncate text-center">
+          <span className="flex-1 min-w-0 text-md text-gray-800 font-semibold truncate text-center">
             {displayTask}
           </span>
           {/* 右区：计时 + 关闭（宽度与左区平衡） */}
           <div className="w-[60px] flex items-center justify-end gap-1 flex-shrink-0">
-            <span className="text-[11px] text-gray-400 font-mono
+            <span className="text-xxs text-gray-400 font-mono
                              bg-gray-100/80 px-1.5 py-0.5 rounded-md">{timeStr}</span>
             <button
               onClick={onExit}
@@ -708,14 +722,17 @@ function FocusDynamicBar({
 
         {/* 下行：三栏布局 — 左区（暂停）| 完成按钮居中 | 卡住了右对齐，与上行对齐 */}
         <div className="flex items-center mt-1">
-          {/* 左区：暂停文字按钮（与上行左区同宽） */}
+          {/* 左区：暂停（与上行左区同宽） */}
           <div className="w-[60px] flex items-center flex-shrink-0">
             <button
               onClick={onPause}
-              className="no-drag text-[11px] text-gray-400
-                         hover:text-blue-500 active:scale-95 transition-all whitespace-nowrap"
+              className="no-drag flex items-center gap-1 text-2xs text-gray-400
+                         hover:text-blue-500 active:scale-95 transition-colors whitespace-nowrap"
               title="暂停，去处理别的事"
             >
+              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M10 9v6m4-6v6" />
+              </svg>
               暂停
             </button>
           </div>
@@ -731,7 +748,7 @@ function FocusDynamicBar({
                 }
               }}
               disabled={showMicroDone}
-              className={`no-drag px-6 py-1.5 rounded-xl
+              className={`no-drag px-5 py-1.5 rounded-xl
                          text-xs font-semibold transition-all
                          ${showMicroDone
                            ? 'bg-teal-400 text-white scale-110 shadow-md shadow-teal-200/60'
@@ -741,15 +758,19 @@ function FocusDynamicBar({
               {showMicroDone ? '✅' : '✓ 完成'}
             </button>
           </div>
-          {/* 卡住了 — 右对齐次级文字（与上行右区同宽，垂直对齐） */}
+          {/* 卡住了 — 右对齐（与上行右区同宽） */}
           <div className="w-[60px] flex items-center justify-end flex-shrink-0">
             {!isFlowMode && (
               <button
                 onClick={onStuck}
-                className="no-drag text-[11px] text-amber-500
-                           hover:text-amber-600 active:scale-95 transition-all whitespace-nowrap"
+                className="no-drag flex items-center gap-1 text-2xs text-gray-400
+                           hover:text-amber-500 active:scale-95 transition-colors whitespace-nowrap"
                 title="卡住了？让AI帮你换条路"
               >
+                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                    d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                </svg>
                 卡住了?
               </button>
             )}
@@ -770,7 +791,7 @@ function FocusDynamicBar({
         <div className="flex items-center px-4 py-2.5 gap-2.5 border-b border-gray-100/80">
           <div className="w-6 h-6 rounded-full bg-gradient-to-br from-orange-400 to-orange-500
                           flex items-center justify-center flex-shrink-0 shadow-sm">
-            <span className="text-white text-[10px]">🆘</span>
+            <span className="text-white text-2xs">🆘</span>
           </div>
           <span className="text-xs text-orange-600 font-medium flex-1 truncate">
             卡住了：{currentMicroTask}
@@ -816,20 +837,20 @@ function FocusDynamicBar({
             placeholder="我现在遇到的问题是……"
             maxLength={200}
             rows={2}
-            className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-gray-200
+            className="w-full px-3.5 py-2.5 text-xs rounded-lg border border-gray-200
                        focus:border-orange-400 focus:ring-1 focus:ring-orange-100
                        outline-none bg-gray-50 focus:bg-white transition-all resize-none"
           />
 
           {/* 常见原因标签 */}
           <div className="flex flex-col gap-1.5">
-            <p className="text-[10px] text-gray-400 font-medium">常见原因（点击填入）：</p>
+            <p className="text-2xs text-gray-400 font-medium">常见原因（点击填入）：</p>
             <div className="flex flex-wrap gap-1.5">
               {STUCK_COMMON_REASONS.map((reason, i) => (
                 <button
                   key={i}
                   onClick={() => setStuckInput(reason)}
-                  className={`text-left text-[11px] px-2.5 py-1.5 rounded-lg transition-all
+                  className={`text-left text-xxs px-2.5 py-1.5 rounded-lg transition-all
                     ${stuckInput === reason
                       ? 'bg-orange-100 text-orange-700 border border-orange-300'
                       : 'bg-gray-50 text-gray-500 border border-gray-200 hover:bg-orange-50 hover:text-orange-600 hover:border-orange-200'
@@ -866,7 +887,7 @@ function FocusDynamicBar({
           <div className="flex items-center justify-end pt-1 border-t border-gray-100/80">
             <button
               onClick={() => onResume(currentMicroTask)}
-              className="text-[11px] text-gray-400 hover:text-gray-600 transition-colors"
+              className="text-xxs text-gray-400 hover:text-gray-600 transition-colors"
             >
               没事，我继续做 →
             </button>
@@ -887,7 +908,7 @@ function FocusDynamicBar({
         <div className="flex items-center px-4 py-2.5 gap-2.5 border-b border-gray-100/80">
           <div className="w-6 h-6 rounded-full bg-gradient-to-br from-amber-400 to-amber-500
                           flex items-center justify-center flex-shrink-0 shadow-sm">
-            <span className="text-white text-[10px]">💡</span>
+            <span className="text-white text-2xs">💡</span>
           </div>
           <span className="text-xs text-amber-700 font-medium flex-1 truncate">
             反思提示
@@ -934,7 +955,7 @@ function FocusDynamicBar({
                         <div className="flex items-center gap-1 flex-shrink-0">
                           <button
                             onClick={() => handleHintFeedback(i, 'up')}
-                            className={`w-6 h-6 rounded-md text-[12px] transition-all ${
+                            className={`w-6 h-6 rounded-md text-xs transition-all ${
                               current === 'up'
                                 ? 'bg-emerald-100 text-emerald-600'
                                 : 'text-gray-300 hover:text-emerald-500 hover:bg-emerald-50'
@@ -945,7 +966,7 @@ function FocusDynamicBar({
                           </button>
                           <button
                             onClick={() => handleHintFeedback(i, 'down')}
-                            className={`w-6 h-6 rounded-md text-[12px] transition-all ${
+                            className={`w-6 h-6 rounded-md text-xs transition-all ${
                               current === 'down'
                                 ? 'bg-rose-100 text-rose-600'
                                 : 'text-gray-300 hover:text-rose-500 hover:bg-rose-50'
@@ -1064,13 +1085,13 @@ function FocusDynamicBar({
       {/* ① 顶部：任务方向锚点 —— ★ 可拖拽区域（只有 × 按钮是 no-drag） */}
       <div className="px-4 pt-3 pb-2.5 border-b border-gray-100/60">
         <div className="flex items-center justify-between">
-          <span className="text-[10px] text-gray-400 font-medium tracking-wide">正在推进</span>
+          <span className="text-2xs text-gray-400 font-medium tracking-wide">正在推进</span>
           <div className="flex items-center gap-1.5">
             {/* 轻量步数 + 计时 */}
-            <span className="text-[10px] text-emerald-500 font-medium">
+            <span className="text-2xs text-emerald-500 font-medium">
               第 {session.microHistory.length + 1} 步
             </span>
-            <span className="text-[10px] text-gray-400 font-mono
+            <span className="text-2xs text-gray-400 font-mono
                              bg-gray-100/80 px-1.5 py-0.5 rounded-md">{timeStr}</span>
             <button
               onClick={onExit}
@@ -1086,10 +1107,10 @@ function FocusDynamicBar({
           </div>
         </div>
         {/* 主任务标题 */}
-        <p className="text-[13px] text-gray-800 font-semibold truncate mt-1">{taskTitle}</p>
+        <p className="text-s text-gray-800 font-semibold truncate mt-1">{taskTitle}</p>
         {/* 当前子任务阶段（有子任务才显示） */}
         {currentSubtaskTitle && (
-          <p className="text-[11px] text-indigo-500 mt-0.5 truncate">
+          <p className="text-xxs text-indigo-500 mt-0.5 truncate">
             {isSubtaskTransition ? '进入新阶段：' : '当前阶段：'}{currentSubtaskTitle}
           </p>
         )}
@@ -1099,7 +1120,7 @@ function FocusDynamicBar({
       <div className="no-drag px-4 py-3 flex flex-col gap-2.5 flex-1">
 
         {/* 刚完成提示 —— 很轻的一句话，串起上下文连续感 */}
-        <p className="text-[11px] text-gray-400 truncate leading-relaxed">
+        <p className="text-xxs text-gray-400 truncate leading-relaxed">
           {isSubtaskTransition
             ? '✓ 上一阶段已完成，继续往下走'
             : <>✓ 刚完成：<span className="text-emerald-500">{currentMicroTask}</span></>}
@@ -1120,7 +1141,7 @@ function FocusDynamicBar({
             onKeyDown={(e) => { if (e.key === 'Enter') handleContinue() }}
             placeholder="比如：先读第 1 题…"
             maxLength={50}
-            className="flex-1 px-3.5 py-2 text-xs rounded-xl border border-gray-200
+            className="flex-1 px-3.5 py-2 text-xs rounded-lg border border-gray-200
                        focus:border-emerald-400 focus:ring-1 focus:ring-emerald-100
                        outline-none bg-gray-50 focus:bg-white transition-all"
           />
@@ -1141,20 +1162,20 @@ function FocusDynamicBar({
         {/* AI 快捷接力区 —— 点一下直接开始，不用再确认 */}
         <div className="flex flex-col gap-1.5 min-h-[24px]">
           {loadingChips && (
-            <span className="text-[10px] text-gray-400 flex items-center gap-1.5">
+            <span className="text-2xs text-gray-400 flex items-center gap-1.5">
               <span className="w-3 h-3 border-[1.5px] border-gray-300 border-t-emerald-400 rounded-full animate-spin" />
               AI 在帮你想…
             </span>
           )}
           {!loadingChips && chips.length > 0 && (
             <>
-              <p className="text-[10px] text-gray-400">也可以直接接这个：</p>
+              <p className="text-2xs text-gray-400">也可以直接接这个：</p>
               <div className="flex flex-wrap gap-2">
                 {chips.map((chip, i) => (
                   <button
                     key={i}
                     onClick={() => onNextMicro(chip.action)}
-                    className="text-[11px] px-3 py-1.5 rounded-xl
+                    className="text-xxs px-3 py-1.5 rounded-xl
                                bg-emerald-500 text-white border border-emerald-500
                                hover:bg-emerald-600 hover:border-emerald-600
                                shadow-sm shadow-emerald-200/50
@@ -1173,7 +1194,7 @@ function FocusDynamicBar({
       <div className="no-drag px-4 pb-2.5 pt-1.5 border-t border-gray-100/60 flex items-center gap-1">
         <button
           onClick={onPause}
-          className="px-2 py-1 rounded-lg text-[11px] text-gray-400 whitespace-nowrap
+          className="px-2 py-1 rounded-lg text-xxs text-gray-400 whitespace-nowrap
                      hover:bg-gray-100 hover:text-gray-600
                      active:scale-95 transition-all"
           title="暂停当前任务，切换到其他任务"
@@ -1183,7 +1204,7 @@ function FocusDynamicBar({
         {currentSubtaskId && (
           <button
             onClick={onSubtaskDone}
-            className="px-2 py-1 rounded-lg text-[11px] text-gray-400 whitespace-nowrap
+            className="px-2 py-1 rounded-lg text-xxs text-gray-400 whitespace-nowrap
                        hover:bg-indigo-50 hover:text-indigo-500
                        active:scale-95 transition-all"
           >
@@ -1193,7 +1214,7 @@ function FocusDynamicBar({
         <div className="flex-1" />
         <button
           onClick={onEnterFlow}
-          className="px-2 py-1 rounded-lg text-[11px] text-gray-400 whitespace-nowrap
+          className="px-2 py-1 rounded-lg text-xxs text-gray-400 whitespace-nowrap
                      hover:bg-violet-50 hover:text-violet-500
                      active:scale-95 transition-all"
         >
@@ -1204,7 +1225,7 @@ function FocusDynamicBar({
             triggerEffect(e.currentTarget)
             onTaskDone()
           }}
-          className="px-2 py-1 rounded-lg text-[11px] text-gray-400 whitespace-nowrap
+          className="px-2 py-1 rounded-lg text-xxs text-gray-400 whitespace-nowrap
                      hover:bg-emerald-50 hover:text-emerald-500
                      active:scale-95 transition-all"
         >
@@ -1251,10 +1272,10 @@ function QuickFocusWidget({ session, onTaskDone, onExit }: QuickFocusWidgetProps
       {/* 第一行：专注中 + 计时器 */}
       <div className="flex items-center">
         <div className="w-[48px] flex-shrink-0" />
-        <p className="flex-1 text-[14px] text-emerald-600 font-semibold text-center leading-snug">
+        <p className="flex-1 text-sm text-emerald-600 font-semibold text-center leading-snug">
           🟢 专注中...
         </p>
-        <span className="w-[48px] text-[11px] text-gray-400 font-mono text-right flex-shrink-0
+        <span className="w-[48px] text-xxs text-gray-400 font-mono text-right flex-shrink-0
                          bg-gray-100/80 px-1.5 py-0.5 rounded-md">{timeStr}</span>
       </div>
       {/* 第二行：做完了 + 退出 */}
@@ -1273,7 +1294,7 @@ function QuickFocusWidget({ session, onTaskDone, onExit }: QuickFocusWidgetProps
         <div className="w-[60px] flex items-center justify-end flex-shrink-0">
           <button
             onClick={onExit}
-            className="no-drag text-[11px] text-gray-400
+            className="no-drag text-xxs text-gray-400
                        hover:text-red-500 active:scale-95 transition-all whitespace-nowrap"
             title="退出专注"
           >

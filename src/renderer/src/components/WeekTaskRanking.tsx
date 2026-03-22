@@ -71,18 +71,18 @@ export default function WeekTaskRanking({ days }: Props) {
           <div key={`${item.date}-${item.title}-${i}`}>
             {/* 主行 */}
             <div
-              className={`flex items-center gap-2 ${hasStuck ? 'cursor-pointer' : ''}`}
+              className={`flex items-center gap-2.5 ${hasStuck ? 'cursor-pointer' : ''}`}
               onClick={() => hasStuck && setExpandedIdx(isExpanded ? -1 : i)}
             >
               {/* 任务名 */}
-              <span className="text-[11px] text-gray-600 w-[90px] text-right flex-shrink-0 leading-tight break-words truncate"
+              <span className="text-xxs text-gray-600 w-[100px] text-right flex-shrink-0 leading-tight break-words truncate"
                 title={item.title}
               >
                 {item.title}
               </span>
 
               {/* 条形 + 卡顿标记 */}
-              <div className="flex-1 h-[20px] rounded-lg overflow-hidden relative">
+              <div className="flex-1 h-[22px] rounded-lg overflow-hidden relative">
                 <div
                   className="h-full rounded-lg transition-all duration-700 ease-out relative overflow-hidden bg-blue-400/80"
                   style={{ width: `${barWidthPct}%` }}
@@ -94,7 +94,7 @@ export default function WeekTaskRanking({ days }: Props) {
                     return (
                       <span
                         key={mi}
-                        className="absolute top-0 h-full w-[6px] z-10 bg-red-400/90"
+                        className="absolute top-0 h-full w-[8px] z-10 bg-red-400/90"
                         style={{ left: `${pct}%`, transform: 'translateX(-50%)' }}
                         title={`卡在：${mark.microAction}\n原因：${mark.reason}`}
                       />
@@ -102,20 +102,20 @@ export default function WeekTaskRanking({ days }: Props) {
                   })}
                 </div>
                 {hasStuck && (
-                  <span className="absolute -right-3.5 top-1/2 -translate-y-1/2 text-[8px] text-gray-400 select-none">
+                  <span className="absolute -right-4 top-1/2 -translate-y-1/2 text-3xs text-gray-400 select-none">
                     {isExpanded ? '▲' : '▼'}
                   </span>
                 )}
               </div>
 
               {/* 时长 */}
-              <span className="text-[11px] text-gray-500 w-[38px] flex-shrink-0 text-right font-mono">
-                {item.durationSec >= 60 ? `${item.durationMin}m` : `${item.durationSec}s`}
+              <span className="text-xxs text-gray-500 w-[44px] flex-shrink-0 text-right font-mono">
+                {item.durationSec >= 60 ? `${item.durationMin} min` : `${item.durationSec}s`}
               </span>
 
               {/* 日期小标签 */}
               <span
-                className="text-[9px] text-gray-400 bg-gray-100 rounded px-1 py-0.5 flex-shrink-0 cursor-default"
+                className="text-3xs text-gray-400 bg-gray-100 rounded px-1 py-0.5 flex-shrink-0 cursor-default"
                 title={item.dateFull}
               >
                 {item.dateLabel}
@@ -124,11 +124,11 @@ export default function WeekTaskRanking({ days }: Props) {
 
             {/* 展开：卡顿详情 */}
             {isExpanded && hasStuck && (
-              <div className="ml-[102px] mt-1.5 mb-1 space-y-1">
+              <div className="ml-[112px] mt-1.5 mb-1 space-y-1 animate-in fade-in slide-in-from-top-1 duration-200">
                 {item.stuckMarks!.map((mark, mi) => (
                   <div
                     key={mi}
-                    className="flex items-start gap-2 rounded-md px-2 py-1 text-[10px] bg-red-50/60"
+                    className="flex items-start gap-2 rounded-md px-2.5 py-1.5 text-xxs bg-red-50/60"
                   >
                     <span className="font-mono flex-shrink-0 mt-px text-red-400">
                       {formatOffset(mark.offsetSeconds)}
@@ -153,7 +153,7 @@ export default function WeekTaskRanking({ days }: Props) {
       {hiddenCount > 0 && (
         <button
           onClick={() => { setShowAll(v => !v); setExpandedIdx(-1) }}
-          className="w-full py-1.5 text-[11px] text-indigo-500 hover:text-indigo-700
+          className="w-full py-1.5 text-xxs text-indigo-500 hover:text-indigo-700
                      hover:bg-indigo-50 rounded-lg transition-colors"
         >
           {showAll ? '收起' : `展开剩余 ${hiddenCount} 项`}
@@ -163,10 +163,10 @@ export default function WeekTaskRanking({ days }: Props) {
       {/* 图例：仅在有卡顿时显示 */}
       {allTasks.some(d => d.stuckMarks && d.stuckMarks.length > 0) && (
         <div className="flex items-center gap-4 pt-0.5">
-          <span className="flex items-center gap-1.5 text-[10px] text-gray-400">
-            <span className="w-[6px] h-3 rounded-[2px] bg-red-400/90" /> 卡顿
+          <span className="flex items-center gap-1.5 text-2xs text-gray-400">
+            <span className="w-[8px] h-3 rounded-[2px] bg-red-400/90" /> 卡顿
           </span>
-          <span className="text-[10px] text-gray-300">（点击条形查看）</span>
+          <span className="text-2xs text-gray-300">（点击条形查看）</span>
         </div>
       )}
     </div>

@@ -39,7 +39,7 @@ export default function AISettings({ visible, config, onSave, onClose }: AISetti
       <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={onClose} />
 
       {/* 面板 */}
-      <div className="relative z-10 w-[380px] bg-white rounded-2xl shadow-2xl overflow-hidden">
+      <div className="relative z-10 w-[380px] max-h-[85vh] bg-white rounded-2xl shadow-2xl overflow-y-auto">
         {/* 标题 */}
         <div className="px-6 pt-5 pb-3">
           <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
@@ -100,13 +100,13 @@ export default function AISettings({ visible, config, onSave, onClose }: AISetti
         <div className="px-6 py-4 flex items-center justify-end gap-3 border-t border-gray-100">
           <button
             onClick={onClose}
-            className="text-xs text-gray-400 hover:text-gray-600 px-3 py-1.5 rounded-lg transition-colors"
+            className="text-xs text-gray-400 hover:text-gray-600 px-3 py-1.5 rounded-xl transition-colors"
           >
             取消
           </button>
           <button
             onClick={handleSave}
-            className="px-4 py-2 rounded-lg bg-violet-500 text-white text-sm font-semibold
+            className="px-4 py-2 rounded-xl bg-violet-500 text-white text-sm font-semibold
                        hover:bg-violet-600 active:scale-95 shadow-md shadow-violet-200/50 transition-all"
           >
             保存

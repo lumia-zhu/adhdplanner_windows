@@ -238,7 +238,7 @@ export default function WeekHeatmapGrid({ days }: Props) {
   return (
     <div className="space-y-2">
       {/* 图例 */}
-      <div className="flex items-center gap-3 text-[10px] text-gray-400">
+      <div className="flex items-center gap-3 text-2xs text-gray-400">
         <span>每小时活跃占比：</span>
         {LEVEL_BG.map((c, i) => (
           <div key={i} className="flex items-center gap-1">
@@ -262,7 +262,7 @@ export default function WeekHeatmapGrid({ days }: Props) {
               >
                 {/* 左侧日期标签 */}
                 <span
-                  className="text-[10px] text-gray-500 w-[80px] flex-shrink-0 text-right tabular-nums"
+                  className="text-2xs text-gray-500 w-[80px] flex-shrink-0 text-right tabular-nums"
                   title={dl.dateFull}
                 >
                   {dl.dateLabel} {dl.weekdayShort}
@@ -295,12 +295,15 @@ export default function WeekHeatmapGrid({ days }: Props) {
               {isExpanded && expandedTaskEntries && (
                 <div className="mt-0.5 mb-1.5 space-y-0.5 animate-in fade-in slide-in-from-top-1 duration-200">
                   {expandedTaskEntries.length === 0 ? (
-                    <p className="text-[10px] text-gray-400 py-1 pl-[86px]">当天暂无任务数据</p>
+                    <div className="flex items-center gap-1.5 px-1 py-1">
+                      <span className="w-[80px] flex-shrink-0" />
+                      <p className="text-2xs text-gray-400">当天暂无任务数据</p>
+                    </div>
                   ) : (
                     expandedTaskEntries.map((task) => (
                       <div key={task.title} className="flex items-center gap-1.5 px-1">
                         {/* 和主行日期标签同宽，确保格子对齐 */}
-                        <span className="text-[10px] text-gray-600 font-medium truncate w-[80px] flex-shrink-0 text-right" title={task.title}>
+                        <span className="text-2xs text-gray-600 font-medium truncate w-[80px] flex-shrink-0 text-right" title={task.title}>
                           {task.title}
                         </span>
                         <div className="flex gap-[1px] flex-1 min-w-0">
@@ -329,23 +332,27 @@ export default function WeekHeatmapGrid({ days }: Props) {
         })}
       </div>
 
-      {/* 底部时间刻度（动态） */}
-      <div className="relative w-full h-4 ml-[86px]" style={{ width: 'calc(100% - 100px)' }}>
-        {timeTicks.map((h) => {
-          const pct = ((h - rangeStart) / visibleSpan) * 100
-          return (
-            <span
-              key={h}
-              className="absolute text-[9px] text-gray-400 tabular-nums"
-              style={{
-                left: `${pct}%`,
-                transform: pct === 0 ? 'none' : pct >= 100 ? 'translateX(-100%)' : 'translateX(-50%)',
-              }}
-            >
-              {fmtHour(h)}
-            </span>
-          )
-        })}
+      {/* 底部时间刻度（与网格行使用相同的 flex 布局，确保对齐） */}
+      <div className="flex items-center gap-1.5 px-1">
+        <span className="w-[80px] flex-shrink-0" />
+        <div className="flex-1 relative h-4">
+          {timeTicks.map((h) => {
+            const pct = ((h - rangeStart) / visibleSpan) * 100
+            return (
+              <span
+                key={h}
+                className="absolute text-3xs text-gray-400 tabular-nums"
+                style={{
+                  left: `${pct}%`,
+                  transform: pct === 0 ? 'none' : pct >= 100 ? 'translateX(-100%)' : 'translateX(-50%)',
+                }}
+              >
+                {fmtHour(h)}
+              </span>
+            )
+          })}
+        </div>
+        <span className="w-3 flex-shrink-0" />
       </div>
     </div>
   )

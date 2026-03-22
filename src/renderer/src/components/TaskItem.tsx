@@ -445,7 +445,7 @@ export default function TaskItem({ task, onToggleSubtask, onEdit, onDelete, onFo
 
               {/* 编辑状态下的保存提示 */}
               {editingSubtaskId === sub.id && (
-                <span className="text-[10px] text-indigo-400 flex-shrink-0 select-none">Enter ✓</span>
+                <span className="text-2xs text-indigo-400 flex-shrink-0 select-none">Enter ✓</span>
               )}
             </div>
           ))}

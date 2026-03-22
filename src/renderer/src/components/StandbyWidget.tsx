@@ -204,7 +204,7 @@ export default function StandbyWidget({
         {/* 头部：任务名 + 关闭 */}
         <div className="drag-region flex items-center gap-2 px-4 pt-3.5 pb-2">
           <div className="no-drag flex-1 min-w-0">
-            <p className="text-[10px] text-emerald-500 font-semibold uppercase tracking-wider">
+            <p className="text-2xs text-emerald-500 font-semibold uppercase tracking-wider">
               🎯 即将开始
             </p>
             <p className="text-sm font-bold text-gray-800 truncate mt-0.5">
@@ -275,14 +275,14 @@ export default function StandbyWidget({
             >
               <span className="text-xs text-emerald-700 font-medium">▶ {chip.action}</span>
               {chip.note && (
-                <span className="block text-[10px] text-emerald-500/70 mt-0.5 leading-snug">
+                <span className="block text-2xs text-emerald-500/70 mt-0.5 leading-snug">
                   {chip.note}
                 </span>
               )}
             </button>
           ))}
           {!loadingChips && chipError && (
-            <span className="text-[10px] text-red-400">⚠️ AI 暂不可用</span>
+            <span className="text-2xs text-red-400">⚠️ AI 暂不可用</span>
           )}
         </div>
 
@@ -290,13 +290,13 @@ export default function StandbyWidget({
         <div className="mt-auto px-4 pb-3 flex justify-between items-center">
           <button
             onClick={handleSkipFirstStep}
-            className="no-drag text-[11px] text-emerald-500 hover:text-emerald-700 transition-colors"
+            className="no-drag text-xxs text-emerald-500 hover:text-emerald-700 transition-colors"
           >
             跳过，直接开始 →
           </button>
           <button
             onClick={closeFirstStep}
-            className="no-drag text-[11px] text-gray-400 hover:text-gray-600 transition-colors"
+            className="no-drag text-xxs text-gray-400 hover:text-gray-600 transition-colors"
           >
             取消 (Esc)
           </button>
@@ -323,17 +323,17 @@ export default function StandbyWidget({
           <div className="flex-1 min-w-0">
             {currentTask ? (
               <>
-                <div className="text-[13px] font-semibold text-gray-800 truncate">
+                <div className="text-s font-semibold text-gray-800 truncate">
                   {currentTask.title}
                 </div>
                 {isPaused && (
-                  <div className="text-[11px] text-gray-400 truncate mt-0.5">
+                  <div className="text-xxs text-gray-400 truncate mt-0.5">
                     上次停在：{currentTask.pausedSession?.currentMicroTask}
                   </div>
                 )}
               </>
             ) : (
-              <div className="text-[13px] text-gray-400">还没有任务</div>
+              <div className="text-s text-gray-400">还没有任务</div>
             )}
           </div>
           {/* 下拉箭头（有多个任务时才显示） */}
@@ -402,7 +402,7 @@ export default function StandbyWidget({
                   {task.title}
                 </span>
                 {taskIsPaused && (
-                  <span className="text-[10px] text-amber-500 flex-shrink-0">暂停中</span>
+                  <span className="text-2xs text-amber-500 flex-shrink-0">暂停中</span>
                 )}
               </button>
             )

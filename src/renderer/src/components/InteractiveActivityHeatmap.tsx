@@ -249,7 +249,7 @@ export default function InteractiveActivityHeatmap({ data, events }: Props) {
     <div className="relative select-none">
 
       {/* ======== 图例 ======== */}
-      <div className="flex items-center gap-3 mb-2.5 text-[10px] text-gray-400">
+      <div className="flex items-center gap-3 mb-2.5 text-2xs text-gray-400">
         <span>每小时活跃占比：</span>
         {LEVEL_COLORS.map((c, i) => (
           <div key={i} className="flex items-center gap-1">
@@ -291,7 +291,7 @@ export default function InteractiveActivityHeatmap({ data, events }: Props) {
           return (
             <span
               key={h}
-              className="absolute text-[9px] text-gray-400 tabular-nums"
+              className="absolute text-3xs text-gray-400 tabular-nums"
               style={{
                 left: `${pct}%`,
                 transform: pct === 0 ? 'none' : pct >= 100 ? 'translateX(-100%)' : 'translateX(-50%)',
@@ -308,7 +308,7 @@ export default function InteractiveActivityHeatmap({ data, events }: Props) {
         <div className="mt-3 space-y-1.5">
           {taskEntries.map((task) => (
             <div key={task.title} className="flex items-center gap-2">
-              <span className="text-[11px] text-gray-600 font-medium truncate w-[80px] flex-shrink-0" title={task.title}>
+              <span className="text-xxs text-gray-600 font-medium truncate w-[80px] flex-shrink-0" title={task.title}>
                 {task.title}
               </span>
               <div className="flex gap-[2px] flex-1 min-w-0">
@@ -345,7 +345,7 @@ export default function InteractiveActivityHeatmap({ data, events }: Props) {
       {/* ======== 悬浮提示 ======== */}
       {tooltip && (
         <div
-          className="fixed z-50 px-2.5 py-1.5 rounded-lg bg-gray-800 text-white text-[10px]
+          className="fixed z-50 px-2.5 py-1.5 rounded-lg bg-gray-800 text-white text-2xs
                      shadow-lg pointer-events-none whitespace-nowrap"
           style={{
             left: tooltip.x,

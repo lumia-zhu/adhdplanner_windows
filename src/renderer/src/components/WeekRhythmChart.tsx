@@ -184,7 +184,7 @@ export default function WeekRhythmChart({ days }: Props) {
       {/* 顶部：高峰 + 选择按钮 */}
       <div className="flex items-center justify-between mb-2">
         {peakHour.val > 0 && (
-          <p className="text-[11px] text-gray-500">
+          <p className="text-xxs text-gray-500">
             🌟 周平均使用高峰：<span className="font-semibold text-emerald-600">{peakHour.hour}:00</span>
             <span className="text-gray-400 ml-1">（{Math.round(peakHour.val)}% 活跃度）</span>
           </p>
@@ -192,7 +192,7 @@ export default function WeekRhythmChart({ days }: Props) {
         <div className="relative" ref={dropdownRef}>
           <button
             onClick={() => setDropdownOpen(v => !v)}
-            className={`text-[10px] px-2 py-1 rounded-md border transition-colors
+            className={`text-2xs px-2 py-1 rounded-md border transition-colors
               ${selectedDates.length > 0
                 ? 'border-indigo-300 bg-indigo-50 text-indigo-600'
                 : 'border-gray-200 text-gray-500 hover:bg-gray-50'
@@ -216,7 +216,7 @@ export default function WeekRhythmChart({ days }: Props) {
                     key={d.date}
                     onClick={() => !isDisabled && toggleDate(d.date)}
                     disabled={isDisabled}
-                    className={`w-full flex items-center gap-2 px-3 py-1.5 text-[11px] text-left transition-colors
+                    className={`w-full flex items-center gap-2 px-3 py-1.5 text-xxs text-left transition-colors
                       ${isDisabled ? 'text-gray-300 cursor-not-allowed' : 'hover:bg-gray-50'}
                       ${isSelected ? 'bg-indigo-50' : ''}`}
                   >
@@ -235,12 +235,12 @@ export default function WeekRhythmChart({ days }: Props) {
                     <span className={isSelected ? 'text-gray-700 font-medium' : 'text-gray-600'}>
                       {d.dateLabel} {d.weekdayShort}
                     </span>
-                    {!d.hasData && <span className="text-[9px] text-gray-300 ml-auto">无数据</span>}
+                    {!d.hasData && <span className="text-3xs text-gray-300 ml-auto">无数据</span>}
                   </button>
                 )
               })}
               {selectedDates.length >= MAX_COMPARE && (
-                <p className="text-[9px] text-amber-500 px-3 py-1 border-t border-gray-100">
+                <p className="text-3xs text-amber-500 px-3 py-1 border-t border-gray-100">
                   最多同时对比 {MAX_COMPARE} 天
                 </p>
               )}
@@ -380,12 +380,12 @@ export default function WeekRhythmChart({ days }: Props) {
 
       {/* 图例 */}
       <div className="flex items-center gap-3 mt-1.5 flex-wrap">
-        <span className="flex items-center gap-1 text-[10px] text-gray-400">
+        <span className="flex items-center gap-1 text-2xs text-gray-400">
           <span className={`inline-block w-4 h-[2px] ${hasCompare ? 'border-t border-dashed border-gray-400' : 'bg-emerald-500 rounded'}`} />
           周平均
         </span>
         {compareLines.map(cl => (
-          <span key={cl.date} className="flex items-center gap-1 text-[10px] text-gray-500">
+          <span key={cl.date} className="flex items-center gap-1 text-2xs text-gray-500">
             <span className="inline-block w-4 h-[2px] rounded" style={{ backgroundColor: cl.color }} />
             {cl.label}
           </span>
@@ -393,7 +393,7 @@ export default function WeekRhythmChart({ days }: Props) {
       </div>
 
       {/* y 轴说明 */}
-      <p className="text-[10px] text-gray-400 mt-1 text-center">
+      <p className="text-2xs text-gray-400 mt-1 text-center">
         纵轴：每小时活跃占比 · 横轴：时间
       </p>
     </div>

@@ -55,7 +55,7 @@ export default function DayTimeline({ entries }: DayTimelineProps) {
               {/* 时间轴节点 */}
               <div
                 className={`absolute -left-6 top-1.5 w-[22px] h-[22px] rounded-full border-2 ${cfg.border} ${cfg.bg}
-                            flex items-center justify-center text-[10px] z-10`}
+                            flex items-center justify-center text-2xs z-10`}
               >
                 {cfg.icon}
               </div>
@@ -63,11 +63,11 @@ export default function DayTimeline({ entries }: DayTimelineProps) {
               {/* 内容卡片 */}
               <div className={`flex-1 ${cfg.bg} border ${cfg.border} rounded-lg px-3 py-2`}>
                 <div className="flex items-center gap-2">
-                  <span className="text-[10px] text-gray-400 font-mono flex-shrink-0">
+                  <span className="text-2xs text-gray-400 font-mono flex-shrink-0">
                     {entry.time}
                   </span>
                   {entry.durationMin != null && (
-                    <span className="text-[10px] text-gray-300">
+                    <span className="text-2xs text-gray-300">
                       ({entry.durationMin}分钟)
                     </span>
                   )}

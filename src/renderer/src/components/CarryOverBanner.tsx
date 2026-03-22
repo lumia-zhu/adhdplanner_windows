@@ -88,7 +88,7 @@ export default function CarryOverBanner({ fromDate, tasks, onCarryOver, onDismis
           <button
             onClick={handleConfirm}
             disabled={selectedIds.size === 0}
-            className="text-xs font-medium px-3 py-1.5 rounded-lg
+            className="text-xs font-medium px-3 py-1.5 rounded-xl
                        bg-amber-500 hover:bg-amber-600 active:scale-95
                        text-white disabled:opacity-40 disabled:cursor-not-allowed
                        transition-all duration-150"

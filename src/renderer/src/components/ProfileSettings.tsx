@@ -263,7 +263,7 @@ export default function ProfileSettings({ visible, profile, onSave, onClose }: P
         {/* 底部按钮 */}
         <div className="relative px-6 py-4 flex items-center justify-end gap-3 border-t border-gray-200 bg-gray-50/50">
           {/* 分割线上的滚动提示 */}
-          <span className="absolute -top-2.5 left-1/2 -translate-x-1/2 px-2 bg-white text-[10px] text-gray-400 whitespace-nowrap">
+          <span className="absolute -top-2.5 left-1/2 -translate-x-1/2 px-2 bg-white text-2xs text-gray-400 whitespace-nowrap">
             ↕ 滚动查看更多
           </span>
           <button

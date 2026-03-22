@@ -5,6 +5,14 @@
  * 中心显示百分比数字，圆环用颜色区分完成/未完成
  */
 
+const COLORS = {
+  high:    '#10b981',  // Tailwind emerald-500 —— 完成率 ≥ 80%
+  mid:     '#f59e0b',  // Tailwind amber-500   —— 完成率 50%~79%
+  low:     '#f97316',  // Tailwind orange-500  —— 完成率 20%~49%
+  danger:  '#ef4444',  // Tailwind red-500     —— 完成率 < 20%
+  track:   '#f3f4f6',  // Tailwind gray-100    —— 背景轨道
+} as const
+
 interface DonutChartProps {
   /** 完成率 0-100 */
   percentage: number
@@ -26,12 +34,11 @@ export default function DonutChart({
   const circumference = 2 * Math.PI * radius
   const offset = circumference * (1 - Math.min(Math.max(percentage, 0), 100) / 100)
 
-  // 根据完成率选颜色
   const color =
-    percentage >= 80 ? '#10b981' :   // emerald-500
-    percentage >= 50 ? '#f59e0b' :   // amber-500
-    percentage >= 20 ? '#f97316' :   // orange-500
-    '#ef4444'                        // red-500
+    percentage >= 80 ? COLORS.high :
+    percentage >= 50 ? COLORS.mid :
+    percentage >= 20 ? COLORS.low :
+    COLORS.danger
 
   return (
     <div className="flex flex-col items-center gap-2">
@@ -43,7 +50,7 @@ export default function DonutChart({
             cy={size / 2}
             r={radius}
             fill="none"
-            stroke="#f3f4f6"
+            stroke={COLORS.track}
             strokeWidth={strokeWidth}
           />
           {/* 进度圆 */}
@@ -67,14 +74,14 @@ export default function DonutChart({
         <div className="absolute inset-0 flex flex-col items-center justify-center">
           <span
             className="font-bold text-gray-800 leading-none"
-            style={{ fontSize: size * 0.22 }}
+            style={{ fontSize: Math.max(size * 0.22, 14) }}
           >
             {Math.round(percentage)}%
           </span>
           {label && (
             <span
               className="text-gray-400 mt-1"
-              style={{ fontSize: size * 0.08 }}
+              style={{ fontSize: Math.max(size * 0.08, 10) }}
             >
               {label}
             </span>

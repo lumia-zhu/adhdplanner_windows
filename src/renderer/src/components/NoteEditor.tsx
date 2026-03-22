@@ -456,9 +456,9 @@ export default function NoteEditor({
                 {/* 日期文字（点击弹出日历） */}
                 <button
                   onClick={() => setCalendarOpen(v => !v)}
-                  className={`text-[13.5px] font-semibold tracking-wide px-2 py-0.5 rounded-lg
+                  className={`text-s font-semibold tracking-wide px-2 py-0.5 rounded-lg
                               transition-all hover:bg-indigo-50 active:scale-95 ${
-                    isToday ? 'text-gray-500/80' : 'text-indigo-500'
+                    isToday ? 'text-gray-600' : 'text-indigo-500'
                   }`}
                   title="点击选择日期"
                 >
@@ -503,11 +503,11 @@ export default function NoteEditor({
               {/* 问候语 / 历史日期提示 */}
               <div className="mt-1 flex items-center justify-center gap-2">
                 {isToday ? (
-                  <p className="text-[11px] text-gray-300">{getGreeting()}</p>
+                  <p className="text-xs text-gray-300">{getGreeting()}</p>
                 ) : (
                   <button
                     onClick={onGoToday}
-                    className="text-[11px] text-indigo-400 hover:text-indigo-600 transition-colors"
+                    className="text-xs text-indigo-400 hover:text-indigo-600 transition-colors"
                   >
                     ← 回到今天
                   </button>
@@ -523,9 +523,9 @@ export default function NoteEditor({
                 </p>
                 {isToday && (
                   <p className="text-gray-300 text-xs mt-1.5">
-                    按 <kbd className="px-1 py-0.5 bg-gray-100 rounded text-gray-400 text-[10px]">Enter</kbd> 添加
+                    按 <kbd className="px-1 py-0.5 bg-gray-100 rounded text-gray-400 text-2xs">Enter</kbd> 添加
                     {' · '}
-                    按 <kbd className="px-1 py-0.5 bg-gray-100 rounded text-gray-400 text-[10px]">Tab</kbd> 创建子任务
+                    按 <kbd className="px-1 py-0.5 bg-gray-100 rounded text-gray-400 text-2xs">Tab</kbd> 创建子任务
                   </p>
                 )}
               </div>
@@ -564,7 +564,7 @@ export default function NoteEditor({
                 // 与上方任务文本列对齐：普通任务约 52px，子任务约 74px
                 newLineIndented ? 'ml-[74px]' : 'ml-[52px]'
               }`}>
-                <div className="flex items-center py-[5px] gap-1">
+                <div className="flex items-center py-[5px] gap-2">
                   <input
                     ref={newLineRef}
                     type="text"
@@ -595,33 +595,37 @@ export default function NoteEditor({
                     }
                     className={`flex-1 bg-transparent outline-none placeholder-gray-300/70 ${
                       newLineIndented
-                        ? 'text-[13px] text-gray-600'
-                        : 'text-[15px] font-medium text-gray-800'
+                        ? 'text-s text-gray-600'
+                        : 'text-md font-medium text-gray-800'
                     }`}
                   />
                   {/* ★ ▶ 一键开始按钮：输入文字后出现，点击 = 创建任务 + 立即进入专注 */}
                   {!newLineIndented && newLineText.trim() && onCreateAndFocus && (
-                    <button
-                      onMouseDown={(e) => e.preventDefault()}  /* 阻止输入框失焦，避免 onBlur 重复创建 */
-                      onClick={() => {
-                        const trimmed = newLineText.trim()
-                        if (trimmed) {
-                          onCreateAndFocus(trimmed)
-                          setNewLineText('')
-                          setNewLineIndented(false)
-                        }
-                      }}
-                      className="w-7 h-7 rounded-lg flex items-center justify-center
-                                 bg-emerald-50 text-emerald-500 border border-emerald-200
-                                 hover:bg-emerald-500 hover:text-white hover:border-emerald-500
-                                 hover:shadow-sm hover:shadow-emerald-200/50
-                                 active:scale-90 transition-all flex-shrink-0"
-                      title="创建并立即专注"
-                    >
-                      <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor">
-                        <path d="M8 5v14l11-7z" />
-                      </svg>
-                    </button>
+                    <>
+                      <button
+                        onMouseDown={(e) => e.preventDefault()}  /* 阻止输入框失焦，避免 onBlur 重复创建 */
+                        onClick={() => {
+                          const trimmed = newLineText.trim()
+                          if (trimmed) {
+                            onCreateAndFocus(trimmed)
+                            setNewLineText('')
+                            setNewLineIndented(false)
+                          }
+                        }}
+                        className="w-7 h-7 rounded-lg flex items-center justify-center
+                                   bg-emerald-50 text-emerald-500 border border-emerald-200
+                                   hover:bg-emerald-500 hover:text-white hover:border-emerald-500
+                                   hover:shadow-sm hover:shadow-emerald-200/50
+                                   active:scale-90 transition-all flex-shrink-0"
+                        title="创建并立即专注"
+                      >
+                        <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor">
+                          <path d="M8 5v14l11-7z" />
+                        </svg>
+                      </button>
+                      {/* 占位：与 LineRow 中的删除按钮宽度一致，保证 ▶ 按钮水平对齐 */}
+                      <div className="w-8 flex-shrink-0" />
+                    </>
                   )}
                 </div>
                 {/* 快捷键提示：仅在聚焦且输入为空时显示 */}
@@ -630,7 +634,7 @@ export default function NoteEditor({
                     ? 'max-h-6 opacity-100'
                     : 'max-h-0 opacity-0'
                 }`}>
-                  <p className="text-[11px] text-gray-300 pl-7 pb-1">
+                  <p className="text-xxs text-gray-300 pl-7 pb-1">
                     {tasks.length === 0
                       ? 'Enter 添加'
                       : newLineIndented
@@ -648,7 +652,7 @@ export default function NoteEditor({
                 {/* 分隔线 */}
                 <div className="flex items-center gap-3 my-3 select-none">
                   <div className="flex-1 h-px bg-gray-200/70" />
-                  <span className="text-[11px] text-gray-300 whitespace-nowrap">
+                  <span className="text-xxs text-gray-300 whitespace-nowrap">
                     ✅ 已完成 {completedTasks.length} 项
                   </span>
                   <div className="flex-1 h-px bg-gray-200/70" />
@@ -760,7 +764,7 @@ function TaskBlock({
       {/* 备注 */}
       {task.note && (
         <div className="ml-[52px] -mt-1 mb-0.5 pb-1">
-          <span className="text-[11px] text-gray-400 italic leading-tight">{task.note}</span>
+          <span className="text-xxs text-gray-400 italic leading-tight">{task.note}</span>
         </div>
       )}
       {/* 暂停态：点击恢复 */}
@@ -775,7 +779,7 @@ function TaskBlock({
             <svg className="w-3 h-3 text-blue-400 group-hover:text-white transition-colors" viewBox="0 0 20 20" fill="currentColor">
               <path d="M6.3 2.84A1.5 1.5 0 004 4.11v11.78a1.5 1.5 0 002.3 1.27l9.344-5.891a1.5 1.5 0 000-2.538L6.3 2.84z" />
             </svg>
-            <span className="text-[10px] text-blue-500 group-hover:text-white font-medium transition-colors">继续</span>
+            <span className="text-xxs text-blue-500 group-hover:text-white transition-colors">继续</span>
           </button>
         </div>
       )}
@@ -894,8 +898,8 @@ function LineRow({
         placeholder={isSub ? '子任务…' : '新任务…'}
         className={`flex-1 bg-transparent outline-none min-w-0 ${
           isSub
-            ? 'text-[13px] leading-snug'
-            : 'text-[15px] font-medium leading-snug'
+            ? 'text-s leading-snug'
+            : 'text-md font-medium leading-snug'
         } ${
           completed
             ? 'line-through text-gray-400 decoration-gray-300'
@@ -926,7 +930,7 @@ function LineRow({
       {/* ---- 删除按钮 ---- */}
       {showDeleteConfirm ? (
         <div className="flex items-center gap-1 flex-shrink-0">
-          <span className="text-[10px] text-red-400 mr-0.5">确定?</span>
+          <span className="text-2xs text-red-400 mr-0.5">确定?</span>
           <button
             onClick={onDelete}
             className="w-5 h-5 rounded-md bg-red-500 flex items-center justify-center text-white transition-colors hover:bg-red-600"

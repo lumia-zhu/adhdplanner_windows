@@ -349,7 +349,7 @@ export default function FocusFlow({ task, aiConfig, onStart, onCancel }: FocusFl
         {ENABLE_TASK_UNDERSTANDING && phase === 'understanding' && (
           <div className="px-6 py-5">
             {/* 阶段提示 */}
-            <p className="text-[11px] text-gray-400 mb-3">
+            <p className="text-xxs text-gray-400 mb-3">
               💭 在开始之前，先想一下：
             </p>
 
@@ -358,7 +358,7 @@ export default function FocusFlow({ task, aiConfig, onStart, onCancel }: FocusFl
               <div className="mb-3 space-y-2">
                 {reflectionHistory.map((entry, i) => (
                   <div key={i} className="bg-gray-50 rounded-xl px-3.5 py-2.5">
-                    <p className="text-[11px] text-gray-400 leading-relaxed">{entry.question}</p>
+                    <p className="text-xxs text-gray-400 leading-relaxed">{entry.question}</p>
                     <p className="text-xs text-gray-600 mt-1 leading-relaxed">{entry.answer}</p>
                   </div>
                 ))}
@@ -439,9 +439,9 @@ export default function FocusFlow({ task, aiConfig, onStart, onCancel }: FocusFl
             {/* 如果有 understanding 上下文，显示一个轻提示 */}
             {reflectionHistory.length > 0 && (
               <div className="mb-3 bg-emerald-50/60 rounded-xl px-3.5 py-2 border border-emerald-100/80">
-                <p className="text-[10px] text-emerald-500 font-medium mb-1">💭 你刚才的思考</p>
+                <p className="text-2xs text-emerald-500 font-medium mb-1">💭 你刚才的思考</p>
                 {reflectionHistory.map((entry, i) => (
-                  <p key={i} className="text-[11px] text-gray-500 leading-relaxed truncate">
+                  <p key={i} className="text-xxs text-gray-500 leading-relaxed truncate">
                     {entry.question} → <span className="text-gray-600">{entry.answer}</span>
                   </p>
                 ))}
@@ -510,7 +510,7 @@ export default function FocusFlow({ task, aiConfig, onStart, onCancel }: FocusFl
                 >
                   <span className="text-sm text-emerald-700 font-medium">▶ {chip.action}</span>
                   {chip.note && (
-                    <span className="block text-[11px] text-emerald-500/70 mt-0.5 leading-snug">
+                    <span className="block text-[12px] text-emerald-500/70 mt-0.5 leading-snug">
                       {chip.note}
                     </span>
                   )}
