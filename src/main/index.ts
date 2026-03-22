@@ -70,6 +70,7 @@ function setupIPC(): void {
       if (data.user) {
         setCachedUserId(data.user.id)
         setUserDataDir(data.user.id)
+        migrateRootDataToUser(data.user.id)
         if (data.session) {
           persistSession({
             access_token: data.session.access_token,
@@ -299,6 +300,7 @@ app.whenReady().then(async () => {
   const restored = await restoreSession()
   if (restored) {
     setUserDataDir(restored.id)
+    migrateRootDataToUser(restored.id)
     console.log('[Auth] Auto-login restored for:', restored.email)
   }
 
