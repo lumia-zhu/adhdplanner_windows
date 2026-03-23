@@ -175,6 +175,8 @@ export interface SessionStartedPayload {
   sessionId: string
   taskId: string
   taskTitle: string
+  /** 'manual' 表示用户通过补记功能手动添加，缺省为真实计时 */
+  source?: 'manual'
 }
 
 /** 专注会话结束 */
@@ -184,7 +186,9 @@ export interface SessionEndedPayload {
   taskTitle: string
   totalDurationSeconds: number
   completedMicroSteps: number
-  endReason: 'task_done' | 'exit' | 'abandon' | 'pause'
+  endReason: 'task_done' | 'exit' | 'abandon' | 'pause' | 'manual_entry'
+  /** 'manual' 表示用户通过补记功能手动添加，缺省为真实计时 */
+  source?: 'manual'
 }
 
 /** 专注会话暂停 */

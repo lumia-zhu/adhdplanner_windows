@@ -257,7 +257,7 @@ export function buildDailySummary(date: string, events: TrackEvent[]): DailySumm
  * 把 DailySummary 转为自然语言，直接作为 LLM 的 system context
  * 用于晚间反思对话
  */
-export function summaryToLLMContext(summary: DailySummary): string {
+export function summaryToLLMContext(summary: DailySummary, events?: TrackEvent[]): string {
   const lines: string[] = []
 
   lines.push(`## ${summary.date} 行为日志摘要\n`)
@@ -332,6 +332,34 @@ export function summaryToLLMContext(summary: DailySummary): string {
   if (summary.leftoverTasks.length > 0) {
     lines.push(`\n### 遗留任务`)
     lines.push(`- ${summary.leftoverTasks.join('、')}`)
+  }
+
+  // 补记的任务（用户自述，非实时追踪）
+  if (events) {
+    const manualSessions: { taskTitle: string; durationMin: number; startTime: string }[] = []
+    for (const e of events) {
+      if (e.type === 'session.ended') {
+        const p = e.payload as { taskTitle: string; totalDurationSeconds: number; source?: string }
+        if (p.source === 'manual') {
+          const startEvent = events.find(
+            ev => ev.type === 'session.started' &&
+                  (ev.payload as { sessionId: string }).sessionId ===
+                  (e.payload as { sessionId: string }).sessionId,
+          )
+          manualSessions.push({
+            taskTitle: p.taskTitle,
+            durationMin: Math.round(p.totalDurationSeconds / 60),
+            startTime: startEvent ? new Date(startEvent.timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) : '未知',
+          })
+        }
+      }
+    }
+    if (manualSessions.length > 0) {
+      lines.push(`\n### 用户自述补记（非实时追踪，用户事后回忆添加）`)
+      for (const ms of manualSessions) {
+        lines.push(`- "${ms.taskTitle}"：约 ${ms.durationMin} 分钟（${ms.startTime} 开始）`)
+      }
+    }
   }
 
   // 统计

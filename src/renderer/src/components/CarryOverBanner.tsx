@@ -70,20 +70,21 @@ export default function CarryOverBanner({ groups, onCarryOver, onDismiss }: Carr
 
   if (totalCount === 0) return null
 
-  // -------- 收起态：一行极简提示 --------
+  // -------- 收起态：一行引导式提示 --------
   if (!expanded) {
     return (
-      <div className="flex items-center justify-center gap-2 py-2 select-none">
+      <div className="flex items-center justify-center gap-2 py-2.5 select-none">
         <button
           onClick={() => setExpanded(true)}
-          className="flex items-center gap-1.5 text-xxs text-gray-400 hover:text-amber-600
-                     transition-colors rounded-full px-3 py-1 hover:bg-amber-50/60"
+          className="flex items-center gap-1.5 text-xxs text-amber-600/80 hover:text-amber-700
+                     transition-colors rounded-xl px-3.5 py-2 bg-amber-50/70 hover:bg-amber-50
+                     border border-amber-200/60 hover:border-amber-300/70 hover:shadow-sm"
         >
           <span className="text-sm">📦</span>
           <span>
             {dayCount === 1
-              ? `${dateLabel(groups[0].fromDate)}有 ${totalCount} 个未完成任务`
-              : `最近 ${dayCount} 天有 ${totalCount} 个未完成任务`
+              ? `${dateLabel(groups[0].fromDate)}还有 ${totalCount} 个任务没做完，要继续吗`
+              : `之前有 ${totalCount} 个任务还没做完哦，看看要不要加到今天`
             }
           </span>
           <svg className="w-3 h-3 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -93,7 +94,7 @@ export default function CarryOverBanner({ groups, onCarryOver, onDismiss }: Carr
         <button
           onClick={onDismiss}
           className="text-3xs text-gray-300 hover:text-gray-500 transition-colors px-1"
-          title="不需要，今天不再提示"
+          title="不需要"
         >
           ✕
         </button>
@@ -114,8 +115,8 @@ export default function CarryOverBanner({ groups, onCarryOver, onDismiss }: Carr
           <span className="text-sm">📦</span>
           <span className="font-medium">
             {dayCount === 1
-              ? `${dateLabel(groups[0].fromDate)}有 ${totalCount} 个未完成任务`
-              : `最近 ${dayCount} 天共 ${totalCount} 个未完成任务`
+              ? `${dateLabel(groups[0].fromDate)}还有 ${totalCount} 个没做完`
+              : `之前 ${dayCount} 天共 ${totalCount} 个没做完`
             }
           </span>
           <svg className="w-3 h-3 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -131,7 +132,7 @@ export default function CarryOverBanner({ groups, onCarryOver, onDismiss }: Carr
                        text-white disabled:opacity-40 disabled:cursor-not-allowed
                        transition-all duration-150"
           >
-            搬到今天{selectedIds.size < totalCount && selectedIds.size > 0
+            加到今天{selectedIds.size < totalCount && selectedIds.size > 0
               ? ` (${selectedIds.size})` : ''}
           </button>
           <button

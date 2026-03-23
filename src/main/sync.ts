@@ -60,8 +60,14 @@ async function syncLoop(): Promise<void> {
     for (const key of keys) {
       try {
         await pushToCloud(userId, entity, key)
-      } catch (e) {
-        console.error(`[Sync] Failed to push ${entity}/${key}:`, e)
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : String(e)
+        const isNetwork = msg.includes('fetch') || msg.includes('ECONNR') || msg.includes('network')
+        if (!isNetwork) {
+          console.error(`[Sync] Failed to push ${entity}/${key}:`, msg)
+        } else {
+          console.warn(`[Sync] Network unavailable, will retry ${entity}/${key}`)
+        }
         markDirty(entity, key)
       }
     }

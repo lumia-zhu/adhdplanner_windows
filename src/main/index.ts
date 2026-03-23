@@ -115,10 +115,15 @@ function setupIPC(): void {
   ipcMain.handle('auth:getUser', async () => {
     const userId = getCurrentUserId()
     if (!userId) return { user: null }
-    const { data } = await getSupabase().auth.getUser()
-    if (!data.user) return { user: null }
-    const displayName = (data.user.email ?? '').replace(/@app\.local$/, '')
-    return { user: { id: data.user.id, email: displayName } }
+    try {
+      const { data } = await getSupabase().auth.getUser()
+      if (!data.user) return { user: { id: userId, email: '' } }
+      const displayName = (data.user.email ?? '').replace(/@app\.local$/, '')
+      return { user: { id: data.user.id, email: displayName } }
+    } catch {
+      // 网络不可用时用缓存的 userId
+      return { user: { id: userId, email: '' } }
+    }
   })
 
   // -------- 任务数据 --------

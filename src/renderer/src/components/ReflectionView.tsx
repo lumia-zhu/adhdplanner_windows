@@ -24,6 +24,7 @@ import { getActiveRatio } from './ActivityHeatmap'
 import ActivityRhythmChart from './ActivityRhythmChart'
 import InteractiveActivityHeatmap from './InteractiveActivityHeatmap'
 import ReflectionChat from './ReflectionChat'
+import ManualTimeEntry from './ManualTimeEntry'
 import MiniCalendar from './MiniCalendar'
 import WeekView from './WeekView'
 import type { WeekDayData } from './WeekView'
@@ -489,14 +490,14 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
   // 构建 AI system prompt
   const systemPrompt = useMemo(() => {
     if (!summary) return ''
-    const context = summaryToLLMContext(summary)
+    const context = summaryToLLMContext(summary, events)
     const taskInfo = `\n\n额外信息：\n- 当前任务总数：${tasks.length}\n- 已完成任务：${tasks.filter(t => t.completed).length}\n- 完成率：${completionRate}%\n- 待办任务：${tasks.filter(t => !t.completed).map(t => t.title).join('、') || '无'}`
     const productivityInfo = `\n\n生产力指标：\n- 电脑使用时长：${totalUsageMinutes}分钟\n- 专注时长：${summary.stats.totalFocusMinutes}分钟\n- 生产力比率：${productivityRatio}%（专注/使用）\n- 心流占比：${flowRatio}%（心流/专注）`
     const activityInfo = activityTimeDistribution
       ? `\n\n精力时间分布（每小时电脑活跃度）：\n${activityTimeDistribution}`
       : ''
     return buildReflectionSystemPrompt(context + taskInfo + productivityInfo + activityInfo, !!screenshotBase64, isToday)
-  }, [summary, tasks, completionRate, totalUsageMinutes, productivityRatio, flowRatio, activityTimeDistribution, screenshotBase64, isToday])
+  }, [summary, events, tasks, completionRate, totalUsageMinutes, productivityRatio, flowRatio, activityTimeDistribution, screenshotBase64, isToday])
 
   // ---- 周视图数据回调 ----
   const handleWeekDataReady = useCallback((data: WeekDayData[]) => {
@@ -525,6 +526,47 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
     })
     console.log('[Reflection] 完成:', summaryText.slice(0, 100))
   }
+
+  // ---- 补记时间回调：写入 tracker 事件 + 新任务写入任务列表，然后刷新数据 ----
+  const handleManualEntry = useCallback(
+    async (newEvents: TrackEvent[], newTasks: { title: string }[]) => {
+      if (newEvents.length === 0) return
+
+      // 1. 写入 tracker 事件
+      await window.electronAPI.appendTrackerEvents(
+        selectedDate,
+        newEvents as unknown[],
+      )
+
+      // 2. 新任务写入今日任务列表
+      if (newTasks.length > 0) {
+        const existingTasks = await window.electronAPI.loadTasks(selectedDate)
+        const tasksToAdd = newTasks.map((t) => ({
+          id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          title: t.title,
+          note: '',
+          priority: 'medium' as const,
+          completed: false,
+          createdAt: Date.now(),
+        }))
+        await window.electronAPI.saveTasks(selectedDate, [
+          ...(existingTasks as unknown[]),
+          ...tasksToAdd,
+        ])
+      }
+
+      // 3. 重新加载事件数据以刷新图表
+      const [raw, rawActivity] = await Promise.all([
+        window.electronAPI.loadTrackerEvents(selectedDate),
+        window.electronAPI.loadActivityData(selectedDate),
+      ])
+      const typedEvents = raw as TrackEvent[]
+      setEvents(typedEvents)
+      setActivityData(rawActivity as ActivityRecord[])
+      setSummary(buildDailySummary(selectedDate, typedEvents))
+    },
+    [selectedDate],
+  )
 
   // ---- 图表引用：滚动 + 高亮对应图表 ----
   const handleChartRef = useCallback((chartId: string) => {
@@ -841,7 +883,7 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
                   {chatOpen && (
                     <div id="chart-key-metrics" className="grid grid-cols-3 gap-3 flex-1">
                       <div className="text-center bg-emerald-50 rounded-xl py-2.5 px-2">
-                        <p className="text-lg font-bold text-emerald-600">{summary?.stats.completedMicroSteps ?? 0}</p>
+                        <p className="text-lg font-bold text-emerald-600">{tasks.filter(t => t.completed).length}</p>
                         <p className="text-2xs text-emerald-500 mt-0.5">完成任务数</p>
                       </div>
                       <div className="text-center bg-blue-50 rounded-xl py-2.5 px-2">
@@ -870,7 +912,7 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
               }`}>
                 <div className="text-center bg-emerald-50 rounded-xl py-2.5 px-2">
                   <p className="text-lg font-bold text-emerald-600">
-                    {summary?.stats.completedMicroSteps ?? 0}
+                    {tasks.filter(t => t.completed).length}
                   </p>
                   <p className="text-2xs text-emerald-500 mt-0.5">完成任务数</p>
                 </div>
@@ -947,6 +989,15 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
                   </div>
                 </>
               )}
+
+              {/* 补记时间入口 */}
+              <div className="border-t border-gray-100" />
+              <ManualTimeEntry
+                tasks={tasks}
+                events={events}
+                selectedDate={selectedDate}
+                onConfirm={handleManualEntry}
+              />
             </div>
           )}
         </div>

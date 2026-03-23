@@ -303,15 +303,15 @@ export default function InteractiveActivityHeatmap({ data, events }: Props) {
         })}
       </div>
 
-      {/* ======== 任务时间分布（颜色深浅，和上方热力条统一视觉隐喻） ======== */}
+      {/* ======== 任务时间分布（任务名单独一行，热力条全宽对齐上方） ======== */}
       {taskEntries.length > 0 && (
-        <div className="mt-3 space-y-1.5">
+        <div className="mt-3 space-y-1">
           {taskEntries.map((task) => (
-            <div key={task.title} className="flex items-center gap-2">
-              <span className="text-xxs text-gray-600 font-medium truncate w-[80px] flex-shrink-0" title={task.title}>
+            <div key={task.title}>
+              <span className="text-xxs text-gray-500 font-medium truncate block mb-0.5" title={task.title}>
                 {task.title}
               </span>
-              <div className="flex gap-[2px] flex-1 min-w-0">
+              <div className="flex gap-[2px] w-full">
                 {Array.from({ length: visibleSpan }, (_, i) => {
                   const h = rangeStart + i
                   const ratio = task.hourMap.get(h) || 0

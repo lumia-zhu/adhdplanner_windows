@@ -67,6 +67,14 @@ export function loadPersistedSession(): { access_token: string; refresh_token: s
   return null
 }
 
+/** 从 JWT 中解析 user_id（不需要网络） */
+function parseUserIdFromJWT(token: string): string | null {
+  try {
+    const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString())
+    return payload.sub ?? null
+  } catch { return null }
+}
+
 /** 应用启动时尝试恢复登录态 */
 export async function restoreSession(): Promise<User | null> {
   const saved = loadPersistedSession()
@@ -79,7 +87,17 @@ export async function restoreSession(): Promise<User | null> {
     })
     if (error) {
       console.error('[Auth] Session restore failed:', error.message)
-      persistSession(null)
+      // 认证错误（token 过期/无效）才清除，网络错误不清除
+      if (!error.message?.includes('fetch') && !error.message?.includes('network')) {
+        persistSession(null)
+      }
+      // 网络不可用时从本地 token 解析用户信息，离线继续使用
+      const offlineId = parseUserIdFromJWT(saved.access_token)
+      if (offlineId) {
+        cachedUserId = offlineId
+        console.log('[Auth] Offline mode, using cached user:', offlineId)
+        return { id: offlineId, email: '' } as User
+      }
       return null
     }
     if (data.session && data.user) {
@@ -92,7 +110,14 @@ export async function restoreSession(): Promise<User | null> {
       return data.user
     }
   } catch (e) {
-    console.error('[Auth] Session restore error:', e)
+    console.error('[Auth] Session restore error (network?):', e)
+    // 网络异常时走离线模式，从 JWT 解析用户 ID
+    const offlineId = parseUserIdFromJWT(saved.access_token)
+    if (offlineId) {
+      cachedUserId = offlineId
+      console.log('[Auth] Offline fallback, using cached user:', offlineId)
+      return { id: offlineId, email: '' } as User
+    }
   }
   return null
 }
