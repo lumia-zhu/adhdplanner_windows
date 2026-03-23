@@ -406,7 +406,7 @@ export function buildWeeklyLLMContext(days: WeekDayDataLite[]): string {
   lines.push(`## 周数据摘要（${firstDate} – ${lastDate}）\n`)
 
   // ---- 1. 每日完成率 ----
-  lines.push(`### 每日完成率`)
+  lines.push(`### 每日任务完成率`)
   for (const day of days) {
     if (!day.hasData) {
       lines.push(`- ${day.dateFull}：无数据`)

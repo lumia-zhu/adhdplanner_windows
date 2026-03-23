@@ -32,7 +32,7 @@ const CHART_ID_MAP: Record<string, { domId: string; label: string }> = {
   'activity':        { domId: 'chart-activity-heatmap', label: '活动分布' },
   'rhythm':          { domId: 'chart-rhythm',           label: '节奏曲线' },
   // 周视图图表
-  'week-completion': { domId: 'chart-week-completion', label: '每日完成率' },
+  'week-completion': { domId: 'chart-week-completion', label: '每日任务完成率' },
   'week-metrics':    { domId: 'chart-week-metrics',    label: '周汇总指标' },
   'week-ranking':    { domId: 'chart-week-ranking',    label: '任务排行' },
   'week-heatmap':    { domId: 'chart-week-heatmap',    label: '活动热力图' },

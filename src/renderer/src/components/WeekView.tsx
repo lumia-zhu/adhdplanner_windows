@@ -293,7 +293,7 @@ export default function WeekView({ weekEndDate, onDataReady, chatOpen }: WeekVie
       {/* 每日完成率条形图 */}
       <div id="chart-week-completion">
         <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
-          📊 每日完成率
+          📊 每日任务完成率
         </h3>
         <WeekCompletionBars days={weekData} />
       </div>

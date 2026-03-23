@@ -66,7 +66,7 @@ export default function WeekCompletionBars({ days }: Props) {
                   <div className="flex-1 flex items-end justify-center w-full">
                     {hasData ? (
                       <div
-                        className="w-[60%] max-w-[36px] rounded-t-md bg-gray-300 hover:bg-gray-400 transition-all duration-300 relative"
+                        className="w-[60%] max-w-[36px] rounded-t-md bg-indigo-400 hover:bg-indigo-500 transition-all duration-300 relative"
                         style={{ height: `${Math.max(pct, 3)}%` }}
                       >
                         {/* 柱顶百分比（hover 或 > 0 时显示） */}

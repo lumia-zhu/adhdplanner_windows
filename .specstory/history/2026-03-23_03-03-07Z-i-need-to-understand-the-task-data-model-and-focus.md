@@ -26,11 +26,7 @@ _**Agent (composer-2-fast)**_
 
 _**Agent (composer-2-fast)**_
 
-<tool-use data-tool-type="read" data-tool-name="read_file_v2">
-<details><summary>Tool use: **read_file_v2** • Read file: d:\workspace\testwindows\src\renderer\src\types.ts</summary>
-
-</details>
-</tool-use>
+File not found
 
 <tool-use data-tool-type="read" data-tool-name="read_file_v2"><details>
 <summary>Tool use: **read_file_v2**</summary>
@@ -52,8 +48,84 @@ _**Agent (composer-2-fast)**_
 
 _**Agent (composer-2-fast)**_
 
+File not found
+
+<tool-use data-tool-type="read" data-tool-name="read_file_v2"><details>
+<summary>Tool use: **read_file_v2**</summary>
+
+</details></tool-use>
+
+_**Agent (composer-2-fast)**_
+
+<tool-use data-tool-type="search" data-tool-name="glob_file_search">
+<details>
+<summary>Tool use: **glob_file_search** • Searched codebase "" • **1** result in **1** directory</summary>
+
+Directory: **d:\workspace\testwindows\src\renderer** (1 file)
+
+| File |
+|------|
+| `../src/renderer/src/components/ReflectionChat.tsx` |
+
+</details>
+</tool-use>
+
+<tool-use data-tool-type="search" data-tool-name="glob_file_search"><details>
+<summary>Tool use: **glob_file_search**</summary>
+
+</details></tool-use>
+
+_**Agent (composer-2-fast)**_
+
+
+
+
+
+
+_**Agent (composer-2-fast)**_
+
+<tool-use data-tool-type="search" data-tool-name="glob_file_search">
+<details>
+<summary>Tool use: **glob_file_search** • Searched codebase "" • **1** result in **1** directory</summary>
+
+Directory: **d:\workspace\testwindows** (1 file)
+
+| File |
+|------|
+| `../src/renderer/src/services/tracker/types.ts` |
+
+</details>
+</tool-use>
+
+<tool-use data-tool-type="search" data-tool-name="glob_file_search"><details>
+<summary>Tool use: **glob_file_search**</summary>
+
+</details></tool-use>
+
+_**Agent (composer-2-fast)**_
+
+<tool-use data-tool-type="search" data-tool-name="glob_file_search">
+<details>
+<summary>Tool use: **glob_file_search** • Searched codebase "" • **1** result in **1** directory</summary>
+
+Directory: **d:\workspace\testwindows** (1 file)
+
+| File |
+|------|
+| `../src/renderer/src/services/tracker/tracker.ts` |
+
+</details>
+</tool-use>
+
+<tool-use data-tool-type="search" data-tool-name="glob_file_search"><details>
+<summary>Tool use: **glob_file_search**</summary>
+
+</details></tool-use>
+
+_**Agent (composer-2-fast)**_
+
 <tool-use data-tool-type="read" data-tool-name="read_file_v2">
-<details><summary>Tool use: **read_file_v2** • Read file: d:\workspace\testwindows\src\renderer\src\services\tracker.ts</summary>
+<details><summary>Tool use: **read_file_v2** • Read file: d:\workspace\testwindows\src\renderer\src\components\ReflectionChat.tsx</summary>
 
 </details>
 </tool-use>
@@ -65,15 +137,731 @@ _**Agent (composer-2-fast)**_
 
 _**Agent (composer-2-fast)**_
 
-<tool-use data-tool-type="search" data-tool-name="glob_file_search">
+<tool-use data-tool-type="unknown" data-tool-name="ripgrep_raw_search">
 <details>
-<summary>Tool use: **glob_file_search** • Searched codebase "" • **0** results in **0** directories</summary>
+<summary>Tool use: **ripgrep_raw_search**</summary>
 
-No results found
+
+Parameters:
+
+```json
+{
+  "caseInsensitive": false,
+  "path": "d:\\workspace\\testwindows\\src\\renderer",
+  "pattern": "focusDuration|pausedSession"
+}
+```
+Additional data:
+
+```json
+{
+  "isPruned": true,
+  "outputMode": "content",
+  "path": "d:\\workspace\\testwindows\\src\\renderer",
+  "pattern": "focusDuration|pausedSession",
+  "topFiles": [
+    {
+      "matchCount": 6,
+      "uri": "src/renderer/src/components/StandbyWidget.tsx"
+    },
+    {
+      "matchCount": 2,
+      "uri": "src/renderer/src/types/index.ts"
+    },
+    {
+      "matchCount": 5,
+      "uri": "src/renderer/src/hooks/useFocusSession.ts"
+    },
+    {
+      "matchCount": 1,
+      "uri": "src/renderer/src/components/NoteEditor.tsx"
+    }
+  ],
+  "totalFiles": 4,
+  "totalMatches": 14
+}
+```
+Status: **completed**
+
+
 </details>
 </tool-use>
 
-<tool-use data-tool-type="search" data-tool-name="glob_file_search"><details>
-<summary>Tool use: **glob_file_search**</summary>
+<tool-use data-tool-type="unknown" data-tool-name="ripgrep_raw_search"><details>
+<summary>Tool use: **ripgrep_raw_search**</summary>
 
 </details></tool-use>
+
+_**Agent (composer-2-fast)**_
+
+
+
+
+
+
+_**Agent (composer-2-fast)**_
+
+<tool-use data-tool-type="read" data-tool-name="read_file_v2">
+<details><summary>Tool use: **read_file_v2** • Read file: d:\workspace\testwindows\src\renderer\src\types\index.ts</summary>
+
+</details>
+</tool-use>
+
+<tool-use data-tool-type="read" data-tool-name="read_file_v2"><details>
+<summary>Tool use: **read_file_v2**</summary>
+
+</details></tool-use>
+
+_**Agent (composer-2-fast)**_
+
+<tool-use data-tool-type="read" data-tool-name="read_file_v2">
+<details><summary>Tool use: **read_file_v2** • Read file: d:\workspace\testwindows\src\renderer\src\services\tracker\tracker.ts</summary>
+
+</details>
+</tool-use>
+
+<tool-use data-tool-type="read" data-tool-name="read_file_v2"><details>
+<summary>Tool use: **read_file_v2**</summary>
+
+</details></tool-use>
+
+_**Agent (composer-2-fast)**_
+
+<tool-use data-tool-type="unknown" data-tool-name="ripgrep_raw_search">
+<details>
+<summary>Tool use: **ripgrep_raw_search**</summary>
+
+
+Parameters:
+
+```json
+{
+  "caseInsensitive": false,
+  "glob": "*.{ts,tsx}",
+  "path": "d:\\workspace\\testwindows\\src\\renderer",
+  "pattern": "buildReflectionSystemPrompt|ReflectionChat|reflection"
+}
+```
+Additional data:
+
+```json
+{
+  "isPruned": true,
+  "outputMode": "content",
+  "path": "d:\\workspace\\testwindows\\src\\renderer",
+  "pattern": "buildReflectionSystemPrompt|ReflectionChat|reflection",
+  "topFiles": [
+    {
+      "matchCount": 7,
+      "uri": "src/renderer/src/services/ai.ts"
+    },
+    {
+      "matchCount": 7,
+      "uri": "src/renderer/src/services/tracker/summary.ts"
+    },
+    {
+      "matchCount": 2,
+      "uri": "src/renderer/src/types/index.ts"
+    },
+    {
+      "matchCount": 2,
+      "uri": "src/renderer/src/env.d.ts"
+    },
+    {
+      "matchCount": 4,
+      "uri": "src/renderer/src/components/ReflectionView.tsx"
+    },
+    {
+      "matchCount": 14,
+      "uri": "src/renderer/src/components/ReflectionChat.tsx"
+    },
+    {
+      "matchCount": 1,
+      "uri": "src/renderer/src/App.tsx"
+    },
+    {
+      "matchCount": 24,
+      "uri": "src/renderer/src/components/FocusFlow.tsx"
+    },
+    {
+      "matchCount": 5,
+      "uri": "src/renderer/src/services/tracker/types.ts"
+    },
+    {
+      "matchCount": 2,
+      "uri": "src/renderer/src/components/ProfileSettings.tsx"
+    },
+    {
+      "matchCount": 17,
+      "uri": "src/renderer/src/components/WidgetView.tsx"
+    }
+  ],
+  "totalFiles": 11,
+  "totalMatches": 85
+}
+```
+Status: **completed**
+
+
+</details>
+</tool-use>
+
+<tool-use data-tool-type="unknown" data-tool-name="ripgrep_raw_search"><details>
+<summary>Tool use: **ripgrep_raw_search**</summary>
+
+</details></tool-use>
+
+_**Agent (composer-2-fast)**_
+
+<tool-use data-tool-type="unknown" data-tool-name="ripgrep_raw_search">
+<details>
+<summary>Tool use: **ripgrep_raw_search**</summary>
+
+
+Parameters:
+
+```json
+{
+  "caseInsensitive": false,
+  "path": "d:\\workspace\\testwindows\\src\\renderer",
+  "pattern": "focusDuration"
+}
+```
+Additional data:
+
+```json
+{
+  "isPruned": true,
+  "outputMode": "content",
+  "path": "d:\\workspace\\testwindows\\src\\renderer",
+  "pattern": "focusDuration",
+  "topFiles": [
+    {
+      "matchCount": 1,
+      "uri": "src/renderer/src/types/index.ts"
+    },
+    {
+      "matchCount": 1,
+      "uri": "src/renderer/src/hooks/useFocusSession.ts"
+    }
+  ],
+  "totalFiles": 2,
+  "totalMatches": 2
+}
+```
+Status: **completed**
+
+
+</details>
+</tool-use>
+
+<tool-use data-tool-type="unknown" data-tool-name="ripgrep_raw_search"><details>
+<summary>Tool use: **ripgrep_raw_search**</summary>
+
+</details></tool-use>
+
+_**Agent (composer-2-fast)**_
+
+
+
+
+
+
+_**Agent (composer-2-fast)**_
+
+<tool-use data-tool-type="read" data-tool-name="read_file_v2">
+<details><summary>Tool use: **read_file_v2** • Read file: d:\workspace\testwindows\src\renderer\src\services\tracker\types.ts</summary>
+
+</details>
+</tool-use>
+
+<tool-use data-tool-type="read" data-tool-name="read_file_v2"><details>
+<summary>Tool use: **read_file_v2**</summary>
+
+</details></tool-use>
+
+_**Agent (composer-2-fast)**_
+
+<tool-use data-tool-type="read" data-tool-name="read_file_v2">
+<details><summary>Tool use: **read_file_v2** • Read file: d:\workspace\testwindows\src\renderer\src\services\ai.ts</summary>
+
+</details>
+</tool-use>
+
+<tool-use data-tool-type="read" data-tool-name="read_file_v2"><details>
+<summary>Tool use: **read_file_v2**</summary>
+
+</details></tool-use>
+
+_**Agent (composer-2-fast)**_
+
+<tool-use data-tool-type="read" data-tool-name="read_file_v2">
+<details><summary>Tool use: **read_file_v2** • Read file: d:\workspace\testwindows\src\renderer\src\components\ReflectionView.tsx</summary>
+
+</details>
+</tool-use>
+
+<tool-use data-tool-type="read" data-tool-name="read_file_v2"><details>
+<summary>Tool use: **read_file_v2**</summary>
+
+</details></tool-use>
+
+_**Agent (composer-2-fast)**_
+
+<tool-use data-tool-type="unknown" data-tool-name="ripgrep_raw_search">
+<details>
+<summary>Tool use: **ripgrep_raw_search**</summary>
+
+
+Parameters:
+
+```json
+{
+  "caseInsensitive": false,
+  "path": "d:\\workspace\\testwindows\\src\\renderer\\src\\components\\ReflectionView.tsx",
+  "pattern": "taskInfo|productivityInfo|activityInfo|focusDuration|tracker"
+}
+```
+Additional data:
+
+```json
+{
+  "isPruned": true,
+  "outputMode": "content",
+  "path": "d:\\workspace\\testwindows\\src\\renderer\\src\\components\\ReflectionView.tsx",
+  "pattern": "taskInfo|productivityInfo|activityInfo|focusDuration|tracker",
+  "topFiles": [
+    {
+      "matchCount": 11,
+      "uri": "src\\renderer\\src\\components\\ReflectionView.tsx"
+    }
+  ],
+  "totalFiles": 1,
+  "totalMatches": 11
+}
+```
+Status: **completed**
+
+
+</details>
+</tool-use>
+
+<tool-use data-tool-type="unknown" data-tool-name="ripgrep_raw_search"><details>
+<summary>Tool use: **ripgrep_raw_search**</summary>
+
+</details></tool-use>
+
+_**Agent (composer-2-fast)**_
+
+
+
+
+
+
+_**Agent (composer-2-fast)**_
+
+<tool-use data-tool-type="read" data-tool-name="read_file_v2">
+<details><summary>Tool use: **read_file_v2** • Read file: d:\workspace\testwindows\src\renderer\src\services\tracker\summary.ts</summary>
+
+</details>
+</tool-use>
+
+<tool-use data-tool-type="read" data-tool-name="read_file_v2"><details>
+<summary>Tool use: **read_file_v2**</summary>
+
+</details></tool-use>
+
+_**Agent (composer-2-fast)**_
+
+<tool-use data-tool-type="unknown" data-tool-name="ripgrep_raw_search">
+<details>
+<summary>Tool use: **ripgrep_raw_search**</summary>
+
+
+Parameters:
+
+```json
+{
+  "caseInsensitive": false,
+  "path": "d:\\workspace\\testwindows\\src\\renderer\\src\\services\\tracker",
+  "pattern": "totalFocusMinutes|session\\.started|SessionEnded"
+}
+```
+Additional data:
+
+```json
+{
+  "isPruned": true,
+  "outputMode": "content",
+  "path": "d:\\workspace\\testwindows\\src\\renderer\\src\\services\\tracker",
+  "pattern": "totalFocusMinutes|session\\.started|SessionEnded",
+  "topFiles": [
+    {
+      "matchCount": 4,
+      "uri": "src/renderer/src/services/tracker/types.ts"
+    },
+    {
+      "matchCount": 4,
+      "uri": "src/renderer/src/services/tracker/summary.ts"
+    }
+  ],
+  "totalFiles": 2,
+  "totalMatches": 8
+}
+```
+Status: **completed**
+
+
+</details>
+</tool-use>
+
+<tool-use data-tool-type="unknown" data-tool-name="ripgrep_raw_search"><details>
+<summary>Tool use: **ripgrep_raw_search**</summary>
+
+</details></tool-use>
+
+_**Agent (composer-2-fast)**_
+
+<tool-use data-tool-type="read" data-tool-name="read_file_v2">
+<details><summary>Tool use: **read_file_v2** • Read file: d:\workspace\testwindows\src\renderer\src\services\tracker\index.ts</summary>
+
+</details>
+</tool-use>
+
+<tool-use data-tool-type="read" data-tool-name="read_file_v2"><details>
+<summary>Tool use: **read_file_v2**</summary>
+
+</details></tool-use>
+
+_**Agent (composer-2-fast)**_
+
+
+
+
+
+
+_**Agent (composer-2-fast)**_
+
+<tool-use data-tool-type="read" data-tool-name="read_file_v2">
+<details><summary>Tool use: **read_file_v2** • Read file: d:\workspace\testwindows\src\renderer\src\services\tracker\summary.ts</summary>
+
+</details>
+</tool-use>
+
+<tool-use data-tool-type="read" data-tool-name="read_file_v2"><details>
+<summary>Tool use: **read_file_v2**</summary>
+
+</details></tool-use>
+
+_**Agent (composer-2-fast)**_
+
+<tool-use data-tool-type="unknown" data-tool-name="ripgrep_raw_search">
+<details>
+<summary>Tool use: **ripgrep_raw_search**</summary>
+
+
+Parameters:
+
+```json
+{
+  "caseInsensitive": false,
+  "path": "d:\\workspace\\testwindows\\src\\renderer",
+  "pattern": "plan\\.task_understanding"
+}
+```
+Additional data:
+
+```json
+{
+  "isPruned": true,
+  "outputMode": "content",
+  "path": "d:\\workspace\\testwindows\\src\\renderer",
+  "pattern": "plan\\.task_understanding",
+  "topFiles": [
+    {
+      "matchCount": 1,
+      "uri": "src/renderer/src/hooks/useFocusSession.ts"
+    }
+  ],
+  "totalFiles": 1,
+  "totalMatches": 1
+}
+```
+Status: **completed**
+
+
+</details>
+</tool-use>
+
+<tool-use data-tool-type="unknown" data-tool-name="ripgrep_raw_search"><details>
+<summary>Tool use: **ripgrep_raw_search**</summary>
+
+</details></tool-use>
+
+_**Agent (composer-2-fast)**_
+
+
+
+
+
+
+_**Agent (composer-2-fast)**_
+
+<tool-use data-tool-type="unknown" data-tool-name="ripgrep_raw_search">
+<details>
+<summary>Tool use: **ripgrep_raw_search**</summary>
+
+
+Parameters:
+
+```json
+{
+  "caseInsensitive": false,
+  "path": "d:\\workspace\\testwindows\\src\\renderer\\src\\services\\tracker",
+  "pattern": "task_understanding"
+}
+```
+Additional data:
+
+```json
+{
+  "isPruned": true,
+  "outputMode": "content",
+  "path": "d:\\workspace\\testwindows\\src\\renderer\\src\\services\\tracker",
+  "pattern": "task_understanding",
+  "topFiles": [],
+  "totalFiles": 0,
+  "totalMatches": 0
+}
+```
+Status: **completed**
+
+
+</details>
+</tool-use>
+
+<tool-use data-tool-type="unknown" data-tool-name="ripgrep_raw_search"><details>
+<summary>Tool use: **ripgrep_raw_search**</summary>
+
+</details></tool-use>
+
+_**Agent (composer-2-fast)**_
+
+<think><details><summary>Thought Process</summary>
+**Checking compilation**
+
+I'm verifying if @ts-expect-error or type updates are causing the missing task_understanding type. Found type drift in `TrackEventMap` where `plan.task_understanding` is missing, causing potential runtime errors. 
+
+**Correcting task interface**
+
+I'm correcting the task interface path from `types.ts` to `src/renderer/src/types/index.ts`. </details></think>
+
+_**Agent (composer-2-fast)**_
+
+
+
+
+
+
+_**Agent (composer-2-fast)**_
+
+<tool-use data-tool-type="unknown" data-tool-name="ripgrep_raw_search">
+<details>
+<summary>Tool use: **ripgrep_raw_search**</summary>
+
+
+Parameters:
+
+```json
+{
+  "caseInsensitive": false,
+  "glob": "*Reflection*",
+  "path": "d:\\workspace\\testwindows\\src\\renderer\\src\\components",
+  "pattern": "durationSec|focusDuration|task-duration"
+}
+```
+Additional data:
+
+```json
+{
+  "isPruned": true,
+  "outputMode": "content",
+  "path": "d:\\workspace\\testwindows\\src\\renderer\\src\\components",
+  "pattern": "durationSec|focusDuration|task-duration",
+  "topFiles": [
+    {
+      "matchCount": 2,
+      "uri": "src/renderer/src/components/ReflectionChat.tsx"
+    },
+    {
+      "matchCount": 8,
+      "uri": "src/renderer/src/components/ReflectionView.tsx"
+    }
+  ],
+  "totalFiles": 2,
+  "totalMatches": 10
+}
+```
+Status: **completed**
+
+
+</details>
+</tool-use>
+
+<tool-use data-tool-type="unknown" data-tool-name="ripgrep_raw_search"><details>
+<summary>Tool use: **ripgrep_raw_search**</summary>
+
+</details></tool-use>
+
+_**Agent (composer-2-fast)**_
+
+
+
+
+
+
+_**Agent (composer-2-fast)**_
+
+<tool-use data-tool-type="read" data-tool-name="read_file_v2">
+<details><summary>Tool use: **read_file_v2** • Read file: d:\workspace\testwindows\src\renderer\src\components\ReflectionView.tsx</summary>
+
+</details>
+</tool-use>
+
+<tool-use data-tool-type="read" data-tool-name="read_file_v2"><details>
+<summary>Tool use: **read_file_v2**</summary>
+
+</details></tool-use>
+
+_**Agent (composer-2-fast)**_
+
+<think><details><summary>Thought Process</summary>
+**Reviewing task duration logic**
+
+I found that the current implementation incorrectly sums all session durations including paused ones, violating the requirement to only count non-pause sessions. I discovered the bug: paused sessions are being double-counted because the code sums all session.end times without filtering out pause events. The paused session duration isn't double-counted because each session ends and resumes independently, so the total time calculation is accurate. The bar chart duration comes from session.ended events, not task.focusDuration, so I'm updating the data source for accuracy. </details></think>
+
+_**Agent (composer-2-fast)**_
+
+
+说明：`Task` 等类型在 **`d:\workspace\testwindows\src\renderer\src\types\index.ts`**，不在 `types.ts`（你提到的路径在本仓库里不存在）。
+
+---
+
+## 1. `Task` 接口字段（含专注相关）
+
+```16:43:d:\workspace\testwindows\src\renderer\src\types\index.ts
+export interface Task {
+  id: string              // 唯一标识符（用时间戳生成）
+  title: string           // 任务标题（必填）
+  note: string            // 备注说明（可选）
+  priority: 'high' | 'medium' | 'low'  // 优先级：高/中/低
+  completed: boolean      // 是否已完成
+  createdAt: number       // 创建时间戳（毫秒）
+  subtasks?: Subtask[]    // 子任务列表（可选，旧数据没有此字段时当空数组处理）
+  /** 暂停的专注会话快照（用户切换到其他任务时保存，恢复时读取） */
+  pausedSession?: PausedSession | null
+  /** 从哪天搬迁来的（格式 YYYY-MM-DD），仅搬迁的任务有此字段 */
+  carriedFrom?: string
+  /** 快速专注记录的专注时长（秒），仅通过「开启专注」创建的已完成任务有此字段 */
+  focusDuration?: number
+}
+
+/** 暂停的专注会话快照 */
+export interface PausedSession {
+  sessionId: string
+  currentMicroTask: string
+  microHistory: string[]       // 已完成的微步骤列表
+  isFlowMode?: boolean         // 暂停时是否已进入主任务视图（兼容旧快照可选）
+  firstStepHint?: string       // 首步提示，用于恢复后保留上下文
+  currentSubtaskId?: string
+  currentSubtaskTitle?: string
+  pausedAt: number             // 暂停时间戳（ms）
+  elapsedBeforePause: number   // 暂停前已累计的秒数
+}
+```
+
+专注相关主要是 **`pausedSession`**（暂停快照）和 **`focusDuration`**（仅快速专注生成的已完成任务上的秒数）。普通任务完成路径不会在这里写累计「专注总秒数」字段。
+
+---
+
+## 2. `useFocusSession.ts`：如何开始、跟踪、写回任务
+
+- **会话状态**：用 React 的 `session: FocusSession | null`（来自 `WidgetView` 的类型），不是存在 `Task` 里；`localStorage` 的 `focusSession` / `focusSessionId` 用于恢复。
+- **开始专注**
+  - 待命开始：`handleStandbyStartMicro` → 新建 `FocusSession`，`tracker` 打 `plan.*`、`session.started`、`exec.micro_started`。
+  - 脚手架确认第一步：`handleStartMicro` → 同上并 `enterWidget`。
+  - 恢复暂停：`handleResumePaused` → 从 `task.pausedSession` 还原 `FocusSession`，带 **`elapsedOffset`**（暂停前已展示秒数），清空任务的 `pausedSession`；打 `session.resumed`、`session.started`。
+  - 快速专注：`handleQuickFocus` → 空任务名的 `FocusSession`，`isQuickFocus: true`。
+- **时长怎么算**
+  - 微步完成：`handleMicroComplete` 用 `Date.now() - session.startTime` 得到 `actualSeconds`，只上报 tracker，**不**写 `Task.focusDuration`。
+  - 暂停：`handlePause` 用 `sessionStartTime` 与可选的 `elapsedOffset` 得到 `elapsedBeforePause`，写入 **`task.pausedSession`**；**不**写 `focusDuration`。
+  - 任务完成 / 子任务全完：`handleTaskDone` / `handleWidgetSubtaskToggle` 主要改 **`completed` / `subtasks`**，**不**写 `focusDuration`。
+- **`focusDuration` 唯一写入处**：快速专注结束后 `handleQuickFocusEnd` 记下 `quickFocusEnd.durationSeconds`（整段 `sessionStartTime` 到结束）；用户确认建任务时 `handleQuickFocusConfirm` 创建 **`completed: true`** 的任务并设置 **`focusDuration: quickFocusEnd.durationSeconds`**。
+
+```515:525:d:\workspace\testwindows\src\renderer\src\hooks\useFocusSession.ts
+  const handleQuickFocusConfirm = useCallback((taskTitle: string) => {
+    if (!quickFocusEnd) return
+    const newTask: Task = {
+      id: `t-${Date.now()}`,
+      title: taskTitle,
+      note: '',
+      priority: 'medium',
+      completed: true,
+      createdAt: Date.now(),
+      focusDuration: quickFocusEnd.durationSeconds,
+    }
+```
+
+**结论**：普通专注的时长**主要靠 tracker 的 `session.ended` 等事件**体现；**`Task.focusDuration` 只服务「快速专注 → 落成一条已完成任务」**这一种数据。
+
+---
+
+## 3. Tracker 里有哪些事件（含开始/结束专注）
+
+实现入口：`d:\workspace\testwindows\src\renderer\src\services\tracker\tracker.ts`；**类型注册表**在 `d:\workspace\testwindows\src\renderer\src\services\tracker\types.ts` 的 `TrackEventMap`。
+
+**与「开始 / 停止专注」直接相关的包括：**
+
+| 场景 | 典型事件 |
+|------|----------|
+| 选中任务、第一步微动作 | `plan.brain_dump`、`plan.focus_selected`、`plan.first_micro`；开始执行还有 `session.started`、`exec.micro_started` |
+| 微步完成 / 下一步 | `exec.micro_completed`、`exec.micro_started` |
+| 进入 / 结束心流 | `exec.flow_entered`、`exec.flow_ended` |
+| 暂停 / 恢复 | `session.paused`、`session.ended`（endReason `pause`）、`session.resumed`、`session.started`（新 session id） |
+| 退出小组件 | `abandon.exit`（执行中退出）、`session.ended`（endReason `exit`） |
+| 任务完成 | `session.macro_completed`、`session.ended`（`task_done`）、心流路径还有 `exec.flow_ended` |
+| 快速专注 | `session.started`（`isQuickFocus` 在代码里有传）；确认任务时 `session.ended`（`task_done`, `isQuickFocus`） |
+
+**完整注册类型**（`TrackEventMap`）：`plan.brain_dump`、`plan.focus_selected`、`plan.first_micro`；`exec.micro_started`、`exec.micro_completed`、`exec.subtask_completed`、`exec.flow_entered`、`exec.flow_ended`；`stuck.*` 一串；`abandon.exit`；`session.started`、`session.ended`、`session.paused`、`session.resumed`、`session.macro_completed`；`daily.leftovers`。
+
+**注意**：`useFocusSession` 里还有 `tracker.track('plan.task_understanding', …)`，但 **`types.ts` 的 `TrackEventMap` 里没有 `plan.task_understanding`**，属于类型表与调用不一致（若 TS 仍能通过，可能是别处放宽了类型；从仓库现状看，该事件**未**出现在 `TrackEventMap` 中）。
+
+**「总专注分钟数」**：在 `buildDailySummary` 里对当天所有 **`session.ended`** 的 `totalDurationSeconds` **求和**再除以 60（见 `summary.ts` 约 220–237 行），因此会统计每次结束的会话时长（含 pause/exit/task_done 等带 `session.ended` 的结束方式）。
+
+---
+
+## 4. AI 反思（`ReflectionChat` / `ReflectionView`）如何用任务与专注数据
+
+- **`ReflectionChat.tsx`**：只接收 **`systemPrompt`**、可选 **仪表板截图**、用户多轮文字；**不**直接读 `Task` 或 `focusDuration`，也**不**读 tracker 原始事件。
+- **真正拼进 AI 上下文的是 `ReflectionView.tsx`**：
+  1. **`summaryToLLMContext(summary)`**：`summary` 来自 **`buildDailySummary(date, events)`**，即 **tracker 事件聚合**（计划、微步轨迹、心流、卡顿、中断、`reflectionHints` 等）。
+  2. **额外字符串 `taskInfo`**：当前 `tasks` 的**数量、完成数、完成率、未完成标题列表**——**没有**逐任务输出 `focusDuration`。
+  3. **`productivityInfo`**：`summary.stats.totalFocusMinutes` 等（仍来自 tracker 汇总）。
+  4. **可选截图**：左侧图表（含「任务用时」条形图）由 **`ReflectionView` 用同一批 `events` 算出 `taskDurations`**（按 **`session.started` / `session.ended` 的 `totalDurationSeconds` 按任务标题聚合**），**不是**读 `Task.focusDuration` 字段。
+
+```281:309:d:\workspace\testwindows\src\renderer\src\components\ReflectionView.tsx
+  // 构建任务用时数据（从 session.ended 事件聚合），同时附带卡顿标记
+  const taskDurations: TaskDurationItem[] = useMemo(() => {
+    // ---- 1. 按任务名聚合所有 session 的总时长 ----
+    // 注意：同一任务可能有多个 session（暂停→恢复），只统计 endReason 不是 'pause' 的时长
+    // 来避免 pause 和 resume 后重复计时
+    const durationMap = new Map<string, number>()
+    ...
+    for (const e of events) {
+      ...
+      if (e.type === 'session.ended') {
+        const p = e.payload as { sessionId: string; taskTitle: string; totalDurationSeconds: number; endReason: string }
+        durationMap.set(p.taskTitle, (durationMap.get(p.taskTitle) || 0) + p.totalDurationSeconds)
+```
+
+**结论**：每日 AI 反思的**文字上下文**主要来自 **tracker 聚合摘要 + 任务列表统计 + 活动/生产力描述**；**「干了多久、在啥上卡住」**这类执行细节来自 **tracker 事件（及摘要里的结构化叙述）**。**`Task.focusDuration` 不会单独进 system prompt**；图表里的用时与 **`session.ended` 聚合**一致，与 `focusDuration` 字段无直接绑定（快速专注若产生了对应的 `session.ended`，会体现在事件流里，而不是靠读字段）。

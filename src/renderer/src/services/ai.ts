@@ -785,7 +785,7 @@ export function buildWeeklyReflectionSystemPrompt(
   weekLabel = '',
 ): string {
   const screenshotNote = hasScreenshot
-    ? `\n## 视觉数据\n用户的下一条消息会附带一张"周数据仪表板"截图，包含每日完成率柱状图、周汇总指标卡片、任务用时排行、7×24活动热力图和使用节奏曲线。你可以直接观察截图中的视觉特征（柱状高低、颜色深浅、曲线走势），结合数据一起分析。\n`
+    ? `\n## 视觉数据\n用户的下一条消息会附带一张"周数据仪表板"截图，包含每日任务完成率柱状图、周汇总指标卡片、任务用时排行、7×24活动热力图和使用节奏曲线。你可以直接观察截图中的视觉特征（柱状高低、颜色深浅、曲线走势），结合数据一起分析。\n`
     : ''
 
   return `你是用户的朋友，帮他做这一周的复盘${weekLabel ? `（${weekLabel}）` : ''}。用户是 ADHD 群体。
@@ -808,7 +808,7 @@ export function buildWeeklyReflectionSystemPrompt(
 ${screenshotNote}
 ## 图表引用
 引用图表用【chart:ID】格式。可用 ID：
-- 【chart:week-completion】每日完成率柱状图
+- 【chart:week-completion】每日任务完成率柱状图
 - 【chart:week-metrics】周汇总指标卡片
 - 【chart:week-ranking】周任务用时排行
 - 【chart:week-heatmap】7×24 活动热力图

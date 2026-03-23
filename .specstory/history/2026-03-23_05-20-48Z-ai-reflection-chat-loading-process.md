@@ -487,4 +487,245 @@ _**Agent (composer-2-fast)**_
 - **一旦截图写入 state**，`screenshotBase64` 变化会触发该 `useMemo` 重算，system prompt 里会带上「有截图」的说明（见 `ai.ts` 里 `hasScreenshot` 分支）。
 - 周视图类似，用 `buildWeeklyReflectionSystemPrompt`。
 
-```4
+```490:517:d:\workspace\testwindows\src\renderer\src\components\ReflectionView.tsx
+  // 构建 AI system prompt
+  const systemPrompt = useMemo(() => {
+    if (!summary) return ''
+    const context = summaryToLLMContext(summary, events)
+    const taskInfo = `\n\n额外信息：\n- 当前任务总数：${tasks.length}\n- 已完成任务：${tasks.filter(t => t.completed).length}\n- 完成率：${completionRate}%\n- 待办任务：${tasks.filter(t => !t.completed).map(t => t.title).join('、') || '无'}`
+    const productivityInfo = `\n\n生产力指标：\n- 电脑使用时长：${totalUsageMinutes}分钟\n- 专注时长：${summary.stats.totalFocusMinutes}分钟\n- 生产力比率：${productivityRatio}%（专注/使用）\n- 心流占比：${flowRatio}%（心流/专注）`
+    const activityInfo = activityTimeDistribution
+      ? `\n\n精力时间分布（每小时电脑活跃度）：\n${activityTimeDistribution}`
+      : ''
+    return buildReflectionSystemPrompt(context + taskInfo + productivityInfo + activityInfo, !!screenshotBase64, isToday)
+  }, [summary, events, tasks, completionRate, totalUsageMinutes, productivityRatio, flowRatio, activityTimeDistribution, screenshotBase64, isToday])
+
+  // 构建周 AI system prompt
+  const weekSystemPrompt = useMemo(() => {
+    if (!weekDayData || weekDayData.length === 0) return ''
+    const context = buildWeeklyLLMContext(weekDayData)
+    const dates = getWeekDates(weekEndDate)
+    const weekLabel = `${formatDateFriendly(dates[0]).replace(/ .+/, '')} – ${formatDateFriendly(dates[6]).replace(/ .+/, '')}`
+    return buildWeeklyReflectionSystemPrompt(context, !!screenshotBase64, weekLabel)
+  }, [weekDayData, weekEndDate, screenshotBase64])
+
+  // 根据当前视图模式选择对应的 system prompt
+  const activeSystemPrompt = viewMode === 'week' ? weekSystemPrompt : systemPrompt
+```
+
+### `ReflectionChat` 如何接到 props、何时挂载
+
+- 侧边栏宽度由 `chatOpen` 控制；`ReflectionChat` 在 `hasAI && activeSystemPrompt` 时渲染。
+- `key` 按日/周变化，**换日/换周会整组件重挂载**。
+- 传入：`systemPrompt`、`aiConfig`、`screenshotBase64`、`selectedDate`、`storageKey`、`onChartRef`、`onComplete`。
+
+```1055:1065:d:\workspace\testwindows\src\renderer\src\components\ReflectionView.tsx
+              ) : activeSystemPrompt ? (
+                <ReflectionChat
+                  key={viewMode === 'week' ? `week-${weekEndDate}` : `day-${selectedDate}`}
+                  systemPrompt={activeSystemPrompt}
+                  aiConfig={aiConfig}
+                  screenshotBase64={screenshotBase64}
+                  selectedDate={viewMode === 'week' ? weekEndDate : selectedDate}
+                  storageKey={viewMode === 'week' ? `week-${weekEndDate}` : selectedDate}
+                  onChartRef={handleChartRef}
+                  onComplete={handleReflectionComplete}
+                />
+```
+
+**注意顺序**：`openChat` 里先 `await html2canvas` 再 `setChatOpen(true)`，因此侧边栏展开时，**通常截图 state 已更新**；随后 React 重渲染时 `activeSystemPrompt` 会带上 `hasScreenshot: true`（若截图成功）。
+
+---
+
+## 2. `ReflectionChat.tsx`：首条 AI、调用方式、超时/重试
+
+### 首条 AI：**自动发送**，不是用户点击
+
+- 先等 `storageReady`（`loadReflectionChat` 完成或跳过）。
+- 若未恢复历史（`bubbles` 空、`step === 0`）、且 `systemPrompt` 非空，则 `initCalledRef = true`，组装 `initMessages`（system + 可选多模态 user 带图），再 **`sendToAI(initMessages)`**。
+- 若从磁盘恢复了对话，会把 `initCalledRef` 设为 true，**不会**再自动发首条。
+
+```250:279:d:\workspace\testwindows\src\renderer\src\components\ReflectionChat.tsx
+  // 初始化：发送第一条 AI 消息（Step 1 提问）
+  // 如果有截图，会在 user 消息中附带仪表板截图让 AI 先"看"一下
+  useEffect(() => {
+    if (!storageReady) return // 等存储检查完成再决定是否初始化
+    if (initCalledRef.current || step > 0 || bubbles.length > 0) return
+    if (!systemPrompt) return  // systemPrompt 为空时不发送
+    initCalledRef.current = true
+
+    const initMessages: ReflectionMessage[] = [
+      { role: 'system', content: systemPrompt },
+    ]
+
+    // ★ 有截图时：以多模态 user 消息附带图片
+    if (screenshotBase64) {
+      const todayStr = new Date().toISOString().slice(0, 10)
+      const dateIsToday = !selectedDate || selectedDate === todayStr
+      const dateLabel = dateIsToday ? '今天' : (selectedDate ?? todayStr)
+      const multimodalContent: MessageContentPart[] = [
+        { type: 'image_url', image_url: { url: screenshotBase64 } },
+        { type: 'text', text: `上面是我${dateLabel}的数据仪表板截图，包含${dateIsToday ? '任务完成率、' : ''}核心指标卡片、任务用时条形图、活动热力图和使用节奏曲线。请结合这些可视化数据，开始我们的反思对话吧。` },
+      ]
+      initMessages.push({ role: 'user', content: multimodalContent })
+    }
+
+    messagesRef.current = initMessages
+
+    sendToAI(initMessages).then(content => {
+      if (content) setStep(1) // 等待用户回答 Step 1
+    })
+  }, [systemPrompt, screenshotBase64, storageReady])
+```
+
+### AI 调用：`chatReflection` → **非流式**、一次拿全量响应
+
+```169:195:d:\workspace\testwindows\src\renderer\src\components\ReflectionChat.tsx
+  const sendToAI = useCallback(async (newMessages: ReflectionMessage[]) => {
+    setLoading(true)
+    setError(null)
+
+    const { content, error: err } = await chatReflection(newMessages, aiConfig)
+
+    if (err || !content) {
+      setError(err || 'AI 回复为空')
+      setLoading(false)
+      return null
+    }
+    // ...
+  }, [aiConfig])
+```
+
+### 本组件内：**无重试**；超时在**主进程**
+
+- `ReflectionChat` / `chatReflection` 只有 try/catch 与错误展示，**没有**自动重试循环。
+- 主进程 `ai:request`：**30 秒** `AbortController` 超时，超时时 `status: 0` 与固定文案。
+
+```228:256:d:\workspace\testwindows\src\main\index.ts
+  // -------- AI 请求代理（30 秒超时） --------
+  ipcMain.handle('ai:request', async (_, payload: { url: string; apiKey: string; body: string }) => {
+    const AI_TIMEOUT_MS = 30_000
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), AI_TIMEOUT_MS)
+    try {
+      const resp = await net.fetch(payload.url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${payload.apiKey}`,
+        },
+        body: payload.body,
+        signal: controller.signal as AbortSignal,
+      })
+      const text = await resp.text()
+      if (!resp.ok) return { ok: false, status: resp.status, body: text }
+      return { ok: true, status: resp.status, body: text }
+    } catch (e: unknown) {
+      const isTimeout = e instanceof Error && e.name === 'AbortError'
+      return {
+        ok: false,
+        status: 0,
+        body: isTimeout ? 'AI 请求超时（30 秒无响应）' : String(e),
+      }
+    } finally {
+      clearTimeout(timer)
+    }
+  })
+```
+
+---
+
+## 3. `ai.ts`：`buildReflectionSystemPrompt`、`chatReflection`、流式、缓存
+
+### `buildReflectionSystemPrompt`
+
+- 位置：`d:\workspace\testwindows\src\renderer\src\services\ai.ts`，约 581–839 行。
+- 根据 `hasScreenshot` 注入「下一条消息会带截图」说明；主体是极长的固定规则 + 末尾拼接 `summaryContext`。
+
+```581:593:d:\workspace\testwindows\src\renderer\src\services\ai.ts
+export function buildReflectionSystemPrompt(
+  summaryContext: string,
+  hasScreenshot = false,
+  isToday = true,
+): string {
+  // 日期称谓：今天 vs 那天
+  const dayRef = isToday ? '今天' : '那天'
+  const dayRefShort = isToday ? '今日' : '当日'
+
+  // ★ 截图附加说明（仅在有截图时注入，提示 AI 下一条消息有图片）
+  const screenshotNote = hasScreenshot
+    ? `\n## 视觉数据\n用户的下一条消息会附带一张"数据仪表板"截图。你可以直接观察截图中的视觉特征（条形长度、颜色深浅、曲线走势），结合数据一起分析。\n`
+    : ''
+```
+
+（函数后半段为模板字符串，直到约 839 行结束。）
+
+### 实际 LLM 调用方式
+
+- **不是**渲染进程直接 `fetch`，而是 **`window.electronAPI.aiRequest`** → 主进程 `net.fetch`（见上文）。
+- **`chatReflection` 非流式**：一次 POST，解析完整 JSON，`extractContent` 取文本。
+
+```510:571:d:\workspace\testwindows\src\renderer\src\services\ai.ts
+export async function chatReflection(
+  messages: ReflectionMessage[],
+  config: AIConfig,
+): Promise<{ content: string; error?: string }> {
+  if (!config.apiKey || !config.modelId || !config.apiUrl) {
+    return { content: '', error: '未配置 AI' }
+  }
+
+  const useResponses = isResponsesApi(config.apiUrl)
+  // ... build body (Chat Completions messages OR Responses API input) ...
+  try {
+    const res = await window.electronAPI.aiRequest({
+      url: config.apiUrl,
+      apiKey: config.apiKey,
+      body,
+    })
+    // ...
+    const content = extractContent(res.body, useResponses)
+    return { content }
+  } catch (e) {
+    // ...
+  }
+}
+```
+
+Chat Completions 分支里显式 **`max_tokens: 800`**（无 `stream: true`）：
+
+```541:548:d:\workspace\testwindows\src\renderer\src\services\ai.ts
+    body = JSON.stringify({
+      model: config.modelId,
+      messages,
+      temperature: 0.8,
+      max_tokens: 800,
+    })
+```
+
+### 缓存
+
+- **`d:\workspace\testwindows\src\renderer\src\services\ai-cache.ts`** 只服务 **`generateMicroActions`**（任务微动作），**与反思对话 / `chatReflection` 无关**。
+- 反思侧「缓存」是 **聊天记录持久化**：`ReflectionChat` 里 `loadReflectionChat` / `saveReflectionChat`（IPC），恢复后不再自动请求首条 AI；**没有**对 LLM 回复做内存/API 结果缓存。
+
+---
+
+## 加载耗时大致排序（便于优化时抓重点）
+
+| 环节 | 说明 |
+|------|------|
+| **1. 云端 LLM 首包 + 生成** | 非流式、system prompt 很长，若有截图则为**多模态**，请求体大；通常是**最耗时**。 |
+| **2. html2canvas** | 全高 DOM 栅格化，图表多时 CPU/主线程压力明显，发生在点浮标打开侧边栏之前。 |
+| **3. 磁盘读历史** | `loadReflectionChat` 在首条自动请求前要 `storageReady`；一般比上面两项快，但冷盘/大文件时仍可见。 |
+| **4. System prompt 字符串拼接** | `useMemo` 纯本地，相对前两步通常可忽略。 |
+
+**结论**：从用户点击浮标到看到第一条 AI，主要等待链是：**截图（若首次）→ 侧边栏挂载 → 读本地聊天（若有）→ 一次完整的非流式 `aiRequest`**；其中 **LLM 往返 + 多模态输入** 往往是瓶颈，其次是 **html2canvas**。
+
+---
+
+**涉及文件（绝对路径）**
+
+- `d:\workspace\testwindows\src\renderer\src\components\ReflectionView.tsx`
+- `d:\workspace\testwindows\src\renderer\src\components\ReflectionChat.tsx`
+- `d:\workspace\testwindows\src\renderer\src\services\ai.ts`
+- `d:\workspace\testwindows\src\renderer\src\services\ai-cache.ts`（仅微动作，非反思）
+- `d:\workspace\testwindows\src\main\index.ts`（`ai:request` 与 30s 超时）
