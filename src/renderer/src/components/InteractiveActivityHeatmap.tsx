@@ -221,14 +221,19 @@ export default function InteractiveActivityHeatmap({ data, events }: Props) {
   // ---- 动态时间刻度 ----
   const timeTicks = useMemo(() => {
     const step = visibleSpan <= 10 ? 2 : 3
-    const ticks: number[] = [rangeStart]
+    const minGap = Math.ceil(step / 2)
+    const ticks: number[] = []
     const firstTick = Math.ceil(rangeStart / step) * step
     for (let h = firstTick; h < rangeEnd; h += step) {
-      if (h > rangeStart) ticks.push(h)
+      ticks.push(h)
     }
-    // 末尾刻度距离上一个刻度至少要有 step/2 的间距，避免两个刻度挤在一起
+    // 起始刻度：与第一个常规刻度间距足够时才显示
+    if (ticks.length === 0 || (ticks[0] !== rangeStart && ticks[0] - rangeStart >= minGap)) {
+      ticks.unshift(rangeStart)
+    }
+    // 末尾刻度：与最后一个常规刻度间距足够时才显示
     const lastTick = ticks[ticks.length - 1]
-    if (lastTick !== rangeEnd && rangeEnd - lastTick >= Math.ceil(step / 2)) {
+    if (lastTick !== rangeEnd && rangeEnd - lastTick >= minGap) {
       ticks.push(rangeEnd)
     }
     return ticks

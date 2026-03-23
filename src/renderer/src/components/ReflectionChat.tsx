@@ -443,21 +443,6 @@ export default function ReflectionChat({
         ref={scrollRef}
         className="flex-1 overflow-y-auto px-4 py-4 space-y-4"
       >
-        {/* 历史记录恢复提示 */}
-        {restored && (
-          <div className="flex justify-center">
-            <div className="flex items-center gap-2 bg-amber-50 border border-amber-200/60 text-amber-600 text-xxs px-3 py-1.5 rounded-full">
-              <span>📋 这是上次的对话记录</span>
-              <button
-                onClick={handleRestart}
-                className="text-amber-500 hover:text-amber-700 font-medium underline underline-offset-2 transition-colors"
-              >
-                重新开始
-              </button>
-            </div>
-          </div>
-        )}
-
         {bubbles.map((b, i) => {
           const isLastEmpty = b.role === 'assistant' && !b.content && i === bubbles.length - 1
           return (
@@ -485,6 +470,21 @@ export default function ReflectionChat({
             </div>
           )
         })}
+
+        {/* 历史记录恢复提示（跟在最后一条消息后面） */}
+        {restored && (
+          <div className="flex justify-center">
+            <div className="flex items-center gap-2 bg-amber-50 border border-amber-200/60 text-amber-600 text-xxs px-3 py-1.5 rounded-full">
+              <span>📋 这是上次的对话记录</span>
+              <button
+                onClick={handleRestart}
+                className="text-amber-500 hover:text-amber-700 font-medium underline underline-offset-2 transition-colors"
+              >
+                重新开始
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* 错误提示 */}
         {error && (
