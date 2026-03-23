@@ -164,6 +164,7 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
   const [chatWidth, setChatWidth] = useState(400) // 侧边栏初始宽度
   const [screenshotBase64, setScreenshotBase64] = useState<string | null>(null) // 仪表板截图
   const dataPanelRef = useRef<HTMLDivElement>(null) // 数据面板引用（用于截图）
+  const [manualEntryExpanded, setManualEntryExpanded] = useState(false)
 
   // ---- AI 浮标气泡 ----
   const [showBubble, setShowBubble] = useState(false)
@@ -255,6 +256,32 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
     loadEvents()
     return () => { cancelled = true }
   }, [selectedDate])
+
+  // 数据加载完后，后台预截图（避免点浮标时阻塞）
+  useEffect(() => {
+    if (loadingData || screenshotBase64 || chatOpen) return
+    if (!dataPanelRef.current) return
+
+    const timer = setTimeout(async () => {
+      if (!dataPanelRef.current) return
+      try {
+        const canvas = await html2canvas(dataPanelRef.current, {
+          scale: 1,
+          useCORS: true,
+          backgroundColor: '#ffffff',
+          height: dataPanelRef.current.scrollHeight,
+          windowHeight: dataPanelRef.current.scrollHeight,
+        })
+        const base64 = canvas.toDataURL('image/jpeg', 0.75)
+        setScreenshotBase64(base64)
+        console.log('[Reflection] 预截图完成，大小:', Math.round(base64.length / 1024), 'KB')
+      } catch (e) {
+        console.warn('[Reflection] 预截图失败:', e)
+      }
+    }, 500)
+
+    return () => clearTimeout(timer)
+  }, [loadingData, screenshotBase64, chatOpen])
 
   // 气泡提示：打开 1.2 秒后显示，5 秒后自动隐藏
   useEffect(() => {
@@ -583,23 +610,21 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
 
   // ---- 打开/关闭侧边栏时调整窗口大小 ----
   const openChat = useCallback(async () => {
-    // ★ 先截图（此时面板是全宽 480px，图表最清晰）
+    // 如果预截图还没完成（用户手快），当场补截
     if (dataPanelRef.current && !screenshotBase64) {
       try {
         const canvas = await html2canvas(dataPanelRef.current, {
-          scale: 1,                    // 1x 像素密度，够用且体积小
+          scale: 1,
           useCORS: true,
           backgroundColor: '#ffffff',
-          height: dataPanelRef.current.scrollHeight,   // 捕获完整滚动内容
+          height: dataPanelRef.current.scrollHeight,
           windowHeight: dataPanelRef.current.scrollHeight,
         })
-        // 转 JPEG base64（quality 0.75，约 80-120KB）
         const base64 = canvas.toDataURL('image/jpeg', 0.75)
         setScreenshotBase64(base64)
-        console.log('[Reflection] 截图完成，大小:', Math.round(base64.length / 1024), 'KB')
+        console.log('[Reflection] 补截图完成，大小:', Math.round(base64.length / 1024), 'KB')
       } catch (e) {
-        console.warn('[Reflection] 截图失败:', e)
-        // 截图失败不阻塞，AI 依然可以用文本数据工作
+        console.warn('[Reflection] 补截图失败:', e)
       }
     }
     setChatOpen(true)
@@ -997,6 +1022,7 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
                 events={events}
                 selectedDate={selectedDate}
                 onConfirm={handleManualEntry}
+                onExpandChange={setManualEntryExpanded}
               />
             </div>
           )}
@@ -1072,8 +1098,8 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
           </div>
         </div>
 
-        {/* ---- 右下角 AI 机器人浮标（日/周都显示） ---- */}
-        {!chatOpen && (
+        {/* ---- 右下角 AI 机器人浮标（日/周都显示，补记展开时隐藏避免遮挡） ---- */}
+        {!chatOpen && !manualEntryExpanded && (
           <div className="absolute bottom-5 right-5 flex flex-col items-end gap-2 z-20">
             <div
               className={`max-w-[200px] px-3 py-2 rounded-2xl rounded-br-md

@@ -7,7 +7,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import type { AIConfig, ReflectionMessage, MessageContentPart } from '../services/ai'
-import { chatReflection } from '../services/ai'
+import { chatReflectionStream } from '../services/ai'
 
 interface ChatBubble {
   role: 'user' | 'assistant'
@@ -147,14 +147,17 @@ export default function ReflectionChat({
   const [bubbles, setBubbles] = useState<ChatBubble[]>([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
+  const [streaming, setStreaming] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [step, setStep] = useState(0)  // 0=等待首条AI, 1-3=等待用户回答, 4=已完成
   const [restored, setRestored] = useState(false)      // 是否从历史记录恢复
   const [storageReady, setStorageReady] = useState(false) // 存储检查是否完成
+  const [restartKey, setRestartKey] = useState(0)         // 重启计数器，驱动 init useEffect 重新执行
   const scrollRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const messagesRef = useRef<ReflectionMessage[]>([])
   const initCalledRef = useRef(false) // 防止 Strict Mode 重复初始化
+  const streamCleanupRef = useRef<(() => void) | null>(null)
 
   // 滚动到底
   const scrollToBottom = useCallback(() => {
@@ -166,32 +169,89 @@ export default function ReflectionChat({
     })
   }, [])
 
-  // 发送消息给 AI 并获取回复
-  const sendToAI = useCallback(async (newMessages: ReflectionMessage[]) => {
+  // 组件卸载时清理流式监听
+  useEffect(() => {
+    return () => { streamCleanupRef.current?.() }
+  }, [])
+
+  // 发送消息给 AI 并获取流式回复
+  const sendToAI = useCallback((newMessages: ReflectionMessage[]): Promise<string | null> => {
     setLoading(true)
+    setStreaming(false)
     setError(null)
 
-    const { content, error: err } = await chatReflection(newMessages, aiConfig)
+    return new Promise((resolve) => {
+      const placeholder: ChatBubble = {
+        role: 'assistant',
+        content: '',
+        timestamp: Date.now(),
+      }
+      setBubbles(prev => [...prev, placeholder])
 
-    if (err || !content) {
-      setError(err || 'AI 回复为空')
-      setLoading(false)
-      return null
-    }
+      let settled = false
+      let gotActivity = false
+      const TIMEOUT_MS = 20_000
 
-    const aiBubble: ChatBubble = {
-      role: 'assistant',
-      content,
-      timestamp: Date.now(),
-    }
-    setBubbles(prev => [...prev, aiBubble])
-    messagesRef.current = [
-      ...newMessages,
-      { role: 'assistant', content },
-    ]
+      const timeoutId = setTimeout(() => {
+        if (settled || gotActivity) return
+        settled = true
+        console.warn('[ReflectionChat] 20s 超时，未收到任何 AI 响应')
+        streamCleanupRef.current?.()
+        setStreaming(false)
+        setLoading(false)
+        setError('AI 响应超时，请稍后重试')
+        setBubbles(prev => prev.slice(0, -1))
+        resolve(null)
+      }, TIMEOUT_MS)
 
-    setLoading(false)
-    return content
+      chatReflectionStream(
+        newMessages,
+        aiConfig,
+        (delta) => {
+          gotActivity = true
+          setStreaming(true)
+          setLoading(false)
+          setBubbles(prev => {
+            const updated = [...prev]
+            const last = updated[updated.length - 1]
+            if (last?.role === 'assistant') {
+              updated[updated.length - 1] = { ...last, content: last.content + delta }
+            }
+            return updated
+          })
+        },
+        (fullText) => {
+          if (settled) return
+          settled = true
+          clearTimeout(timeoutId)
+          setStreaming(false)
+          setLoading(false)
+          messagesRef.current = [
+            ...newMessages,
+            { role: 'assistant', content: fullText },
+          ]
+          if (!fullText) {
+            setError('AI 回复为空')
+            setBubbles(prev => prev.slice(0, -1))
+            resolve(null)
+          } else {
+            resolve(fullText)
+          }
+        },
+        (errMsg) => {
+          if (settled) return
+          settled = true
+          clearTimeout(timeoutId)
+          setStreaming(false)
+          setLoading(false)
+          setError(errMsg)
+          setBubbles(prev => prev.slice(0, -1))
+          resolve(null)
+        },
+      ).then(cleanup => {
+        streamCleanupRef.current = cleanup
+      })
+    })
   }, [aiConfig])
 
   // ---- 加载历史聊天记录 ----
@@ -208,11 +268,21 @@ export default function ReflectionChat({
       .then((raw) => {
         const saved = raw as SavedReflectionChat | null
         if (saved && Array.isArray(saved.bubbles) && saved.bubbles.length > 0) {
-          setBubbles(saved.bubbles)
-          messagesRef.current = saved.messages || []
-          setStep(saved.step ?? 0)
-          setRestored(true)
-          initCalledRef.current = true
+          // 去掉末尾空 assistant 气泡（上次流式请求失败的残留）
+          let cleaned = saved.bubbles
+          while (cleaned.length > 0) {
+            const last = cleaned[cleaned.length - 1]
+            if (last.role === 'assistant' && !last.content) {
+              cleaned = cleaned.slice(0, -1)
+            } else break
+          }
+          if (cleaned.length > 0) {
+            setBubbles(cleaned)
+            messagesRef.current = saved.messages || []
+            setStep(saved.step ?? 0)
+            setRestored(true)
+            initCalledRef.current = true
+          }
         }
         setStorageReady(true)
       })
@@ -222,6 +292,7 @@ export default function ReflectionChat({
   // ---- 自动保存聊天记录（bubbles 或 step 变化时，防抖 500ms） ----
   useEffect(() => {
     if (!storageKey || bubbles.length === 0) return
+    if (loading || streaming) return // 请求中不保存，防止空 placeholder 被持久化
     if (typeof window.electronAPI.saveReflectionChat !== 'function') return
     const timer = setTimeout(() => {
       window.electronAPI.saveReflectionChat(storageKey, {
@@ -232,19 +303,23 @@ export default function ReflectionChat({
       } satisfies SavedReflectionChat)
     }, 500)
     return () => clearTimeout(timer)
-  }, [bubbles, step, storageKey])
+  }, [bubbles, step, storageKey, loading, streaming])
 
   // ---- 重新开始对话 ----
   const handleRestart = useCallback(() => {
     if (storageKey && typeof window.electronAPI.saveReflectionChat === 'function') {
       window.electronAPI.saveReflectionChat(storageKey, null)
     }
+    streamCleanupRef.current?.()
     setBubbles([])
     messagesRef.current = []
     setStep(0)
     setRestored(false)
     setError(null)
+    setLoading(false)
+    setStreaming(false)
     initCalledRef.current = false
+    setRestartKey(k => k + 1)
   }, [storageKey])
 
   // 初始化：发送第一条 AI 消息（Step 1 提问）
@@ -276,17 +351,20 @@ export default function ReflectionChat({
     sendToAI(initMessages).then(content => {
       if (content) setStep(1) // 等待用户回答 Step 1
     })
-  }, [systemPrompt, screenshotBase64, storageReady])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [systemPrompt, screenshotBase64, storageReady, restartKey])
 
   // bubbles 变化时滚动到底
   useEffect(() => {
     scrollToBottom()
-  }, [bubbles, loading, scrollToBottom])
+  }, [bubbles, loading, streaming, scrollToBottom])
+
+  const isBusy = loading || streaming
 
   // 用户发送消息
   const handleSend = async () => {
     const text = input.trim()
-    if (!text || loading || step === 0 || step >= 4) return
+    if (!text || isBusy || step === 0 || step >= 4) return
 
     setInput('')
 
@@ -380,37 +458,33 @@ export default function ReflectionChat({
           </div>
         )}
 
-        {bubbles.map((b, i) => (
-          <div
-            key={i}
-            className={`flex ${b.role === 'user' ? 'justify-end' : 'justify-start'}`}
-          >
+        {bubbles.map((b, i) => {
+          const isLastEmpty = b.role === 'assistant' && !b.content && i === bubbles.length - 1
+          return (
             <div
-              className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap ${
-                b.role === 'user'
-                  ? 'bg-indigo-500 text-white rounded-br-md'
-                  : 'bg-gray-50 text-gray-800 border border-gray-100 rounded-bl-md'
-              }`}
+              key={i}
+              className={`flex ${b.role === 'user' ? 'justify-end' : 'justify-start'}`}
             >
-              {b.role === 'assistant' && onChartRef
-                ? parseChartRefs(b.content, onChartRef)
-                : b.content}
-            </div>
-          </div>
-        ))}
-
-        {/* 打字指示器 */}
-        {loading && (
-          <div className="flex justify-start">
-            <div className="bg-gray-50 border border-gray-100 rounded-2xl rounded-bl-md px-4 py-3">
-              <div className="flex gap-1.5">
-                <span className="w-2 h-2 bg-gray-300 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                <span className="w-2 h-2 bg-gray-300 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                <span className="w-2 h-2 bg-gray-300 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+              <div
+                className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap ${
+                  b.role === 'user'
+                    ? 'bg-indigo-500 text-white rounded-br-md'
+                    : 'bg-gray-50 text-gray-800 border border-gray-100 rounded-bl-md'
+                }`}
+              >
+                {isLastEmpty ? (
+                  <div className="flex gap-1.5">
+                    <span className="w-2 h-2 bg-gray-300 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                    <span className="w-2 h-2 bg-gray-300 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                    <span className="w-2 h-2 bg-gray-300 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                  </div>
+                ) : b.role === 'assistant' && onChartRef
+                  ? parseChartRefs(b.content, onChartRef)
+                  : b.content}
               </div>
             </div>
-          </div>
-        )}
+          )
+        })}
 
         {/* 错误提示 */}
         {error && (
@@ -439,7 +513,7 @@ export default function ReflectionChat({
               onChange={e => setInput(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter') handleSend() }}
               placeholder={isReady ? '说说你的想法…' : '等待 AI 回复…'}
-              disabled={!isReady || loading}
+              disabled={!isReady || isBusy}
               maxLength={500}
               className="flex-1 px-4 py-2.5 text-sm rounded-lg border border-gray-200
                          focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100
@@ -449,7 +523,7 @@ export default function ReflectionChat({
             />
             <button
               onClick={handleSend}
-              disabled={!input.trim() || !isReady || loading}
+              disabled={!input.trim() || !isReady || isBusy}
               className="px-4 py-2.5 rounded-xl bg-indigo-500 text-white text-sm font-semibold
                          hover:bg-indigo-600 active:scale-95
                          disabled:opacity-40 disabled:cursor-not-allowed

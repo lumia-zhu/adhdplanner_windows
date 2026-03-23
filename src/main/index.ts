@@ -255,6 +255,100 @@ function setupIPC(): void {
     }
   })
 
+  // -------- AI 流式请求代理（SSE） --------
+  let streamIdCounter = 0
+  const safeSend = (sender: Electron.WebContents, channel: string, ...args: unknown[]) => {
+    try {
+      if (!sender.isDestroyed()) sender.send(channel, ...args)
+    } catch { /* 发送失败时静默处理 */ }
+  }
+
+  ipcMain.handle('ai:requestStream', async (event, payload: { url: string; apiKey: string; body: string }) => {
+    const requestId = String(++streamIdCounter)
+    const STREAM_TIMEOUT_MS = 60_000
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), STREAM_TIMEOUT_MS)
+    const sender = event.sender
+
+    console.log(`[Stream#${requestId}] 开始请求 → ${payload.url}`)
+
+    ;(async () => {
+      try {
+        const resp = await net.fetch(payload.url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${payload.apiKey}`,
+          },
+          body: payload.body,
+          signal: controller.signal as AbortSignal,
+        })
+
+        console.log(`[Stream#${requestId}] 响应状态 ${resp.status}`)
+
+        if (!resp.ok) {
+          const text = await resp.text()
+          console.error(`[Stream#${requestId}] 接口错误：${text.slice(0, 300)}`)
+          safeSend(sender, 'ai:stream-error', requestId, `接口错误 ${resp.status}：${text.slice(0, 200)}`)
+          return
+        }
+
+        const reader = resp.body?.getReader()
+        if (!reader) {
+          console.error(`[Stream#${requestId}] 无法获取 reader`)
+          safeSend(sender, 'ai:stream-error', requestId, '无法获取响应流')
+          return
+        }
+
+        const decoder = new TextDecoder()
+        let buffer = ''
+        let chunkCount = 0
+
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+
+          buffer += decoder.decode(value, { stream: true })
+          const lines = buffer.split('\n')
+          buffer = lines.pop() ?? ''
+
+          for (const line of lines) {
+            const trimmed = line.trim()
+            if (!trimmed) continue
+            if (trimmed === 'data: [DONE]') {
+              console.log(`[Stream#${requestId}] 收到 [DONE]，共 ${chunkCount} 个 chunk`)
+              continue
+            }
+            if (!trimmed.startsWith('data: ')) continue
+            try {
+              const json = JSON.parse(trimmed.slice(6))
+              const delta = json?.choices?.[0]?.delta?.content
+              if (delta) {
+                chunkCount++
+                if (chunkCount <= 3) console.log(`[Stream#${requestId}] chunk#${chunkCount}: "${delta.slice(0, 40)}"`)
+                safeSend(sender, 'ai:stream-chunk', requestId, delta)
+              }
+            } catch {
+              console.warn(`[Stream#${requestId}] 无法解析 SSE 行: ${trimmed.slice(0, 100)}`)
+            }
+          }
+        }
+
+        console.log(`[Stream#${requestId}] 流结束，共 ${chunkCount} 个 chunk`)
+        safeSend(sender, 'ai:stream-end', requestId)
+      } catch (e: unknown) {
+        const isTimeout = e instanceof Error && e.name === 'AbortError'
+        console.error(`[Stream#${requestId}] 异常: ${isTimeout ? 'TIMEOUT' : String(e)}`)
+        safeSend(sender, 'ai:stream-error', requestId,
+          isTimeout ? 'AI 请求超时（60 秒无响应）' : String(e))
+      } finally {
+        clearTimeout(timer)
+      }
+    })()
+
+    return { requestId }
+  })
+
   // -------- 行为追踪 --------
   ipcMain.handle('tracker:append', (_, date: string, events: unknown[]) =>
     appendTrackerEvents(date, events))

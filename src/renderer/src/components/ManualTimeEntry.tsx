@@ -17,6 +17,7 @@ interface ManualTimeEntryProps {
   events: TrackEvent[]
   selectedDate: string
   onConfirm: (newEvents: TrackEvent[], newTasks: { title: string }[]) => void
+  onExpandChange?: (expanded: boolean) => void
 }
 
 interface EntryRow {
@@ -90,6 +91,7 @@ export default function ManualTimeEntry({
   events,
   selectedDate,
   onConfirm,
+  onExpandChange,
 }: ManualTimeEntryProps) {
   const [expanded, setExpanded] = useState(false)
   const [submitting, setSubmitting] = useState(false)
@@ -116,7 +118,8 @@ export default function ManualTimeEntry({
   const [newEnd, setNewEnd] = useState(10 * 60)
 
   const handleExpand = useCallback(() => {
-    if (!expanded) {
+    const next = !expanded
+    if (next) {
       setRows(
         unrecordedTasks.map((t) => ({
           id: t.id,
@@ -128,8 +131,9 @@ export default function ManualTimeEntry({
         })),
       )
     }
-    setExpanded((v) => !v)
-  }, [expanded, unrecordedTasks])
+    setExpanded(next)
+    onExpandChange?.(next)
+  }, [expanded, unrecordedTasks, onExpandChange])
 
   const toggleRow = useCallback((id: string) => {
     setRows((prev) => prev.map((r) => (r.id === id ? { ...r, checked: !r.checked } : r)))
@@ -209,6 +213,7 @@ export default function ManualTimeEntry({
       await onConfirm(allEvents, allNewTasks)
 
       setExpanded(false)
+      onExpandChange?.(false)
       setRows([])
       setNewTitle('')
     } catch (e) {

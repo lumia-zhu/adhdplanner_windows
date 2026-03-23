@@ -33,6 +33,16 @@ interface Window {
     saveAIConfig: (config: Record<string, string>) => Promise<boolean>
     /** AI 请求代理（绕过 CORS） */
     aiRequest: (payload: { url: string; apiKey: string; body: string }) => Promise<{ ok: boolean; status: number; body: string }>
+    /** AI 流式请求：返回 requestId，增量文本通过事件推送 */
+    aiRequestStream: (payload: { url: string; apiKey: string; body: string }) => Promise<{ requestId: string }>
+    /** 监听流式 AI 响应的增量文本 */
+    onAIStreamChunk: (cb: (requestId: string, delta: string) => void) => void
+    /** 监听流式 AI 响应结束 */
+    onAIStreamEnd: (cb: (requestId: string) => void) => void
+    /** 监听流式 AI 响应错误 */
+    onAIStreamError: (cb: (requestId: string, error: string) => void) => void
+    /** 清理所有流式 AI 监听器 */
+    offAIStream: () => void
     // 行为追踪
     appendTrackerEvents: (date: string, events: unknown[]) => Promise<boolean>
     loadTrackerEvents: (date: string) => Promise<unknown[]>

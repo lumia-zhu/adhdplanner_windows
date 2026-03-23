@@ -83,6 +83,32 @@ contextBridge.exposeInMainWorld('electronAPI', {
   aiRequest: (payload: { url: string; apiKey: string; body: string }): Promise<{ ok: boolean; status: number; body: string }> =>
     ipcRenderer.invoke('ai:request', payload),
 
+  /** AI 流式请求：返回 requestId，后续通过事件接收增量文本 */
+  aiRequestStream: (payload: { url: string; apiKey: string; body: string }): Promise<{ requestId: string }> =>
+    ipcRenderer.invoke('ai:requestStream', payload),
+
+  /** 监听流式 AI 响应的增量文本 */
+  onAIStreamChunk: (cb: (requestId: string, delta: string) => void): void => {
+    ipcRenderer.on('ai:stream-chunk', (_, requestId, delta) => cb(requestId, delta))
+  },
+
+  /** 监听流式 AI 响应结束 */
+  onAIStreamEnd: (cb: (requestId: string) => void): void => {
+    ipcRenderer.on('ai:stream-end', (_, requestId) => cb(requestId))
+  },
+
+  /** 监听流式 AI 响应错误 */
+  onAIStreamError: (cb: (requestId: string, error: string) => void): void => {
+    ipcRenderer.on('ai:stream-error', (_, requestId, error) => cb(requestId, error))
+  },
+
+  /** 清理所有流式 AI 监听器 */
+  offAIStream: (): void => {
+    ipcRenderer.removeAllListeners('ai:stream-chunk')
+    ipcRenderer.removeAllListeners('ai:stream-end')
+    ipcRenderer.removeAllListeners('ai:stream-error')
+  },
+
   /** 查询当前窗口模式（启动时同步状态，解决睡眠唤醒问题） */
   getWindowMode: (): Promise<{ isWidgetMode: boolean }> => ipcRenderer.invoke('window:getMode'),
 
