@@ -11,7 +11,7 @@
  *   紫色（indigo）= 品牌 / 选中态
  */
 
-import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
+import { useState, useEffect, useRef, useMemo, useCallback, forwardRef } from 'react'
 import type { Task } from '../types'
 import type { AIConfig, MicroActionChip } from '../services/ai'
 import { aiCache } from '../services/ai-cache'
@@ -20,7 +20,7 @@ import AILoadingTips from './AILoadingTips'
 const BAR_W = 380
 const BAR_H = 80
 const PANEL_H = 330
-const DROPDOWN_MAX_H = 200
+const DROPDOWN_MAX_H = 180  // 4.5 行，最后一行只露半截，暗示可滚动
 const TASK_ROW_H = 40
 
 const FALLBACK_CHIPS: MicroActionChip[] = [
@@ -34,6 +34,8 @@ interface StandbyWidgetProps {
   onStartMicro: (taskId: string, microTask: string, source: 'self' | 'ai_chip' | 'skip') => void
   onResumePaused: (taskId: string) => void
   onExpand: () => void
+  onQuickAddTask?: (title: string, id: string) => void
+  onDeleteTask?: (taskId: string) => void
 }
 
 function pickDefaultTask(tasks: Task[]): Task | null {
@@ -43,13 +45,19 @@ function pickDefaultTask(tasks: Task[]): Task | null {
 }
 
 export default function StandbyWidget({
-  tasks, aiConfig, onStartMicro, onResumePaused, onExpand,
+  tasks, aiConfig, onStartMicro, onResumePaused, onExpand, onQuickAddTask, onDeleteTask,
 }: StandbyWidgetProps) {
   // ---- 待命条状态 ----
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const dropdownRef = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
+
+  // ---- 快速添加任务状态 ----
+  const [quickAddMode, setQuickAddMode] = useState(false)
+  const [quickAddText, setQuickAddText] = useState('')
+  const [justAddedId, setJustAddedId] = useState<string | null>(null)
+  const quickAddRef = useRef<HTMLInputElement>(null)
 
   // ---- "开始第一步"面板状态 ----
   const [firstStepTaskId, setFirstStepTaskId] = useState<string | null>(null)
@@ -85,10 +93,13 @@ export default function StandbyWidget({
     : null
 
   // ---- 窗口尺寸 ----
+  const QUICK_ADD_H = 56
   const dropdownH = Math.min(incompleteTasks.length * TASK_ROW_H, DROPDOWN_MAX_H)
   const totalH = firstStepTask
     ? PANEL_H
-    : (dropdownOpen && incompleteTasks.length > 0 ? BAR_H + dropdownH : BAR_H)
+    : quickAddMode
+      ? BAR_H + QUICK_ADD_H
+      : (dropdownOpen && incompleteTasks.length > 0 ? BAR_H + dropdownH : BAR_H)
 
   useEffect(() => {
     window.electronAPI.resizeWidget(BAR_W, totalH)
@@ -179,6 +190,33 @@ export default function StandbyWidget({
       document.removeEventListener('mousedown', handle)
     }
   }, [dropdownOpen])
+
+  // ---- 快速添加任务 ----
+  const openQuickAdd = useCallback(() => {
+    setDropdownOpen(false)
+    setQuickAddMode(true)
+    setQuickAddText('')
+    setTimeout(() => quickAddRef.current?.focus(), 100)
+  }, [])
+
+  const closeQuickAdd = useCallback(() => {
+    setQuickAddMode(false)
+    setQuickAddText('')
+  }, [])
+
+  const handleQuickAddConfirm = useCallback(() => {
+    const title = quickAddText.trim()
+    if (!title || !onQuickAddTask) return
+    const newId = `t-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+    onQuickAddTask(title, newId)
+    setQuickAddText('')
+    setQuickAddMode(false)
+    setJustAddedId(newId)
+    setDropdownOpen(true)
+    setTimeout(() => {
+      setJustAddedId(null)
+    }, 2000)
+  }, [quickAddText, onQuickAddTask])
 
   // ---- 待命条按钮 ----
   const handleStart = (task: Task) => {
@@ -362,53 +400,151 @@ export default function StandbyWidget({
           </button>
         )}
 
-        {/* 区域3：展开主界面（始终显示） */}
-        <button
-          onClick={onExpand}
-          className="no-drag w-7 h-7 flex items-center justify-center text-gray-400 hover:text-indigo-500 hover:bg-indigo-50 rounded-lg transition-colors"
-          title="展开主界面"
-        >
-          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
-          </svg>
-        </button>
+        {/* 区域3：快速添加 + 展开主界面 */}
+        <div className="no-drag flex items-center gap-0.5 flex-shrink-0">
+          {onQuickAddTask && (
+            <button
+              onClick={quickAddMode ? closeQuickAdd : openQuickAdd}
+              className={`w-7 h-7 flex items-center justify-center rounded-lg transition-all ${
+                quickAddMode
+                  ? 'text-indigo-500 bg-indigo-50 rotate-45'
+                  : 'text-gray-400 hover:text-emerald-500 hover:bg-emerald-50'
+              }`}
+              title={quickAddMode ? '取消添加' : '快速添加任务'}
+            >
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+              </svg>
+            </button>
+          )}
+          <button
+            onClick={onExpand}
+            className="w-7 h-7 flex items-center justify-center text-gray-400 hover:text-indigo-500 hover:bg-indigo-50 rounded-lg transition-colors"
+            title="展开主界面"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+            </svg>
+          </button>
+        </div>
       </div>
 
-      {/* ---- 任务下拉列表 ---- */}
-      {dropdownOpen && incompleteTasks.length > 0 && (
-        <div
-          ref={dropdownRef}
-          className="border-t border-gray-100 overflow-y-auto overscroll-contain"
-          style={{ maxHeight: DROPDOWN_MAX_H }}
-        >
-          {incompleteTasks.map(task => {
-            const taskIsPaused = !!task.pausedSession
-            const isCurrent = task.id === currentTask?.id
-            return (
-              <button
-                key={task.id}
-                onClick={() => handleSelect(task)}
-                className={`w-full flex items-center gap-2 px-4 text-left transition-colors ${
-                  isCurrent ? 'bg-emerald-50/60' : 'hover:bg-gray-50'
-                }`}
-                style={{ height: TASK_ROW_H }}
-              >
-                {isCurrent && (
-                  <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 flex-shrink-0" />
-                )}
-                <span className={`flex-1 text-xs truncate ${
-                  isCurrent ? 'text-emerald-700 font-medium' : 'text-gray-700'
-                }`}>
-                  {task.title}
-                </span>
-                {taskIsPaused && (
-                  <span className="text-2xs text-amber-500 flex-shrink-0">暂停中</span>
-                )}
-              </button>
-            )
-          })}
+      {/* ---- 快速添加任务输入 ---- */}
+      {quickAddMode && (
+        <div className="no-drag border-t border-gray-100 px-3 py-2.5 flex items-center gap-2">
+          <input
+            ref={quickAddRef}
+            type="text"
+            value={quickAddText}
+            onChange={(e) => setQuickAddText(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && quickAddText.trim()) handleQuickAddConfirm()
+              if (e.key === 'Escape') closeQuickAdd()
+            }}
+            placeholder="输入任务名，按 Enter 添加"
+            maxLength={80}
+            className="flex-1 px-3 py-1.5 text-xs rounded-lg border border-gray-200
+                       focus:border-emerald-400 focus:ring-1 focus:ring-emerald-100
+                       outline-none bg-gray-50 focus:bg-white transition-all
+                       placeholder-gray-300"
+          />
+          <button
+            onClick={handleQuickAddConfirm}
+            disabled={!quickAddText.trim()}
+            className="px-3 py-1.5 rounded-lg bg-emerald-500 text-white text-xs font-semibold
+                       hover:bg-emerald-600 active:scale-95
+                       disabled:opacity-40 disabled:cursor-not-allowed
+                       shadow-sm shadow-emerald-200/50 transition-all flex-shrink-0"
+          >
+            添加
+          </button>
         </div>
+      )}
+
+      {/* ---- 任务下拉列表 ---- */}
+      {!quickAddMode && dropdownOpen && incompleteTasks.length > 0 && (
+        <DropdownList
+          ref={dropdownRef}
+          tasks={incompleteTasks}
+          currentTaskId={currentTask?.id ?? null}
+          justAddedId={justAddedId}
+          onSelect={handleSelect}
+          onDelete={onDeleteTask}
+        />
       )}
     </div>
   )
 }
+
+// ===================== 下拉任务列表 =====================
+
+interface DropdownListProps {
+  tasks: Task[]
+  currentTaskId: string | null
+  justAddedId: string | null
+  onSelect: (task: Task) => void
+  onDelete?: (taskId: string) => void
+}
+
+const DropdownList = forwardRef<HTMLDivElement, DropdownListProps>(
+  ({ tasks, currentTaskId, justAddedId, onSelect, onDelete }, ref) => (
+    <div
+      ref={ref}
+      className="border-t border-gray-100 overflow-y-auto overscroll-contain"
+      style={{ maxHeight: DROPDOWN_MAX_H }}
+    >
+      {tasks.map(task => {
+        const taskIsPaused = !!task.pausedSession
+        const isCurrent = task.id === currentTaskId
+        const isJustAdded = task.id === justAddedId
+        return (
+          <div
+            key={task.id}
+            ref={isJustAdded ? (el) => { el?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }) } : undefined}
+            onClick={() => onSelect(task)}
+            className={`group w-full flex items-center gap-2 px-4 text-left transition-all cursor-pointer ${
+              isJustAdded
+                ? 'bg-emerald-50 animate-pulse'
+                : isCurrent ? 'bg-emerald-50/60' : 'hover:bg-gray-50'
+            }`}
+            style={{ height: TASK_ROW_H }}
+          >
+            {isCurrent && !isJustAdded && (
+              <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 flex-shrink-0" />
+            )}
+            {isJustAdded && (
+              <span className="text-2xs text-emerald-500 flex-shrink-0">✓</span>
+            )}
+            <span className={`flex-1 text-xs truncate ${
+              isJustAdded
+                ? 'text-emerald-600 font-medium'
+                : isCurrent ? 'text-emerald-700 font-medium' : 'text-gray-700'
+            }`}>
+              {task.title}
+            </span>
+            {taskIsPaused && (
+              <span className="text-2xs text-amber-500 flex-shrink-0 group-hover:hidden">暂停中</span>
+            )}
+            {onDelete && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onDelete(task.id)
+                }}
+                className="w-5 h-5 rounded flex items-center justify-center flex-shrink-0
+                           text-gray-300 hover:text-red-500 hover:bg-red-50
+                           opacity-0 group-hover:opacity-100
+                           transition-all"
+                title="删除任务"
+              >
+                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            )}
+          </div>
+        )
+      })}
+    </div>
+  )
+)

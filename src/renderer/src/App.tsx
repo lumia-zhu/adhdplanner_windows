@@ -237,6 +237,22 @@ export default function App() {
     }
   }, [tasks, loading, currentDate, saveTasks])
 
+  // -------- Widget 快速添加/删除任务 --------
+  const handleQuickAddTask = useCallback((title: string, id: string) => {
+    setTasks(prev => [...prev, {
+      id,
+      title,
+      note: '',
+      priority: 'medium' as const,
+      completed: false,
+      createdAt: Date.now(),
+    }])
+  }, [setTasks])
+
+  const handleDeleteTask = useCallback((taskId: string) => {
+    setTasks(prev => prev.filter(t => t.id !== taskId))
+  }, [setTasks])
+
   // -------- AI 配置保存 --------
   const handleSaveAIConfig = async (cfg: AIConfig) => {
     setAIConfig(cfg)
@@ -335,6 +351,8 @@ export default function App() {
           onStartMicro={focusSession.handleStandbyStartMicro}
           onResumePaused={focusSession.handleStandbyResume}
           onExpand={widgetMode.handleExpandFromStandby}
+          onQuickAddTask={handleQuickAddTask}
+          onDeleteTask={handleDeleteTask}
         />
       </div>
     )
