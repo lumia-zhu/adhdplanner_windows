@@ -40,12 +40,7 @@ export default function CarryOverBanner({ groups, onCarryOver, onDismiss }: Carr
     [groups],
   )
 
-  // 默认全选
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => {
-    const ids = new Set<string>()
-    groups.forEach(g => g.tasks.forEach(t => ids.add(t.id)))
-    return ids
-  })
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
 
   const toggleTask = (id: string) => {
     setSelectedIds(prev => {
@@ -83,8 +78,8 @@ export default function CarryOverBanner({ groups, onCarryOver, onDismiss }: Carr
           <span className="text-sm">📦</span>
           <span>
             {dayCount === 1
-              ? `${dateLabel(groups[0].fromDate)}还有 ${totalCount} 个任务没做完，要继续吗`
-              : `之前有 ${totalCount} 个任务还没做完哦，看看要不要加到今天`
+              ? `${dateLabel(groups[0].fromDate)}还有些任务没做完，要加到今天吗`
+              : `之前有些任务还没做完，看看要不要加到今天`
             }
           </span>
           <svg className="w-3 h-3 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
