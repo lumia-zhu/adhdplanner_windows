@@ -425,10 +425,11 @@ app.whenReady().then(async () => {
     validateWidgetBounds()
   })
 
-  // 系统唤醒后重新同步窗口状态
-  powerMonitor.on('resume', () => {
+  // 系统唤醒 / 解锁后恢复窗口状态并强制重载页面（防止 GPU 上下文丢失导致白屏）
+  const handleWakeUp = (source: string) => {
     if (!S.mainWindow) return
-    safeWinOp('resume', (win) => {
+    console.log(`[Power] ${source} detected, restoring window`)
+    safeWinOp(source, (win) => {
       if (S.isWidgetMode) {
         win.setAlwaysOnTop(true, 'floating')
         if (win.isMinimized()) win.restore()
@@ -437,32 +438,19 @@ app.whenReady().then(async () => {
         startWidgetHeartbeat()
       }
       win.webContents.setZoomFactor(S.uiScale)
-      win.webContents.send('window:modeSync', { isWidgetMode: S.isWidgetMode })
-    })
-    validateWidgetBounds()
-  })
-
-  // 锁屏解锁后也同步一次
-  powerMonitor.on('unlock-screen', () => {
-    if (!S.mainWindow) return
-    safeWinOp('unlock-screen', (win) => {
-      if (S.isWidgetMode) {
-        win.setAlwaysOnTop(true, 'floating')
-        if (win.isMinimized()) win.restore()
-        win.show()
-        refreshDragRegion()
-        startWidgetHeartbeat()
-      }
-      win.webContents.setZoomFactor(S.uiScale)
+      // 延迟 reload 防止 GPU 上下文丢失后白屏
       setTimeout(() => {
         if (S.mainWindow && !S.mainWindow.isDestroyed()) {
-          S.mainWindow.webContents.invalidate()
-          S.mainWindow.webContents.send('window:modeSync', { isWidgetMode: S.isWidgetMode })
+          console.log(`[Power] ${source}: reloading renderer to recover from potential blank screen`)
+          S.mainWindow.webContents.reload()
         }
-      }, 200)
+      }, 500)
     })
     validateWidgetBounds()
-  })
+  }
+
+  powerMonitor.on('resume', () => handleWakeUp('resume'))
+  powerMonitor.on('unlock-screen', () => handleWakeUp('unlock-screen'))
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createMainWindow()
