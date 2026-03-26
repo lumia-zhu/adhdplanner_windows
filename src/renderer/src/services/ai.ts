@@ -54,6 +54,7 @@ function buildResponsesBody(modelId: string, systemPrompt: string, userPrompt: s
       { role: 'user', content: [{ type: 'input_text', text: userPrompt }] },
     ],
     temperature,
+    thinking: { type: 'disabled' },
   })
 }
 
@@ -518,6 +519,8 @@ export async function chatReflection(
 
   const useResponses = isResponsesApi(config.apiUrl)
 
+  const modelToUse = config.modelId
+
   let body: string
   if (useResponses) {
     // Responses API —— 把 messages 转为 input 数组格式，处理多模态 content
@@ -534,14 +537,15 @@ export async function chatReflection(
       return { role: m.role, content: parts }
     })
     body = JSON.stringify({
-      model: config.modelId,
+      model: modelToUse,
       input,
       temperature: 0.8,
+      thinking: { type: 'disabled' },
     })
   } else {
     // Chat Completions —— 直接用 messages 格式
     body = JSON.stringify({
-      model: config.modelId,
+      model: modelToUse,
       messages,
       temperature: 0.8,
       max_tokens: 800,
@@ -594,15 +598,17 @@ export async function chatReflectionStream(
     return null
   }
 
-  const useResponses = isResponsesApi(config.apiUrl)
+  const proConfig: AIConfig = { ...config, modelId: 'doubao-seed-2-0-pro-260215' }
+
+  const useResponses = isResponsesApi(proConfig.apiUrl)
 
   // Responses API 不一定支持 stream，退回非流式
   if (useResponses) {
-    return fallbackToNonStream(messages, config, onChunk, onDone, onError)
+    return fallbackToNonStream(messages, proConfig, onChunk, onDone, onError)
   }
 
   const body = JSON.stringify({
-    model: config.modelId,
+    model: proConfig.modelId,
     messages,
     temperature: 0.8,
     max_tokens: 800,
@@ -616,14 +622,14 @@ export async function chatReflectionStream(
 
   const settle = () => { settled = true; window.electronAPI.offAIStream() }
 
-  // 兜底：15 秒内没收到任何 chunk/end/error → 自动回退到非流式
+  // 兜底：30 秒内没收到任何 chunk/end/error → 自动回退到非流式（pro 模型首 token 较慢）
   const fallbackTimer = setTimeout(() => {
     if (!settled && !receivedAnyChunk) {
       settle()
-      console.warn('[AI Stream] 15 秒未收到响应，回退到非流式请求')
-      fallbackToNonStream(messages, config, onChunk, onDone, onError)
+      console.warn('[AI Stream] 30s 未收到响应，回退到非流式请求')
+      fallbackToNonStream(messages, proConfig, onChunk, onDone, onError)
     }
-  }, 15_000)
+  }, 30_000)
 
   window.electronAPI.offAIStream()
 
@@ -645,16 +651,15 @@ export async function chatReflectionStream(
     if (!settled) {
       clearTimeout(fallbackTimer)
       settle()
-      // 流式出错 → 自动回退到非流式
       console.warn('[AI Stream] 流式出错，回退到非流式:', errMsg)
-      fallbackToNonStream(messages, config, onChunk, onDone, onError)
+      fallbackToNonStream(messages, proConfig, onChunk, onDone, onError)
     }
   })
 
   try {
     await window.electronAPI.aiRequestStream({
-      url: config.apiUrl,
-      apiKey: config.apiKey,
+      url: proConfig.apiUrl,
+      apiKey: proConfig.apiKey,
       body,
     })
   } catch (e) {
@@ -662,7 +667,7 @@ export async function chatReflectionStream(
       clearTimeout(fallbackTimer)
       settle()
       console.warn('[AI Stream] 请求异常，回退到非流式:', e)
-      fallbackToNonStream(messages, config, onChunk, onDone, onError)
+      fallbackToNonStream(messages, proConfig, onChunk, onDone, onError)
     }
     return null
   }
@@ -724,7 +729,7 @@ export function buildReflectionSystemPrompt(
   - ❌ "如果把这个任务放在高峰时段做，你觉得会有什么不一样的效果？"（预设了"换时段"是答案）
   - ✅ "你当时做这个任务的时候，感觉顺不顺？有什么让你印象深的？"（回忆体验）
   - ✅ "如果下次再碰到这种任务，你会想怎么安排？"（完全开放，不预设方向）
-3. **一条消息只问一个问题**，分两段写：第一段陈述数据事实（2-3 句），第二段提一个核心问题
+3. **回复以数据事实陈述为主**（2-3 句）。可以在末尾自然地穿插一个觉察问题帮用户往内看（比如"你当时有注意到自己状态在变化吗？"），但不是每条都要有——如果数据洞察本身已经足够引发思考，就不追加问题。一条消息最多一个问题
 
 ## 语气
 - 像微信聊天一样自然，不鸡汤不教训，emoji 最多 1 个
@@ -754,10 +759,27 @@ ${isToday ? '- 【chart:completion-rate】任务完成率\n' : ''}- 【chart:met
 4. **看清规律**：从这次经历中提炼对未来有帮助的经验。下次遇到类似任务最需要提前注意什么？想保留什么做法？想调整什么？
 
 ### 开场
-从数据${hasScreenshot ? '和截图' : ''}中挑一个最突出的点（可以是亮点也可以是有趣的模式），引用图表，自然地问用户当时的体验和感受。
-示例："【chart:task-duration】'整理文献'花了 25 分钟一口气做完。\n\n你还记得当时做这个的感觉吗？是什么让你能一直做下去的？"
+第一条消息分两部分：
+1. **一句简短问候**（≤ 15 字），语气轻松自然、像朋友打招呼。每次措辞不同，可以参考当前时段（上午/下午/晚上）或${dayRef}的整体情况灵活变化。示例：
+   - "嗨～来看看${dayRef}的情况吧"
+   - "晚上好呀，一起回顾下${dayRef}～"
+   - "${dayRef}辛苦啦，来看看数据"
+   不要用"您好"这种正式称呼，保持朋友感。
+2. **数据洞察**（2-3 句），从${dayRef}的整体行为模式出发，引用 1-2 个图表，帮用户看见${dayRef}的行为节奏和状态特征。不做任务间对比，聚焦于用户整体的状态和模式。
+
+结尾用一句话引导用户："可以点下面的问题，也可以直接说说你的想法。"
+
+寻找整体模式的优先级：
+1. ${dayRef}的活跃节奏——高峰在什么时段、什么时候平缓下来（引用【chart:rhythm】）
+2. 专注和心流的整体状况——总时长、持续性如何（引用【chart:metrics】）
+3. 卡住和恢复的整体情况（如有卡住数据）
+4. ${dayRef}整体的完成节奏（引用【chart:completion-rate】或【chart:activity】）
+
+示例："嗨～来看看${dayRef}的情况吧 😊\n\n【chart:rhythm】你${dayRef}的活跃节奏在上午有个比较明显的高峰，下午逐渐平缓了。【chart:metrics】总共专注了 45 分钟，其中 15 分钟进入了心流。\n\n可以点下面的问题，也可以直接说说你的想法。"
 
 ### 后续
+- 如果用户对开场洞察有反应，顺着他感兴趣的方向深入
+- 如果用户回复简短或不确定聊什么，再自然地针对某个图表特征问一个开放性问题
 - 根据用户的回答深入，不急着切换话题——一次有深度的反思 > 浅浅覆盖所有方向
 - 每条回复承接用户的上文（"你提到 XX"），引用相关图表补充数据事实
 - 没覆盖所有方向也没关系，跟着用户走
@@ -765,8 +787,8 @@ ${isToday ? '- 【chart:completion-rate】任务完成率\n' : ''}- 【chart:met
 - 如果用户主动想结束，简短鼓励后结束
 
 ## 严格规则
-- 直接开始聊，不自我介绍
-- 每条消息只聊一个任务/时刻，多个亮点只挑最突出的
+- 直接开始，不自我介绍
+- 开场只描述整体模式，不挑单个任务对比
 - 后续消息必须承接用户回答（"你提到 XX"），不要忽略上文
 - **信息层级**：数据中已有的事实（任务名、时长、卡顿详情）直接陈述，绝不当问题问；只问体验层和行动层的问题
 - **禁止替用户思考**：AI 不能在问题中给出任何建议、策略或具体做法。问题只能指向用户的回忆（"当时什么感觉"）或用户的自主规划（"你会怎么安排"），不能暗示方向
@@ -805,7 +827,7 @@ export function buildWeeklyReflectionSystemPrompt(
 2. **禁止建议式提问**：问题中不能包含策略或方向暗示。AI 只呈现数据事实 + 好奇地提问，策略由用户自己说出来
   - ❌ "如果下周把重要任务集中在周三这样的好状态日，你觉得怎么样？"（预设了做法）
   - ✅ "你还记得周三那天是什么情况让你状态那么好吗？"（回忆体验）
-3. **一条消息只问一个问题**，分两段：数据事实（2-3 句）+ 一个核心问题
+3. **回复以数据事实陈述为主**（2-3 句）。可以在末尾自然地穿插一个觉察问题帮用户往内看，但不是每条都要有——如果数据洞察本身已经足够引发思考，就不追加问题。一条消息最多一个问题
 
 ## 语气
 - 像微信聊天一样自然，不鸡汤不教训，emoji 最多 1 个
@@ -834,10 +856,27 @@ ${screenshotNote}
 4. **看清规律**：从一周的经历中提炼跨天规律。下周遇到类似情况最需要注意什么？想保留什么做法？想调整什么？
 
 ### 开场
-从数据${hasScreenshot ? '和截图' : ''}中挑一个最突出的跨天规律或趋势，引用图表，自然地问用户当时的体验。
-示例："【chart:week-completion】周三完成率最高 85%，【chart:week-heatmap】那天上午活跃度特别集中。\n\n你还记得周三那天是什么情况吗？当时做任务的感觉怎么样？"
+第一条消息分两部分：
+1. **一句简短问候**（≤ 15 字），语气轻松自然、像朋友打招呼。每次措辞不同，灵活变化。示例：
+   - "嗨～来看看这周的情况吧"
+   - "一周过去了，一起回顾下～"
+   - "这周辛苦啦，来看看数据"
+   不要用"您好"这种正式称呼，保持朋友感。
+2. **数据洞察**（2-3 句），从这一周的整体行为模式出发，引用 1-2 个图表，帮用户看见跨天的节奏和状态特征。聚焦于整体趋势，不对比具体任务。
+
+结尾用一句话引导用户："可以点下面的问题，也可以直接说说你的想法。"
+
+寻找整体模式的优先级：
+1. 一周的活跃节奏趋势——哪几天活跃、哪几天平缓（引用【chart:week-completion】或【chart:week-heatmap】）
+2. 整周专注和心流的总体状况（引用【chart:week-metrics】）
+3. 跨天的时段规律——是否有固定的"黄金时段"（引用【chart:week-heatmap】）
+4. 一周整体的完成节奏和趋势（引用【chart:week-rhythm】）
+
+示例："嗨～一周过去了，来看看整体情况吧 😊\n\n【chart:week-completion】这一周前几天的完成率在逐步上升，周四到了最高点，之后有所回落。【chart:week-heatmap】整体来看上午 10-11 点是你最活跃的时段。\n\n可以点下面的问题，也可以直接说说你的想法。"
 
 ### 后续
+- 如果用户对开场洞察有反应，顺着他感兴趣的方向深入
+- 如果用户回复简短或不确定聊什么，再自然地针对某个图表特征问一个开放性问题
 - 根据用户的回答深入，不急着切换话题——一次有深度的反思 > 浅浅覆盖所有方向
 - 每条回复承接用户的上文（"你提到 XX"），引用相关图表补充数据事实
 - 没覆盖所有方向也没关系，跟着用户走
@@ -845,8 +884,8 @@ ${screenshotNote}
 - 如果用户主动想结束，简短鼓励后结束
 
 ## 严格规则
-- 直接开始聊，不自我介绍
-- 关注跨天对比和趋势，不聊某一天的细节
+- 直接开始，不自我介绍
+- 开场只描述整体趋势，不挑单个任务或单天对比
 - 后续消息必须承接用户回答（"你提到 XX"）
 - 数据中已有的事实直接陈述，绝不当问题问；只问体验层和行动层的问题
 - **禁止替用户思考**：AI 不能在问题中给出任何建议、策略或具体做法。问题只能指向用户的回忆（"当时什么感觉"）或用户的自主规划（"你会怎么安排"），不能暗示方向
@@ -857,4 +896,87 @@ ${screenshotNote}
 ========== 周数据 ==========
 ${weekContext}
 ========== 数据结束 ==========`
+}
+
+/**
+ * 独立 API 调用生成探索方向（不走流式，轻量快速）
+ *
+ * 在主回复完成后调用，根据最近对话上下文生成 2-3 个用户视角的分析方向。
+ * 返回字符串数组；出错时返回空数组，不影响主流程。
+ */
+export async function generateSuggestions(
+  recentMessages: ReflectionMessage[],
+  config: AIConfig,
+  mode: 'daily' | 'weekly' = 'daily',
+): Promise<string[]> {
+  if (!config.apiKey || !config.modelId || !config.apiUrl) return []
+
+  // 只取 user/assistant 轮次（排除 system prompt），最多最近 4 条
+  const contextMessages = recentMessages
+    .filter(m => m.role !== 'system')
+    .slice(-4)
+    .map(m => ({
+      ...m,
+      // 多模态消息（含截图）转为纯文本摘要
+      content: Array.isArray(m.content)
+        ? (m.content as MessageContentPart[])
+            .filter(p => p.type === 'text')
+            .map(p => (p as { type: 'text'; text: string }).text)
+            .join('\n') || '[用户发送了图片]'
+        : m.content,
+    }))
+
+  if (contextMessages.length === 0) return []
+
+  // 从对话中提取用户已问过的话题，用于去重
+  const askedTopics = contextMessages
+    .filter(m => m.role === 'user')
+    .map(m => typeof m.content === 'string' ? m.content : '')
+    .filter(t => t.length > 0)
+    .join('；')
+
+  const modeHint = mode === 'weekly'
+    ? `这是一周的数据回顾。方向可以涉及：跨天趋势对比（如哪天效率最高）、不同天的状态变化、时段规律的跨天一致性、一周内的行为模式演变等。
+示例：
+  - "帮我看看哪天专注效率最高"
+  - "这周的活跃时段有什么规律？"
+  - "周中和周末的状态差别大吗？"`
+    : `这是某一天的数据回顾。方向可以涉及：某个时段的详细分析、任务之间的切换模式、专注与休息的节奏、卡住时的状态变化等。
+示例：
+  - "帮我分析下午的专注变化"
+  - "哪些时段我状态最好？"
+  - "看看任务切换时发生了什么"`
+
+  const systemPrompt = `根据下面的对话，生成 2-3 个"探索方向"供用户点选。
+${modeHint}
+要求：
+- 这是用户让你进一步分析数据的方向，不是让用户自己反思
+- 每条 ≤ 25 字，指向不同数据角度
+- **严禁重复**：用户已经问过的话题绝对不能再出现，也不能换个说法重复。用户已问过：「${askedTopics || '无'}」
+- 方向之间也不能互相重复或含义相近
+- 只输出列表，每行一条，前面加 -，不要任何其他内容`
+
+  const messages: ReflectionMessage[] = [
+    { role: 'system', content: systemPrompt },
+    ...contextMessages,
+  ]
+
+  const miniConfig: AIConfig = { ...config, modelId: 'doubao-seed-2-0-mini-260215' }
+  try {
+    const result = await chatReflection(messages, miniConfig)
+    if (!result.content) {
+      console.warn('[generateSuggestions] 空回复', result.error)
+      return []
+    }
+
+    const items = result.content
+      .split('\n')
+      .map(line => line.replace(/^[-•\d.]\s*/, '').trim())
+      .filter(line => line.length > 0 && line.length <= 30)
+      .slice(0, 3)
+    return items
+  } catch (e) {
+    console.warn('[generateSuggestions] 异常', e)
+    return []
+  }
 }

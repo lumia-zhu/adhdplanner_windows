@@ -7,7 +7,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import type { AIConfig, ReflectionMessage, MessageContentPart } from '../services/ai'
-import { chatReflectionStream } from '../services/ai'
+import { chatReflectionStream, generateSuggestions } from '../services/ai'
 
 interface ChatBubble {
   role: 'user' | 'assistant'
@@ -123,6 +123,8 @@ interface ReflectionChatProps {
   systemPrompt: string
   /** AI 配置 */
   aiConfig: AIConfig
+  /** 反思模式：日反思 or 周反思，用于生成不同风格的探索方向 */
+  mode?: 'daily' | 'weekly'
   /** 仪表板截图 base64（data:image/jpeg;base64,...） */
   screenshotBase64?: string | null
   /** 当前反思的日期 YYYY-MM-DD（用于截图消息中标注日期） */
@@ -140,6 +142,7 @@ interface ReflectionChatProps {
 export default function ReflectionChat({
   systemPrompt,
   aiConfig,
+  mode = 'daily',
   screenshotBase64,
   selectedDate,
   storageKey,
@@ -156,6 +159,7 @@ export default function ReflectionChat({
   const [restored, setRestored] = useState(false)
   const [storageReady, setStorageReady] = useState(false)
   const [restartKey, setRestartKey] = useState(0)
+  const [suggestions, setSuggestions] = useState<string[]>([])
   const scrollRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const messagesRef = useRef<ReflectionMessage[]>([])
@@ -190,12 +194,14 @@ export default function ReflectionChat({
 
       let settled = false
       let gotActivity = false
-      const TIMEOUT_MS = 20_000
+      const TIMEOUT_MS = 60_000
+      const startTime = Date.now()
 
       const timeoutId = setTimeout(() => {
         if (settled || gotActivity) return
         settled = true
-        console.warn('[ReflectionChat] 20s 超时，未收到任何 AI 响应')
+        const elapsed = ((Date.now() - startTime) / 1000).toFixed(1)
+        console.warn(`[ReflectionChat] ${elapsed}s 超时，未收到任何 AI 响应。消息数: ${newMessages.length}`)
         streamCleanupRef.current?.()
         setStreaming(false)
         setLoading(false)
@@ -224,24 +230,41 @@ export default function ReflectionChat({
           if (settled) return
           settled = true
           clearTimeout(timeoutId)
+          const elapsed = ((Date.now() - startTime) / 1000).toFixed(1)
+          console.log(`[ReflectionChat] AI 回复完成，耗时 ${elapsed}s，长度 ${fullText.length}`)
           setStreaming(false)
           setLoading(false)
-          messagesRef.current = [
-            ...newMessages,
-            { role: 'assistant', content: fullText },
-          ]
-          if (!fullText) {
+
+          const content = fullText.trim()
+          if (!content) {
+            console.warn('[ReflectionChat] AI 回复为空')
             setError('AI 回复为空')
             setBubbles(prev => prev.slice(0, -1))
             resolve(null)
           } else {
-            resolve(fullText)
+            messagesRef.current = [
+              ...newMessages,
+              { role: 'assistant', content },
+            ]
+            resolve(content)
+
+            // 主回复完成后，独立调用生成探索方向（不阻塞主流程）
+            const sugStart = Date.now()
+            generateSuggestions(messagesRef.current, aiConfig, mode)
+              .then(items => {
+                const sugElapsed = ((Date.now() - sugStart) / 1000).toFixed(1)
+                console.log(`[ReflectionChat] 探索方向生成完成，耗时 ${sugElapsed}s，数量 ${items.length}`, items)
+                if (items.length > 0) setSuggestions(items)
+              })
+              .catch(e => { console.warn('[ReflectionChat] 探索方向生成失败', e) })
           }
         },
         (errMsg) => {
           if (settled) return
           settled = true
           clearTimeout(timeoutId)
+          const elapsed = ((Date.now() - startTime) / 1000).toFixed(1)
+          console.warn(`[ReflectionChat] AI 出错，耗时 ${elapsed}s:`, errMsg)
           setStreaming(false)
           setLoading(false)
           setError(errMsg)
@@ -316,6 +339,7 @@ export default function ReflectionChat({
     setError(null)
     setLoading(false)
     setStreaming(false)
+    setSuggestions([])
     initCalledRef.current = false
     setRestartKey(k => k + 1)
   }, [storageKey])
@@ -361,18 +385,16 @@ export default function ReflectionChat({
 
   useEffect(() => {
     scrollToBottom()
-  }, [bubbles, loading, streaming, scrollToBottom])
+  }, [bubbles, loading, streaming, suggestions, scrollToBottom])
 
   const isBusy = loading || streaming
   const canSend = chatActive && !isBusy
 
-  // 用户发送消息（开放式，没有步骤限制）
-  const handleSend = async () => {
-    const text = input.trim()
+  // 发送一条用户消息（文本来自输入框或备选问题点击）
+  const sendUserMessage = useCallback(async (text: string) => {
     if (!text || !canSend) return
 
-    setInput('')
-
+    setSuggestions([])
     const userBubble: ChatBubble = { role: 'user', content: text, timestamp: Date.now() }
     setBubbles(prev => [...prev, userBubble])
 
@@ -382,8 +404,14 @@ export default function ReflectionChat({
     ]
 
     await sendToAI(newMessages)
-
     inputRef.current?.focus()
+  }, [canSend, sendToAI])
+
+  const handleSend = () => {
+    const text = input.trim()
+    if (!text) return
+    setInput('')
+    sendUserMessage(text)
   }
 
   return (
@@ -420,6 +448,24 @@ export default function ReflectionChat({
             </div>
           )
         })}
+
+        {/* 备选反思问题 */}
+        {suggestions.length > 0 && !isBusy && (
+          <div className="flex flex-wrap gap-2 pl-1">
+            {suggestions.map((q, i) => (
+              <button
+                key={i}
+                onClick={() => sendUserMessage(q)}
+                className="text-xs px-3 py-1.5 rounded-full border border-gray-200
+                           bg-white text-gray-600 hover:bg-gray-50 hover:border-gray-300
+                           hover:text-gray-800 transition-all cursor-pointer
+                           leading-snug text-left"
+              >
+                {q}
+              </button>
+            ))}
+          </div>
+        )}
 
         {/* 历史记录恢复提示 */}
         {restored && (
