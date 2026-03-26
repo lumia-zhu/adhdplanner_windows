@@ -109,7 +109,7 @@ export default function ActivityRhythmChart({ data }: Props) {
       )}
 
       {/* SVG 图表 */}
-      <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ maxHeight: 140 }}>
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ aspectRatio: `${W}/${H}`, maxHeight: 180 }}>
         {/* 背景网格线 */}
         {ticks.map((tickVal, i) => {
           const ratio = maxVal > 0 ? tickVal / maxVal : 0

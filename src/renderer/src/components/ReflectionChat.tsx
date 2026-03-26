@@ -1,7 +1,7 @@
 /**
  * ReflectionChat —— AI 反思对话窗
  *
- * 3问 + 1总结 的引导式对话，支持多轮上下文
+ * 开放式反思对话，围绕元认知四个方向自然推进
  * 对话历史在组件内管理
  */
 
@@ -131,8 +131,10 @@ interface ReflectionChatProps {
   storageKey?: string
   /** 图表引用回调：当用户点击 AI 消息中的图表标签时触发 */
   onChartRef?: (chartId: string) => void
-  /** 反思完成回调（AI 生成总结后） */
+  /** 反思完成回调（用于埋点） */
   onComplete?: (summary: string) => void
+  /** 结束反思并关闭侧边栏 */
+  onEndChat?: () => void
 }
 
 export default function ReflectionChat({
@@ -143,23 +145,23 @@ export default function ReflectionChat({
   storageKey,
   onChartRef,
   onComplete,
+  onEndChat,
 }: ReflectionChatProps) {
   const [bubbles, setBubbles] = useState<ChatBubble[]>([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [streaming, setStreaming] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [step, setStep] = useState(0)  // 0=等待首条AI, 1-3=等待用户回答, 4=已完成
-  const [restored, setRestored] = useState(false)      // 是否从历史记录恢复
-  const [storageReady, setStorageReady] = useState(false) // 存储检查是否完成
-  const [restartKey, setRestartKey] = useState(0)         // 重启计数器，驱动 init useEffect 重新执行
+  const [chatActive, setChatActive] = useState(false) // false=等待AI首条, true=对话中
+  const [restored, setRestored] = useState(false)
+  const [storageReady, setStorageReady] = useState(false)
+  const [restartKey, setRestartKey] = useState(0)
   const scrollRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const messagesRef = useRef<ReflectionMessage[]>([])
-  const initCalledRef = useRef(false) // 防止 Strict Mode 重复初始化
+  const initCalledRef = useRef(false)
   const streamCleanupRef = useRef<(() => void) | null>(null)
 
-  // 滚动到底
   const scrollToBottom = useCallback(() => {
     requestAnimationFrame(() => {
       scrollRef.current?.scrollTo({
@@ -169,12 +171,10 @@ export default function ReflectionChat({
     })
   }, [])
 
-  // 组件卸载时清理流式监听
   useEffect(() => {
     return () => { streamCleanupRef.current?.() }
   }, [])
 
-  // 发送消息给 AI 并获取流式回复
   const sendToAI = useCallback((newMessages: ReflectionMessage[]): Promise<string | null> => {
     setLoading(true)
     setStreaming(false)
@@ -258,7 +258,6 @@ export default function ReflectionChat({
   useEffect(() => {
     if (!storageKey) { setStorageReady(true); return }
 
-    // 防御：preload 脚本更新需要重启 Electron，未重启时 API 可能不存在
     if (typeof window.electronAPI.loadReflectionChat !== 'function') {
       setStorageReady(true)
       return
@@ -268,7 +267,6 @@ export default function ReflectionChat({
       .then((raw) => {
         const saved = raw as SavedReflectionChat | null
         if (saved && Array.isArray(saved.bubbles) && saved.bubbles.length > 0) {
-          // 去掉末尾空 assistant 气泡（上次流式请求失败的残留）
           let cleaned = saved.bubbles
           while (cleaned.length > 0) {
             const last = cleaned[cleaned.length - 1]
@@ -279,7 +277,7 @@ export default function ReflectionChat({
           if (cleaned.length > 0) {
             setBubbles(cleaned)
             messagesRef.current = saved.messages || []
-            setStep(saved.step ?? 0)
+            setChatActive((saved.step ?? 0) > 0)
             setRestored(true)
             initCalledRef.current = true
           }
@@ -289,21 +287,21 @@ export default function ReflectionChat({
       .catch(() => setStorageReady(true))
   }, [storageKey])
 
-  // ---- 自动保存聊天记录（bubbles 或 step 变化时，防抖 500ms） ----
+  // ---- 自动保存聊天记录 ----
   useEffect(() => {
     if (!storageKey || bubbles.length === 0) return
-    if (loading || streaming) return // 请求中不保存，防止空 placeholder 被持久化
+    if (loading || streaming) return
     if (typeof window.electronAPI.saveReflectionChat !== 'function') return
     const timer = setTimeout(() => {
       window.electronAPI.saveReflectionChat(storageKey, {
         bubbles,
         messages: messagesRef.current,
-        step,
+        step: chatActive ? 1 : 0,
         savedAt: Date.now(),
       } satisfies SavedReflectionChat)
     }, 500)
     return () => clearTimeout(timer)
-  }, [bubbles, step, storageKey, loading, streaming])
+  }, [bubbles, chatActive, storageKey, loading, streaming])
 
   // ---- 重新开始对话 ----
   const handleRestart = useCallback(() => {
@@ -313,7 +311,7 @@ export default function ReflectionChat({
     streamCleanupRef.current?.()
     setBubbles([])
     messagesRef.current = []
-    setStep(0)
+    setChatActive(false)
     setRestored(false)
     setError(null)
     setLoading(false)
@@ -322,19 +320,26 @@ export default function ReflectionChat({
     setRestartKey(k => k + 1)
   }, [storageKey])
 
-  // 初始化：发送第一条 AI 消息（Step 1 提问）
-  // 如果有截图，会在 user 消息中附带仪表板截图让 AI 先"看"一下
+  // ---- 结束反思 ----
+  const handleEndChat = useCallback(() => {
+    const lastAssistant = bubbles.filter(b => b.role === 'assistant').pop()
+    if (onComplete && lastAssistant?.content) {
+      onComplete(lastAssistant.content)
+    }
+    onEndChat?.()
+  }, [bubbles, onComplete, onEndChat])
+
+  // 初始化：发送第一条 AI 消息
   useEffect(() => {
-    if (!storageReady) return // 等存储检查完成再决定是否初始化
-    if (initCalledRef.current || step > 0 || bubbles.length > 0) return
-    if (!systemPrompt) return  // systemPrompt 为空时不发送
+    if (!storageReady) return
+    if (initCalledRef.current || chatActive || bubbles.length > 0) return
+    if (!systemPrompt) return
     initCalledRef.current = true
 
     const initMessages: ReflectionMessage[] = [
       { role: 'system', content: systemPrompt },
     ]
 
-    // ★ 有截图时：以多模态 user 消息附带图片
     if (screenshotBase64) {
       const todayStr = new Date().toISOString().slice(0, 10)
       const dateIsToday = !selectedDate || selectedDate === todayStr
@@ -349,95 +354,40 @@ export default function ReflectionChat({
     messagesRef.current = initMessages
 
     sendToAI(initMessages).then(content => {
-      if (content) setStep(1) // 等待用户回答 Step 1
+      if (content) setChatActive(true)
     })
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [systemPrompt, screenshotBase64, storageReady, restartKey])
 
-  // bubbles 变化时滚动到底
   useEffect(() => {
     scrollToBottom()
   }, [bubbles, loading, streaming, scrollToBottom])
 
   const isBusy = loading || streaming
+  const canSend = chatActive && !isBusy
 
-  // 用户发送消息
+  // 用户发送消息（开放式，没有步骤限制）
   const handleSend = async () => {
     const text = input.trim()
-    if (!text || isBusy || step === 0 || step >= 4) return
+    if (!text || !canSend) return
 
     setInput('')
 
-    // 用户气泡
     const userBubble: ChatBubble = { role: 'user', content: text, timestamp: Date.now() }
     setBubbles(prev => [...prev, userBubble])
 
-    // 更新消息历史
     const newMessages: ReflectionMessage[] = [
       ...messagesRef.current,
       { role: 'user', content: text },
     ]
 
-    // Step 3 用户回答后，注入指令让 AI 生成总结
-    if (step === 3) {
-      newMessages.push({
-        role: 'system',
-        content: '用户已经回答完三个问题了。现在请写一段自然连贯的每日总结。' +
-                 '包含：今天做得好的地方、遇到的困难、一个实用的效率小技巧建议、一句简短鼓励。' +
-                 '用连贯的段落写，不要用列表格式，不要堆emoji，像朋友给你发的语音消息转文字那样自然。',
-      })
-    }
-
-    const content = await sendToAI(newMessages)
-
-    if (content) {
-      const nextStep = step + 1
-      setStep(nextStep)
-      if (nextStep >= 4 && onComplete) {
-        onComplete(content)
-      }
-    }
+    await sendToAI(newMessages)
 
     inputRef.current?.focus()
   }
 
-  const STEP_LABELS = [
-    '正在准备...',
-    '第1/3步：寻找今日亮点 ✨',
-    '第2/3步：发现改进空间 🔍',
-    '第3/3步：制定明日策略 🎯',
-    '✅ 反思完成！',
-  ]
-
-  const isComplete = step >= 4
-  const isReady = step > 0 && step < 4
-
   return (
     <div className="flex flex-col h-full">
-      {/* 步骤指示器 */}
-      <div className="flex-shrink-0 px-4 py-2.5 border-b border-gray-100 bg-white">
-        <div className="flex items-center gap-3">
-          {/* 进度点 */}
-          <div className="flex items-center gap-1">
-            {[1, 2, 3].map(s => (
-              <div
-                key={s}
-                className={`w-2 h-2 rounded-full transition-all duration-300 ${
-                  step >= s + 1
-                    ? 'bg-emerald-400 scale-110'
-                    : step === s
-                    ? 'bg-indigo-400 scale-125 ring-2 ring-indigo-100'
-                    : 'bg-gray-200'
-                }`}
-              />
-            ))}
-          </div>
-          <span className="text-xs text-gray-500 font-medium">
-            {STEP_LABELS[Math.min(step, 4)]}
-          </span>
-        </div>
-      </div>
-
       {/* 聊天区域 */}
       <div
         ref={scrollRef}
@@ -471,7 +421,7 @@ export default function ReflectionChat({
           )
         })}
 
-        {/* 历史记录恢复提示（跟在最后一条消息后面） */}
+        {/* 历史记录恢复提示 */}
         {restored && (
           <div className="flex justify-center">
             <div className="flex items-center gap-2 bg-amber-50 border border-amber-200/60 text-amber-600 text-xxs px-3 py-1.5 rounded-full">
@@ -497,14 +447,8 @@ export default function ReflectionChat({
       </div>
 
       {/* 输入区域 */}
-      <div className="flex-shrink-0 px-4 py-3 border-t border-gray-100 bg-white">
-        {isComplete ? (
-          <div className="text-center py-2">
-            <p className="text-sm text-gray-400">
-              🎉 今天的反思已完成，好好休息吧！
-            </p>
-          </div>
-        ) : (
+      <div className="flex-shrink-0 border-t border-gray-100 bg-white">
+        <div className="px-4 py-3">
           <div className="flex gap-2">
             <input
               ref={inputRef}
@@ -512,27 +456,32 @@ export default function ReflectionChat({
               value={input}
               onChange={e => setInput(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter') handleSend() }}
-              placeholder={isReady ? '说说你的想法…' : '等待 AI 回复…'}
-              disabled={!isReady || isBusy}
+              placeholder={canSend ? '说说你的想法…' : '等待 AI 回复…'}
+              disabled={!canSend}
               maxLength={500}
-              className="flex-1 px-4 py-2.5 text-sm rounded-lg border border-gray-200
-                         focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100
-                         outline-none bg-gray-50 focus:bg-white transition-all
+              className="flex-1 px-4 py-2.5 text-sm rounded-xl border border-gray-200
+                         focus:ring-2 outline-none bg-gray-50 focus:bg-white transition-all
                          disabled:opacity-50 disabled:cursor-not-allowed
                          placeholder-gray-400"
+              style={{ '--tw-ring-color': 'rgba(100,155,139,0.3)' } as React.CSSProperties}
+              onFocus={e => (e.currentTarget.style.borderColor = '#649b8b')}
+              onBlur={e => (e.currentTarget.style.borderColor = '')}
             />
             <button
               onClick={handleSend}
-              disabled={!input.trim() || !isReady || isBusy}
-              className="px-4 py-2.5 rounded-xl bg-indigo-500 text-white text-sm font-semibold
-                         hover:bg-indigo-600 active:scale-95
+              disabled={!input.trim() || !canSend}
+              className="px-4 py-2.5 rounded-xl text-white text-sm font-semibold
+                         active:scale-95
                          disabled:opacity-40 disabled:cursor-not-allowed
-                         shadow-md shadow-indigo-200/50 transition-all flex-shrink-0"
+                         shadow-md transition-all flex-shrink-0"
+              style={{ backgroundColor: '#649b8b', boxShadow: '0 4px 6px -1px rgba(100,155,139,0.3)' }}
+              onMouseEnter={e => { if (input.trim() && canSend) e.currentTarget.style.backgroundColor = '#548676' }}
+              onMouseLeave={e => e.currentTarget.style.backgroundColor = '#649b8b'}
             >
               发送
             </button>
           </div>
-        )}
+        </div>
       </div>
     </div>
   )

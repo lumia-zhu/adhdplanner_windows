@@ -42,7 +42,6 @@ interface ReflectionViewProps {
 /** AI 浮标随机引导语 —— 今天 */
 const BUBBLE_HINTS_TODAY = [
   '今天过得怎么样？来聊聊~',
-  '点我开始反思，只需 3 个问题 ✨',
   '回顾一下今天，发现你的亮点 💡',
   '嘿，有什么想聊的吗？',
   '数据已准备好，一起来看看吧！',
@@ -1049,20 +1048,23 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
           style={{ width: chatOpen ? chatWidth : 0 }}
         >
           <div className="flex flex-col h-full" style={{ minWidth: MIN_CHAT_WIDTH }}>
-            <div className="flex items-center gap-2 px-3 py-2.5 border-b border-gray-100 flex-shrink-0">
-              <button
-                onClick={closeChat}
-                className="w-7 h-7 rounded-lg hover:bg-gray-100 flex items-center justify-center
-                           text-gray-400 hover:text-gray-600 transition-colors"
-                title="收起对话"
-              >
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 5l7 7-7 7M5 5l7 7-7 7" />
-                </svg>
-              </button>
+            <div className="flex items-center justify-between px-4 py-2.5 border-b border-gray-100 flex-shrink-0">
               <span className="text-xs font-semibold text-gray-500">
                 AI {viewMode === 'week' ? '周' : ''}反思助手
               </span>
+              <button
+                onClick={closeChat}
+                className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-semibold
+                           text-white active:scale-95 transition-all"
+                style={{ backgroundColor: '#649b8b' }}
+                onMouseEnter={e => (e.currentTarget.style.backgroundColor = '#548676')}
+                onMouseLeave={e => (e.currentTarget.style.backgroundColor = '#649b8b')}
+              >
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+                结束反思
+              </button>
             </div>
 
             <div className="flex-1 min-h-0">
@@ -1088,6 +1090,7 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
                   storageKey={viewMode === 'week' ? `week-${weekEndDate}` : selectedDate}
                   onChartRef={handleChartRef}
                   onComplete={handleReflectionComplete}
+                  onEndChat={closeChat}
                 />
               ) : (
                 <div className="flex-1 flex items-center justify-center h-full">
