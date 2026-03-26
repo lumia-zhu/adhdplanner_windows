@@ -767,7 +767,7 @@ ${isToday ? '- 【chart:completion-rate】任务完成率\n' : ''}- 【chart:met
    不要用"您好"这种正式称呼，保持朋友感。
 2. **数据洞察**（2-3 句），从${dayRef}的整体行为模式出发，引用 1-2 个图表，帮用户看见${dayRef}的行为节奏和状态特征。不做任务间对比，聚焦于用户整体的状态和模式。
 
-结尾用一句话引导用户："可以点下面的问题，也可以直接说说你的想法。"
+结尾简短邀请用户分享想法，如"有什么想聊的随时说～"。**不要提"点下面的问题"**（探索方向由系统单独生成，你不需要管）。
 
 寻找整体模式的优先级：
 1. ${dayRef}的活跃节奏——高峰在什么时段、什么时候平缓下来（引用【chart:rhythm】）
@@ -775,7 +775,7 @@ ${isToday ? '- 【chart:completion-rate】任务完成率\n' : ''}- 【chart:met
 3. 卡住和恢复的整体情况（如有卡住数据）
 4. ${dayRef}整体的完成节奏（引用【chart:completion-rate】或【chart:activity】）
 
-示例："嗨～来看看${dayRef}的情况吧 😊\n\n【chart:rhythm】你${dayRef}的活跃节奏在上午有个比较明显的高峰，下午逐渐平缓了。【chart:metrics】总共专注了 45 分钟，其中 15 分钟进入了心流。\n\n可以点下面的问题，也可以直接说说你的想法。"
+示例："嗨～来看看${dayRef}的情况吧 😊\n\n【chart:rhythm】你${dayRef}的活跃节奏在上午有个比较明显的高峰，下午逐渐平缓了。【chart:metrics】总共专注了 45 分钟，其中 15 分钟进入了心流。\n\n有什么想聊的随时说～"
 
 ### 后续
 - 如果用户对开场洞察有反应，顺着他感兴趣的方向深入
@@ -864,7 +864,7 @@ ${screenshotNote}
    不要用"您好"这种正式称呼，保持朋友感。
 2. **数据洞察**（2-3 句），从这一周的整体行为模式出发，引用 1-2 个图表，帮用户看见跨天的节奏和状态特征。聚焦于整体趋势，不对比具体任务。
 
-结尾用一句话引导用户："可以点下面的问题，也可以直接说说你的想法。"
+结尾简短邀请用户分享想法，如"有什么想聊的随时说～"。**不要提"点下面的问题"**（探索方向由系统单独生成，你不需要管）。
 
 寻找整体模式的优先级：
 1. 一周的活跃节奏趋势——哪几天活跃、哪几天平缓（引用【chart:week-completion】或【chart:week-heatmap】）
@@ -872,7 +872,7 @@ ${screenshotNote}
 3. 跨天的时段规律——是否有固定的"黄金时段"（引用【chart:week-heatmap】）
 4. 一周整体的完成节奏和趋势（引用【chart:week-rhythm】）
 
-示例："嗨～一周过去了，来看看整体情况吧 😊\n\n【chart:week-completion】这一周前几天的完成率在逐步上升，周四到了最高点，之后有所回落。【chart:week-heatmap】整体来看上午 10-11 点是你最活跃的时段。\n\n可以点下面的问题，也可以直接说说你的想法。"
+示例："嗨～一周过去了，来看看整体情况吧 😊\n\n【chart:week-completion】这一周前几天的完成率在逐步上升，周四到了最高点，之后有所回落。【chart:week-heatmap】整体来看上午 10-11 点是你最活跃的时段。\n\n有什么想聊的随时说～"
 
 ### 后续
 - 如果用户对开场洞察有反应，顺着他感兴趣的方向深入
@@ -899,10 +899,10 @@ ${weekContext}
 }
 
 /**
- * 独立 API 调用生成探索方向（不走流式，轻量快速）
+ * 通过 Function Calling 生成探索方向（结构化输出，不走流式）
  *
- * 在主回复完成后调用，根据最近对话上下文生成 2-3 个用户视角的分析方向。
- * 返回字符串数组；出错时返回空数组，不影响主流程。
+ * 定义 suggest_directions 工具，强制模型调用并返回结构化的方向数组。
+ * 比纯文本解析可靠：不会混入引导语，格式严格保证。
  */
 export async function generateSuggestions(
   recentMessages: ReflectionMessage[],
@@ -911,13 +911,11 @@ export async function generateSuggestions(
 ): Promise<string[]> {
   if (!config.apiKey || !config.modelId || !config.apiUrl) return []
 
-  // 只取 user/assistant 轮次（排除 system prompt），最多最近 4 条
   const contextMessages = recentMessages
     .filter(m => m.role !== 'system')
     .slice(-4)
     .map(m => ({
       ...m,
-      // 多模态消息（含截图）转为纯文本摘要
       content: Array.isArray(m.content)
         ? (m.content as MessageContentPart[])
             .filter(p => p.type === 'text')
@@ -928,7 +926,6 @@ export async function generateSuggestions(
 
   if (contextMessages.length === 0) return []
 
-  // 从对话中提取用户已问过的话题，用于去重
   const askedTopics = contextMessages
     .filter(m => m.role === 'user')
     .map(m => typeof m.content === 'string' ? m.content : '')
@@ -936,45 +933,68 @@ export async function generateSuggestions(
     .join('；')
 
   const modeHint = mode === 'weekly'
-    ? `这是一周的数据回顾。方向可以涉及：跨天趋势对比（如哪天效率最高）、不同天的状态变化、时段规律的跨天一致性、一周内的行为模式演变等。
-示例：
-  - "帮我看看哪天专注效率最高"
-  - "这周的活跃时段有什么规律？"
-  - "周中和周末的状态差别大吗？"`
-    : `这是某一天的数据回顾。方向可以涉及：某个时段的详细分析、任务之间的切换模式、专注与休息的节奏、卡住时的状态变化等。
-示例：
-  - "帮我分析下午的专注变化"
-  - "哪些时段我状态最好？"
-  - "看看任务切换时发生了什么"`
+    ? '这是一周的数据回顾，方向可涉及跨天趋势、不同天对比、时段跨天规律等。'
+    : '这是某一天的数据回顾，方向可涉及时段分析、任务切换、专注节奏、卡住变化等。'
 
-  const systemPrompt = `根据下面的对话，生成 2-3 个"探索方向"供用户点选。
-${modeHint}
-要求：
-- 这是用户让你进一步分析数据的方向，不是让用户自己反思
-- 每条 ≤ 25 字，指向不同数据角度
-- **严禁重复**：用户已经问过的话题绝对不能再出现，也不能换个说法重复。用户已问过：「${askedTopics || '无'}」
-- 方向之间也不能互相重复或含义相近
-- 只输出列表，每行一条，前面加 -，不要任何其他内容`
+  const systemPrompt = `根据对话上下文，调用 suggest_directions 生成探索方向。${modeHint}
+要求：方向是用户让你分析数据的，不是让用户反思；每条≤25字；严禁与用户已问过的话题重复或含义相近。已问过：「${askedTopics || '无'}」`
 
-  const messages: ReflectionMessage[] = [
+  const tools = [{
+    type: 'function' as const,
+    function: {
+      name: 'suggest_directions',
+      description: '生成2-3个数据探索方向供用户点选',
+      parameters: {
+        type: 'object',
+        properties: {
+          directions: {
+            type: 'array',
+            items: { type: 'string', maxLength: 25 },
+            minItems: 2,
+            maxItems: 3,
+            description: '探索方向列表，每条是用户让AI分析数据的简短请求',
+          },
+        },
+        required: ['directions'],
+      },
+    },
+  }]
+
+  const messages = [
     { role: 'system', content: systemPrompt },
     ...contextMessages,
   ]
 
-  const miniConfig: AIConfig = { ...config, modelId: 'doubao-seed-2-0-mini-260215' }
+  const body = JSON.stringify({
+    model: 'doubao-seed-2-0-mini-260215',
+    messages,
+    tools,
+    tool_choice: { type: 'function', function: { name: 'suggest_directions' } },
+    thinking: { type: 'disabled' },
+  })
+
   try {
-    const result = await chatReflection(messages, miniConfig)
-    if (!result.content) {
-      console.warn('[generateSuggestions] 空回复', result.error)
+    const res = await window.electronAPI.aiRequest({
+      url: config.apiUrl,
+      apiKey: config.apiKey,
+      body,
+    })
+
+    if (!res.ok) {
+      console.warn('[generateSuggestions] HTTP', res.status, res.body?.slice(0, 200))
       return []
     }
 
-    const items = result.content
-      .split('\n')
-      .map(line => line.replace(/^[-•\d.]\s*/, '').trim())
-      .filter(line => line.length > 0 && line.length <= 30)
-      .slice(0, 3)
-    return items
+    const json = JSON.parse(res.body)
+    const toolCall = json?.choices?.[0]?.message?.tool_calls?.[0]
+    if (!toolCall?.function?.arguments) {
+      console.warn('[generateSuggestions] 无 tool_calls', JSON.stringify(json).slice(0, 300))
+      return []
+    }
+
+    const args = JSON.parse(toolCall.function.arguments)
+    const directions: string[] = args.directions || []
+    return directions.filter(d => d.length > 0 && d.length <= 30).slice(0, 3)
   } catch (e) {
     console.warn('[generateSuggestions] 异常', e)
     return []
