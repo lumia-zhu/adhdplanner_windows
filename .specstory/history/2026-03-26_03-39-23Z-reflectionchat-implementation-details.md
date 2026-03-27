@@ -15,3 +15,236 @@ I need to understand the current reflection chat implementation. Please find and
 3. In `d:\workspace\testwindows\src\renderer\src\components\ReflectionView.tsx` - How is ReflectionChat used? How does the panel open/close work?
 
 Please provide the exact file paths, line numbers, and key code snippets for all of these.
+
+---
+
+_**Agent (composer-2-fast)**_
+
+
+正在读取相关文件并定位关键代码。
+
+
+
+_**Agent (composer-2-fast)**_
+
+<tool-use data-tool-type="read" data-tool-name="read_file_v2">
+<details><summary>Tool use: **read_file_v2** • Read file: d:\workspace\testwindows\src\renderer\src\components\ReflectionChat.tsx</summary>
+
+</details>
+</tool-use>
+
+<tool-use data-tool-type="read" data-tool-name="read_file_v2"><details>
+<summary>Tool use: **read_file_v2**</summary>
+
+</details></tool-use>
+
+_**Agent (composer-2-fast)**_
+
+<tool-use data-tool-type="unknown" data-tool-name="ripgrep_raw_search">
+<details>
+<summary>Tool use: **ripgrep_raw_search**</summary>
+
+
+Parameters:
+
+```json
+{
+  "caseInsensitive": false,
+  "path": "d:\\workspace\\testwindows\\src\\renderer\\src\\services\\ai.ts",
+  "pattern": "buildReflectionSystemPrompt|buildWeeklyReflectionSystemPrompt"
+}
+```
+Additional data:
+
+```json
+{
+  "isPruned": true,
+  "outputMode": "content",
+  "path": "d:\\workspace\\testwindows\\src\\renderer\\src\\services\\ai.ts",
+  "pattern": "buildReflectionSystemPrompt|buildWeeklyReflectionSystemPrompt",
+  "topFiles": [
+    {
+      "matchCount": 2,
+      "uri": "src\\renderer\\src\\services\\ai.ts"
+    }
+  ],
+  "totalFiles": 1,
+  "totalMatches": 2
+}
+```
+Status: **completed**
+
+
+</details>
+</tool-use>
+
+<tool-use data-tool-type="unknown" data-tool-name="ripgrep_raw_search"><details>
+<summary>Tool use: **ripgrep_raw_search**</summary>
+
+</details></tool-use>
+
+_**Agent (composer-2-fast)**_
+
+<tool-use data-tool-type="read" data-tool-name="read_file_v2">
+<details><summary>Tool use: **read_file_v2** • Read file: d:\workspace\testwindows\src\renderer\src\components\ReflectionView.tsx</summary>
+
+</details>
+</tool-use>
+
+<tool-use data-tool-type="read" data-tool-name="read_file_v2"><details>
+<summary>Tool use: **read_file_v2**</summary>
+
+</details></tool-use>
+
+_**Agent (composer-2-fast)**_
+
+
+正在读取 `ai.ts` 中两个 prompt 构建函数的完整内容。
+
+
+
+_**Agent (composer-2-fast)**_
+
+<tool-use data-tool-type="read" data-tool-name="read_file_v2">
+<details><summary>Tool use: **read_file_v2** • Read file: d:\workspace\testwindows\src\renderer\src\services\ai.ts</summary>
+
+</details>
+</tool-use>
+
+<tool-use data-tool-type="read" data-tool-name="read_file_v2"><details>
+<summary>Tool use: **read_file_v2**</summary>
+
+</details></tool-use>
+
+_**Agent (composer-2-fast)**_
+
+<think><details><summary>Thought Process</summary>
+**Reviewing step indicator**
+
+I found that the step indicator uses '1/3' without spaces, matching the exact string in STEP_LABELS. 
+
+**Updating step indicator**
+
+I'm updating the step indicator to show '1/3 ' with progress circles based on step state. </details></think>
+
+_**Agent (composer-2-fast)**_
+
+
+下面是按你三个问题整理的说明，并附上**精确路径、行号**和关键片段。
+
+---
+
+## 1. `ReflectionChat.tsx`：步骤条、文案位置、对话与 `step` 逻辑
+
+**文件：** `d:\workspace\testwindows\src\renderer\src\components\ReflectionChat.tsx`
+
+### 「第 1/3 步」类文案在哪？
+
+界面**没有**单独写死字符串「第 1/3 步」（带空格）；用的是数组 `STEP_LABELS`，格式是 **`第1/3步`**（数字与「步」之间无空格），并带主题说明：
+
+```404:410:d:\workspace\testwindows\src\renderer\src\components\ReflectionChat.tsx
+  const STEP_LABELS = [
+    '正在准备...',
+    '第1/3步：寻找今日亮点 ✨',
+    '第2/3步：发现改进空间 🔍',
+    '第3/3步：制定明日策略 🎯',
+    '✅ 反思完成！',
+  ]
+```
+
+### 步骤指示器 UI 怎么工作？
+
+- 顶部一条：左侧 **3 个圆点**（对应第 1～3 步），右侧 **文字** 为 `STEP_LABELS[Math.min(step, 4)]`（`step` 超过 4 时仍显示最后一项）。
+- 圆点样式：`step >= s + 1` 视为该步已过完（绿）；`step === s` 为当前步（紫+环）；否则灰。
+
+```417:438:d:\workspace\testwindows\src\renderer\src\components\ReflectionChat.tsx
+      {/* 步骤指示器 */}
+      <div className="flex-shrink-0 px-4 py-2.5 border-b border-gray-100 bg-white">
+        <div className="flex items-center gap-3">
+          {/* 进度点 */}
+          <div className="flex items-center gap-1">
+            {[1, 2, 3].map(s => (
+              <div
+                key={s}
+                className={`w-2 h-2 rounded-full transition-all duration-300 ${
+                  step >= s + 1
+                    ? 'bg-emerald-400 scale-110'
+                    : step === s
+                    ? 'bg-indigo-400 scale-125 ring-2 ring-indigo-100'
+                    : 'bg-gray-200'
+                }`}
+              />
+            ))}
+          </div>
+          <span className="text-xs text-gray-500 font-medium">
+            {STEP_LABELS[Math.min(step, 4)]}
+          </span>
+        </div>
+      </div>
+```
+
+### `step` 含义与对话流
+
+- **`step` 状态**（注释）：`0` = 等首条 AI；`1–3` = 等用户回答对应步；`4` = 已完成。
+
+```152:152:d:\workspace\testwindows\src\renderer\src\components\ReflectionChat.tsx
+  const [step, setStep] = useState(0)  // 0=等待首条AI, 1-3=等待用户回答, 4=已完成
+```
+
+- **初始化**：`storageReady` 且没有气泡/`step` 仍为 0 时，组 `[system]`，可选 `[user]` 多模态截图，调用 `sendToAI`；成功则 **`setStep(1)`**（开始等用户答第 1 问）。
+
+```325:354:d:\workspace\testwindows\src\renderer\src\components\ReflectionChat.tsx
+  // 初始化：发送第一条 AI 消息（Step 1 提问）
+  // ...
+  useEffect(() => {
+    if (!storageReady) return // 等存储检查完成再决定是否初始化
+    if (initCalledRef.current || step > 0 || bubbles.length > 0) return
+    if (!systemPrompt) return  // systemPrompt 为空时不发送
+    initCalledRef.current = true
+
+    const initMessages: ReflectionMessage[] = [
+      { role: 'system', content: systemPrompt },
+    ]
+    // ... 截图时追加 user 多模态 ...
+    messagesRef.current = initMessages
+
+    sendToAI(initMessages).then(content => {
+      if (content) setStep(1) // 等待用户回答 Step 1
+    })
+```
+
+- **用户发送** `handleSend`：仅在 `step` 为 `1–3` 时处理；把用户消息拼进 `messagesRef`；若 **`step === 3`**，再追加一条 **system** 指令，让模型写「每日总结」段落；`sendToAI` 成功后 **`setStep(step + 1)`**，若 **`nextStep >= 4`** 则调用 **`onComplete(content)`**（总结文本）。
+
+```364:401:d:\workspace\testwindows\src\renderer\src\components\ReflectionChat.tsx
+  const handleSend = async () => {
+    const text = input.trim()
+    if (!text || isBusy || step === 0 || step >= 4) return
+    // ...
+    if (step === 3) {
+      newMessages.push({
+        role: 'system',
+        content: '用户已经回答完三个问题了。现在请写一段自然连贯的每日总结。' +
+                 '包含：今天做得好的地方、遇到的困难、一个实用的效率小技巧建议、一句简短鼓励。' +
+                 '用连贯的段落写，不要用列表格式，不要堆emoji，像朋友给你发的语音消息转文字那样自然。',
+      })
+    }
+
+    const content = await sendToAI(newMessages)
+
+    if (content) {
+      const nextStep = step + 1
+      setStep(nextStep)
+      if (nextStep >= 4 && onComplete) {
+        onComplete(content)
+      }
+    }
+```
+
+- **消息与 UI**：`bubbles` 只负责气泡展示；完整发给 API 的历史在 **`messagesRef`**，与持久化一致（见 `saveReflectionChat`）。
+
+---
+
+## 2. `ai.ts`：`buildReflectionSystemPrompt` 与 `buildWeeklyReflectionSystemPrompt`
+
+**文件：** `d:\workspace\testwindows\src\renderer\src\services\ai.ts`  
+- `buildReflectionSystemPro

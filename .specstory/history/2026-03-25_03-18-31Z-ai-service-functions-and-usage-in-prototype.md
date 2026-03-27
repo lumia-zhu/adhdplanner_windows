@@ -24,7 +24,6 @@ Return a structured list.
 
 _**Agent (composer-2-fast)**_
 
-
 正在系统搜索代码库中的 AI/LLM 用法。
 
 
@@ -160,13 +159,6 @@ Status: **completed**
 <summary>Tool use: **ripgrep_raw_search**</summary>
 
 </details></tool-use>
-
-_**Agent (composer-2-fast)**_
-
-
-
-
-
 
 _**Agent (composer-2-fast)**_
 
@@ -308,13 +300,6 @@ Status: **completed**
 <summary>Tool use: **ripgrep_raw_search**</summary>
 
 </details></tool-use>
-
-_**Agent (composer-2-fast)**_
-
-
-
-
-
 
 _**Agent (composer-2-fast)**_
 
@@ -466,13 +451,6 @@ _**Agent (composer-2-fast)**_
 
 _**Agent (composer-2-fast)**_
 
-
-
-
-
-
-_**Agent (composer-2-fast)**_
-
 <tool-use data-tool-type="unknown" data-tool-name="ripgrep_raw_search">
 <details>
 <summary>Tool use: **ripgrep_raw_search**</summary>
@@ -548,13 +526,6 @@ _**Agent (composer-2-fast)**_
 
 _**Agent (composer-2-fast)**_
 
-
-
-
-
-
-_**Agent (composer-2-fast)**_
-
 <tool-use data-tool-type="unknown" data-tool-name="ripgrep_raw_search">
 <details>
 <summary>Tool use: **ripgrep_raw_search**</summary>
@@ -623,13 +594,6 @@ _**Agent (composer-2-fast)**_
 <summary>Tool use: **read_file_v2**</summary>
 
 </details></tool-use>
-
-_**Agent (composer-2-fast)**_
-
-
-
-
-
 
 _**Agent (composer-2-fast)**_
 
@@ -704,13 +668,6 @@ Status: **completed**
 
 _**Agent (composer-2-fast)**_
 
-
-
-
-
-
-_**Agent (composer-2-fast)**_
-
 <tool-use data-tool-type="unknown" data-tool-name="ripgrep_raw_search">
 <details>
 <summary>Tool use: **ripgrep_raw_search**</summary>
@@ -763,13 +720,6 @@ I'm listing unused imports in ai.ts and marking them as dead code. I'm identifyi
 
 _**Agent (composer-2-fast)**_
 
-
-
-
-
-
-_**Agent (composer-2-fast)**_
-
 <tool-use data-tool-type="read" data-tool-name="read_file_v2">
 <details><summary>Tool use: **read_file_v2** • Read file: d:\workspace\testwindows\src\renderer\src\components\WidgetView.tsx</summary>
 
@@ -780,13 +730,6 @@ _**Agent (composer-2-fast)**_
 <summary>Tool use: **read_file_v2**</summary>
 
 </details></tool-use>
-
-_**Agent (composer-2-fast)**_
-
-
-
-
-
 
 _**Agent (composer-2-fast)**_
 
@@ -835,13 +778,6 @@ Status: **completed**
 
 _**Agent (composer-2-fast)**_
 
-
-
-
-
-
-_**Agent (composer-2-fast)**_
-
 <tool-use data-tool-type="unknown" data-tool-name="ripgrep_raw_search">
 <details>
 <summary>Tool use: **ripgrep_raw_search**</summary>
@@ -884,13 +820,6 @@ Status: **completed**
 <summary>Tool use: **ripgrep_raw_search**</summary>
 
 </details></tool-use>
-
-_**Agent (composer-2-fast)**_
-
-
-
-
-
 
 _**Agent (composer-2-fast)**_
 
@@ -940,13 +869,6 @@ Status: **completed**
 
 _**Agent (composer-2-fast)**_
 
-
-
-
-
-
-_**Agent (composer-2-fast)**_
-
 <tool-use data-tool-type="unknown" data-tool-name="ripgrep_raw_search">
 <details>
 <summary>Tool use: **ripgrep_raw_search**</summary>
@@ -989,13 +911,6 @@ Status: **completed**
 <summary>Tool use: **ripgrep_raw_search**</summary>
 
 </details></tool-use>
-
-_**Agent (composer-2-fast)**_
-
-
-
-
-
 
 _**Agent (composer-2-fast)**_
 
@@ -1044,13 +959,6 @@ Status: **completed**
 
 _**Agent (composer-2-fast)**_
 
-
-
-
-
-
-_**Agent (composer-2-fast)**_
-
 <tool-use data-tool-type="read" data-tool-name="read_file_v2">
 <details><summary>Tool use: **read_file_v2** • Read file: d:\workspace\testwindows\src\renderer\src\components\WidgetView.tsx</summary>
 
@@ -1061,13 +969,6 @@ _**Agent (composer-2-fast)**_
 <summary>Tool use: **read_file_v2**</summary>
 
 </details></tool-use>
-
-_**Agent (composer-2-fast)**_
-
-
-
-
-
 
 _**Agent (composer-2-fast)**_
 
@@ -1116,13 +1017,6 @@ Status: **completed**
 
 _**Agent (composer-2-fast)**_
 
-
-
-
-
-
-_**Agent (composer-2-fast)**_
-
 <tool-use data-tool-type="unknown" data-tool-name="ripgrep_raw_search">
 <details>
 <summary>Tool use: **ripgrep_raw_search**</summary>
@@ -1168,13 +1062,6 @@ Status: **completed**
 
 _**Agent (composer-2-fast)**_
 
-
-
-
-
-
-_**Agent (composer-2-fast)**_
-
 <tool-use data-tool-type="unknown" data-tool-name="ripgrep_raw_search">
 <details>
 <summary>Tool use: **ripgrep_raw_search**</summary>
@@ -1217,13 +1104,6 @@ Status: **completed**
 <summary>Tool use: **ripgrep_raw_search**</summary>
 
 </details></tool-use>
-
-_**Agent (composer-2-fast)**_
-
-
-
-
-
 
 _**Agent (composer-2-fast)**_
 
@@ -1278,7 +1158,6 @@ _**Agent (composer-2-fast)**_
 I'm identifying which functions are internal vs exported to clean up the API. </details></think>
 
 _**Agent (composer-2-fast)**_
-
 
 以下为在 `d:\workspace\testwindows` 中检索到的 **AI/LLM 使用清单**（基于 `src/renderer` 与相关服务）。路径均使用绝对路径。
 
