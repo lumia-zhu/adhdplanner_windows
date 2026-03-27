@@ -165,6 +165,9 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
   const dataPanelRef = useRef<HTMLDivElement>(null) // 数据面板引用（用于截图）
   const [manualEntryExpanded, setManualEntryExpanded] = useState(false)
 
+  // ---- 任务 hover 联动热力图 ----
+  const [hoveredTask, setHoveredTask] = useState<string | null>(null)
+
   // ---- AI 浮标气泡 ----
   const [showBubble, setShowBubble] = useState(false)
 
@@ -707,11 +710,8 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
     <div className="h-full flex flex-col bg-white overflow-hidden">
       {/* ====== 顶部标题栏 ====== */}
       <div className="drag-region flex items-center px-5 py-3 border-b border-gray-100 flex-shrink-0">
-        {/* 左侧：图标 + 标题 */}
-        <div className="flex items-center gap-2.5 no-drag flex-shrink-0">
-          <div className="w-7 h-7 rounded-lg bg-amber-400 flex items-center justify-center">
-            <span className="text-sm">💡</span>
-          </div>
+        {/* 左侧：标题 */}
+        <div className="flex items-center no-drag flex-shrink-0">
           <h1 className="font-semibold text-gray-800 text-sm">数据反思</h1>
         </div>
 
@@ -912,23 +912,23 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
                   {/* chatOpen 时把指标卡片内联到圆环右侧 */}
                   {chatOpen && (
                     <div id="chart-key-metrics" className="grid grid-cols-3 gap-3 flex-1">
-                      <div className="text-center bg-emerald-50 rounded-xl py-2.5 px-2">
-                        <p className="text-lg font-bold text-emerald-600">{tasks.filter(t => t.completed).length}</p>
-                        <p className="text-2xs text-emerald-500 mt-0.5">完成任务数</p>
+                      <div className="text-center bg-gray-100 rounded-xl py-2.5 px-2">
+                        <p className="text-lg font-bold text-gray-600">{tasks.filter(t => t.completed).length}</p>
+                        <p className="text-2xs text-gray-500 mt-0.5">完成任务数</p>
                       </div>
-                      <div className="text-center bg-blue-50 rounded-xl py-2.5 px-2">
-                        <p className="text-lg font-bold text-blue-600">
+                      <div className="text-center bg-emerald-50 rounded-xl py-2.5 px-2">
+                        <p className="text-lg font-bold text-emerald-600">
                           {usageDurationStr.value}
                           <span className="text-xs font-normal ml-0.5">{usageDurationStr.unit}</span>
                         </p>
-                        <p className="text-2xs text-blue-500 mt-0.5">电脑使用时长</p>
+                        <p className="text-2xs text-emerald-500 mt-0.5">电脑使用时长</p>
                       </div>
-                      <div className="text-center bg-indigo-50 rounded-xl py-2.5 px-2">
-                        <p className="text-lg font-bold text-indigo-600">
+                      <div className="text-center bg-blue-50 rounded-xl py-2.5 px-2">
+                        <p className="text-lg font-bold text-blue-600">
                           {summary?.stats.totalFocusMinutes ?? 0}
                           <span className="text-xs font-normal ml-0.5">分钟</span>
                         </p>
-                        <p className="text-2xs text-indigo-500 mt-0.5">任务时长</p>
+                        <p className="text-2xs text-blue-500 mt-0.5">任务时长</p>
                       </div>
                     </div>
                   )}
@@ -940,25 +940,25 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
               <div id="chart-key-metrics" className={`grid gap-3 w-full ${
                 chatOpen ? 'grid-cols-2' : 'grid-cols-3'
               }`}>
-                <div className="text-center bg-emerald-50 rounded-xl py-2.5 px-2">
-                  <p className="text-lg font-bold text-emerald-600">
+                <div className="text-center bg-gray-100 rounded-xl py-2.5 px-2">
+                  <p className="text-lg font-bold text-gray-600">
                     {tasks.filter(t => t.completed).length}
                   </p>
-                  <p className="text-2xs text-emerald-500 mt-0.5">完成任务数</p>
+                  <p className="text-2xs text-gray-500 mt-0.5">完成任务数</p>
                 </div>
-                <div className="text-center bg-blue-50 rounded-xl py-2.5 px-2">
-                  <p className="text-lg font-bold text-blue-600">
+                <div className="text-center bg-emerald-50 rounded-xl py-2.5 px-2">
+                  <p className="text-lg font-bold text-emerald-600">
                     {usageDurationStr.value}
                     <span className="text-xs font-normal ml-0.5">{usageDurationStr.unit}</span>
                   </p>
-                  <p className="text-2xs text-blue-500 mt-0.5">电脑使用时长</p>
+                  <p className="text-2xs text-emerald-500 mt-0.5">电脑使用时长</p>
                 </div>
-                <div className="text-center bg-indigo-50 rounded-xl py-2.5 px-2">
-                  <p className="text-lg font-bold text-indigo-600">
+                <div className="text-center bg-blue-50 rounded-xl py-2.5 px-2">
+                  <p className="text-lg font-bold text-blue-600">
                     {summary?.stats.totalFocusMinutes ?? 0}
                     <span className="text-xs font-normal ml-0.5">分钟</span>
                   </p>
-                  <p className="text-2xs text-indigo-500 mt-0.5">任务时长</p>
+                  <p className="text-2xs text-blue-500 mt-0.5">任务时长</p>
                 </div>
               </div>
               )}
@@ -972,7 +972,7 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
                   <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
                     ⏱ 任务实际用时
                   </h3>
-                  <TaskDurationChart data={taskDurations} />
+                  <TaskDurationChart data={taskDurations} onTaskHover={setHoveredTask} />
                 </div>
               )}
 
@@ -984,11 +984,11 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
                 <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
                   🔍 任务活动分布
                 </h3>
-                <InteractiveActivityHeatmap data={activityData} events={events} rangeStart={sharedRangeStart} rangeEnd={sharedRangeEnd} />
+                <InteractiveActivityHeatmap data={activityData} events={events} rangeStart={sharedRangeStart} rangeEnd={sharedRangeEnd} highlightTask={hoveredTask} />
               </div>
 
               <div id="chart-rhythm" className="-mt-3">
-                <ActivityRhythmChart data={activityData} rangeStart={sharedRangeStart} rangeEnd={sharedRangeEnd} />
+                <ActivityRhythmChart data={activityData} events={events} rangeStart={sharedRangeStart} rangeEnd={sharedRangeEnd} />
               </div>
 
               {/* 遗留任务（仅今天显示，历史日期没有任务快照） */}

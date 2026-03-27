@@ -82,21 +82,32 @@ const LEVEL_COLORS = [
 ]
 const LEVEL_LABELS = ['未使用', '< 25%', '25%~50%', '50%~75%', '> 75%']
 
+/** 任务在某小时内的精确时间段 */
+interface TaskTimeSegment {
+  hour: number
+  startFrac: number   // 该小时内的起始比例 0~1
+  endFrac: number     // 该小时内的结束比例 0~1
+}
+
 interface Props {
   data: ActivityRecord[]
   events: TrackEvent[]
   rangeStart?: number
   rangeEnd?: number
+  highlightTask?: string | null
 }
 
 // ===================== 工具函数 =====================
 
 /**
- * 从事件流中提取每个任务在每个小时的活跃比例
- * 返回 Map<taskTitle, Map<hourIndex, ratio>>
+ * 从事件流中提取指定任务的精确时间段（每个 session 拆到小时粒度）。
+ * 返回 Map<hour, TaskTimeSegment[]>，同一小时可能有多段。
  */
-function buildTaskHourRatioMap(events: TrackEvent[]): Map<string, Map<number, number>> {
-  const result = new Map<string, Map<number, number>>()
+function buildTaskTimeSegments(
+  events: TrackEvent[],
+  taskTitle: string,
+): Map<number, TaskTimeSegment[]> {
+  const result = new Map<number, TaskTimeSegment[]>()
 
   const starts: { timestamp: number; taskTitle: string; sessionId: string }[] = []
   const ends: { timestamp: number; taskTitle: string; sessionId: string }[] = []
@@ -104,74 +115,48 @@ function buildTaskHourRatioMap(events: TrackEvent[]): Map<string, Map<number, nu
   for (const e of events) {
     if (e.type === 'session.started') {
       const p = e.payload as { sessionId: string; taskTitle: string }
-      if (p.taskTitle) {
-        starts.push({ timestamp: e.timestamp, taskTitle: p.taskTitle, sessionId: p.sessionId })
-      }
+      if (p.taskTitle) starts.push({ timestamp: e.timestamp, taskTitle: p.taskTitle, sessionId: p.sessionId })
     } else if (e.type === 'session.ended') {
       const p = e.payload as { sessionId: string; taskTitle: string }
-      if (p.taskTitle) {
-        ends.push({ timestamp: e.timestamp, taskTitle: p.taskTitle, sessionId: p.sessionId })
-      }
+      if (p.taskTitle) ends.push({ timestamp: e.timestamp, taskTitle: p.taskTitle, sessionId: p.sessionId })
     }
   }
 
-  function addMinutes(title: string, hour: number, minutes: number) {
-    if (!result.has(title)) result.set(title, new Map())
-    const hourMap = result.get(title) ?? new Map()
-    const cur = hourMap.get(hour) || 0
-    hourMap.set(hour, Math.min(cur + minutes / 60, 1))
+  function addSegment(hour: number, startFrac: number, endFrac: number) {
+    if (endFrac <= startFrac) return
+    if (!result.has(hour)) result.set(hour, [])
+    result.get(hour)!.push({ hour, startFrac, endFrac })
   }
 
   for (const start of starts) {
     const end = ends.find(e => e.sessionId === start.sessionId)
-    const startTs = start.timestamp
-    const endTs = end ? end.timestamp : Date.now()
     const title = end ? end.taskTitle : start.taskTitle
+    if (title !== taskTitle) continue
 
-    if (!title) continue
-
-    const startDate = new Date(startTs)
-    const endDate = new Date(endTs)
+    const startDate = new Date(start.timestamp)
+    const endDate = new Date(end ? end.timestamp : Date.now())
     const startHour = startDate.getHours()
     const endHour = endDate.getHours()
+    const startMinFrac = (startDate.getMinutes() + startDate.getSeconds() / 60) / 60
+    const endMinFrac = (endDate.getMinutes() + endDate.getSeconds() / 60) / 60
 
     if (startHour === endHour) {
-      const minutes = (endTs - startTs) / 60000
-      addMinutes(title, startHour, minutes)
+      addSegment(startHour, startMinFrac, endMinFrac)
     } else {
-      const startMin = startDate.getMinutes() + startDate.getSeconds() / 60
-      addMinutes(title, startHour, 60 - startMin)
-
-      if (startHour < endHour) {
-        for (let h = startHour + 1; h < endHour; h++) {
-          addMinutes(title, h, 60)
-        }
-      } else {
-        for (let h = startHour + 1; h < 24; h++) addMinutes(title, h, 60)
-        for (let h = 0; h < endHour; h++) addMinutes(title, h, 60)
-      }
-
-      const endMin = endDate.getMinutes() + endDate.getSeconds() / 60
-      if (endMin > 0) {
-        addMinutes(title, endHour, endMin)
-      }
+      addSegment(startHour, startMinFrac, 1)
+      const lo = startHour < endHour ? startHour + 1 : startHour + 1
+      const hi = startHour < endHour ? endHour : endHour + 24
+      for (let h = lo; h < hi; h++) addSegment(h % 24, 0, 1)
+      if (endMinFrac > 0) addSegment(endHour, 0, endMinFrac)
     }
   }
 
   return result
 }
 
-function fmtHour(h: number): string {
-  return `${String(h % 24).padStart(2, '0')}:00`
-}
-
-function ratioToPercentStr(ratio: number): string {
-  return `${Math.round(ratio * 100)}%`
-}
-
 // ===================== 主组件 =====================
 
-export default function InteractiveActivityHeatmap({ data, events, rangeStart: propStart, rangeEnd: propEnd }: Props) {
+export default function InteractiveActivityHeatmap({ data, events, rangeStart: propStart, rangeEnd: propEnd, highlightTask }: Props) {
   const [tooltip, setTooltip] = useState<{
     x: number; y: number; label: string; usagePct: number; level: number; taskName?: string
   } | null>(null)
@@ -199,9 +184,6 @@ export default function InteractiveActivityHeatmap({ data, events, rangeStart: p
     })
   }, [data])
 
-  // ---- 任务小时比例 ----
-  const taskHourRatioMap = useMemo(() => buildTaskHourRatioMap(events), [events])
-
   // ---- 自适应时间范围（优先使用外部传入的值） ----
   const { rangeStart, rangeEnd } = useMemo(() => {
     if (propStart != null && propEnd != null) {
@@ -223,6 +205,12 @@ export default function InteractiveActivityHeatmap({ data, events, rangeStart: p
 
   // ---- 裁剪后的热力块 ----
   const visibleBlocks = blocks.slice(rangeStart, rangeEnd)
+
+  // ---- hover 高亮：计算指定任务的精确时间段 ----
+  const highlightSegments = useMemo(() => {
+    if (!highlightTask) return null
+    return buildTaskTimeSegments(events, highlightTask)
+  }, [events, highlightTask])
 
   if (data.length === 0) {
     return (
@@ -251,11 +239,17 @@ export default function InteractiveActivityHeatmap({ data, events, rangeStart: p
         <div className="relative flex gap-[2px] w-full">
           {visibleBlocks.map((block) => {
             const level = ratioToLevel(block.avgUsageRatio)
+            const isHighlighting = !!highlightTask
+            const segments = highlightSegments?.get(block.index) ?? []
+
             return (
               <div
                 key={block.index}
-                className={`h-7 flex-1 rounded-[3px] transition-all hover:scale-y-110 ${LEVEL_COLORS[level]}`}
+                className={`h-7 flex-1 rounded-[3px] transition-colors duration-200 relative overflow-hidden ${
+                  isHighlighting ? 'bg-gray-100' : LEVEL_COLORS[level]
+                }`}
                 onMouseEnter={(e) => {
+                  if (isHighlighting) return
                   const rect = e.currentTarget.getBoundingClientRect()
                   setTooltip({
                     x: rect.left + rect.width / 2,
@@ -266,7 +260,18 @@ export default function InteractiveActivityHeatmap({ data, events, rangeStart: p
                   })
                 }}
                 onMouseLeave={() => setTooltip(null)}
-              />
+              >
+                {isHighlighting && segments.map((seg, si) => (
+                  <span
+                    key={si}
+                    className="absolute top-0 h-full bg-blue-400/85 rounded-[2px]"
+                    style={{
+                      left: `${seg.startFrac * 100}%`,
+                      width: `${(seg.endFrac - seg.startFrac) * 100}%`,
+                    }}
+                  />
+                ))}
+              </div>
             )
           })}
         </div>

@@ -8,9 +8,22 @@
 import { useMemo, useState } from 'react'
 import type { ActivityRecord } from './ActivityHeatmap'
 import { getActiveRatio } from './ActivityHeatmap'
+import type { TrackEvent } from '../services/tracker'
+
+/** 折线图上的卡顿标记 */
+interface StuckPoint {
+  x: number
+  timestamp: number
+  timeLabel: string
+  taskTitle: string
+  microAction: string
+  reason: string
+  resolved: boolean
+}
 
 interface Props {
   data: ActivityRecord[]
+  events?: TrackEvent[]
   rangeStart?: number
   rangeEnd?: number
 }
@@ -28,7 +41,7 @@ const CHART_H = H - PAD_T - PAD_B
 export const HEATMAP_PAD_LEFT_PCT = `${(PAD_L / W) * 100}%`
 export const HEATMAP_PAD_RIGHT_PCT = `${(PAD_R / W) * 100}%`
 
-export default function ActivityRhythmChart({ data, rangeStart: rs, rangeEnd: re }: Props) {
+export default function ActivityRhythmChart({ data, events, rangeStart: rs, rangeEnd: re }: Props) {
   const rangeStart = rs ?? 0
   const rangeEnd = re ?? 24
   const visibleHours = rangeEnd - rangeStart
@@ -76,7 +89,74 @@ export default function ActivityRhythmChart({ data, rangeStart: rs, rangeEnd: re
     return { hour: peak, val: peakVal }
   }, [hourlyUsage, rangeStart, rangeEnd])
 
+  // 从 events 中提取卡顿点并计算 x 坐标
+  const stuckPoints = useMemo(() => {
+    if (!events || events.length === 0) return []
+
+    // session 起始信息：sessionId → taskTitle
+    const sessionTaskMap = new Map<string, string>()
+    for (const e of events) {
+      if (e.type === 'session.started') {
+        const p = e.payload as { sessionId: string; taskTitle: string }
+        if (p.taskTitle) sessionTaskMap.set(p.sessionId, p.taskTitle)
+      }
+    }
+
+    // 预构建"恢复事件"索引
+    const resolveEvents = new Map<string, number[]>()
+    for (const e of events) {
+      if (
+        e.type === 'stuck.pivot_chosen' ||
+        e.type === 'exec.micro_started' ||
+        e.type === 'exec.micro_completed' ||
+        e.type === 'exec.flow_entered'
+      ) {
+        const p = e.payload as { sessionId?: string }
+        if (p.sessionId) {
+          if (!resolveEvents.has(p.sessionId)) resolveEvents.set(p.sessionId, [])
+          resolveEvents.get(p.sessionId)!.push(e.timestamp)
+        }
+      }
+    }
+
+    const pts: StuckPoint[] = []
+
+    for (const e of events) {
+      if (e.type !== 'stuck.triggered') continue
+      const p = e.payload as { sessionId: string; microAction: string; elapsedSeconds: number }
+      const taskTitle = sessionTaskMap.get(p.sessionId) || '未知任务'
+
+      const d = new Date(e.timestamp)
+      const hourFraction = d.getHours() + d.getMinutes() / 60 + d.getSeconds() / 3600
+      if (hourFraction < rangeStart || hourFraction >= rangeEnd) continue
+
+      const x = PAD_L + ((hourFraction - rangeStart) / visibleHours) * CHART_W
+      const timeLabel = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+
+      // 找卡顿原因
+      let reason = ''
+      for (const re of events) {
+        if (re.type === 'stuck.reason') {
+          const rp = re.payload as { sessionId: string; reason: string }
+          if (rp.sessionId === p.sessionId && re.timestamp >= e.timestamp) {
+            reason = rp.reason
+            break
+          }
+        }
+      }
+
+      // 判断是否已解决
+      const resolves = resolveEvents.get(p.sessionId) || []
+      const resolved = resolves.some(ts => ts > e.timestamp)
+
+      pts.push({ x, timestamp: e.timestamp, timeLabel, taskTitle, microAction: p.microAction, reason, resolved })
+    }
+
+    return pts.sort((a, b) => a.timestamp - b.timestamp)
+  }, [events, rangeStart, rangeEnd, visibleHours])
+
   const [hovered, setHovered] = useState<number | null>(null)
+  const [hoveredStuck, setHoveredStuck] = useState<number | null>(null)
 
   if (data.length === 0) {
     return (
@@ -182,6 +262,69 @@ export default function ActivityRhythmChart({ data, rangeStart: rs, rangeEnd: re
                   >
                     ★ {Math.round(peakHour.val)}%
                   </text>
+                )
+              })()}
+            </g>
+          )
+        })}
+        {/* 卡顿标记（小三角，在折线上） */}
+        {stuckPoints.map((sp, idx) => {
+          const isHov = hoveredStuck === idx
+          // 在折线的相邻两个数据点之间线性插值得到精确 y
+          let lineY = PAD_T + CHART_H
+          const leftPt = points.filter(p => p.x <= sp.x).at(-1)
+          const rightPt = points.find(p => p.x > sp.x)
+          if (leftPt && rightPt) {
+            const t = (sp.x - leftPt.x) / (rightPt.x - leftPt.x)
+            lineY = leftPt.y + t * (rightPt.y - leftPt.y)
+          } else if (leftPt) {
+            lineY = leftPt.y
+          } else if (rightPt) {
+            lineY = rightPt.y
+          }
+
+          const triSize = isHov ? 5 : 3.5
+          const color = sp.resolved ? '#f59e0b' : '#ef4444'
+          const tipY = lineY - triSize * 1.4 - 1
+          return (
+            <g key={`stuck-${idx}`}>
+              <polygon
+                points={`${sp.x},${tipY + triSize * 1.4} ${sp.x - triSize},${tipY} ${sp.x + triSize},${tipY}`}
+                fill={color} stroke="white" strokeWidth={0.5}
+                opacity={isHov ? 1 : 0.85}
+                style={{ transition: 'opacity 0.15s', cursor: 'pointer' }}
+              />
+              <circle
+                cx={sp.x} cy={tipY + triSize * 0.7} r={8}
+                fill="transparent" style={{ cursor: 'pointer' }}
+                onMouseEnter={() => setHoveredStuck(idx)}
+                onMouseLeave={() => setHoveredStuck(null)}
+              />
+              {isHov && (() => {
+                const lines = [
+                  sp.timeLabel + ' · ' + sp.taskTitle,
+                  ...(sp.reason ? ['原因：' + sp.reason] : []),
+                  sp.resolved ? '✓ 已解决' : '✗ 未解决',
+                ]
+                const boxW = Math.max(...lines.map(l => l.length * 5.5 + 12), 80)
+                const boxH = lines.length * 11 + 6
+                const boxX = Math.max(0, Math.min(sp.x - boxW / 2, W - boxW))
+                const showBelow = tipY - boxH - 4 < 0
+                const boxY = showBelow ? tipY + triSize * 1.4 + 4 : tipY - boxH - 4
+                return (
+                  <g>
+                    <rect x={boxX} y={boxY} width={boxW} height={boxH}
+                      rx={4} fill="#1f2937" opacity={0.92} />
+                    {lines.map((line, li) => (
+                      <text key={li}
+                        x={boxX + 6} y={boxY + 11 + li * 11}
+                        fontSize={6.5} fill={li === lines.length - 1 ? (sp.resolved ? '#4ade80' : '#fca5a5') : 'white'}
+                        fontWeight={li === 0 ? '600' : '400'}
+                      >
+                        {line}
+                      </text>
+                    ))}
+                  </g>
                 )
               })()}
             </g>

@@ -335,10 +335,7 @@ export default function WeekView({ weekEndDate, onDataReady, chatOpen }: WeekVie
       <div className="border-t border-gray-100" />
 
       {/* 周平均节奏曲线 */}
-      <div id="chart-week-rhythm">
-        <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
-          📈 使用节奏曲线
-        </h3>
+      <div id="chart-week-rhythm" className="-mt-3">
         <WeekRhythmChart days={weekData} rangeStart={weekRangeStart} rangeEnd={weekRangeEnd} />
       </div>
     </div>
