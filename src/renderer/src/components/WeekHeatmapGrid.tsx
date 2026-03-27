@@ -6,10 +6,10 @@
  * 顶部一句话洞察：统计"稳定高效时段"。
  */
 
-import { useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import type { ActivityRecord } from './ActivityHeatmap'
 import { getActiveRatio } from './ActivityHeatmap'
-import type { TrackEvent } from '../services/tracker'
+
 import type { WeekDayData } from './WeekView'
 
 // ===================== 常量 =====================
@@ -49,76 +49,65 @@ function aggregateToHourlyLevels(data: ActivityRecord[]): number[] {
   return buckets.map(b => ratioToLevel(b.totalRatio / EXPECTED_RECORDS_PER_HOUR))
 }
 
-/** 从事件流提取任务→小时比例 */
-function buildTaskHourRatioMap(events: TrackEvent[]): Map<string, Map<number, number>> {
-  const result = new Map<string, Map<number, number>>()
-  const starts: { timestamp: number; taskTitle: string; sessionId: string }[] = []
-  const ends: { timestamp: number; taskTitle: string; sessionId: string }[] = []
-
-  for (const e of events) {
-    if (e.type === 'session.started') {
-      const p = e.payload as { sessionId: string; taskTitle: string }
-      if (p.taskTitle) starts.push({ timestamp: e.timestamp, taskTitle: p.taskTitle, sessionId: p.sessionId })
-    } else if (e.type === 'session.ended') {
-      const p = e.payload as { sessionId: string; taskTitle: string }
-      if (p.taskTitle) ends.push({ timestamp: e.timestamp, taskTitle: p.taskTitle, sessionId: p.sessionId })
-    }
-  }
-
-  function addMinutes(title: string, hour: number, minutes: number) {
-    if (!result.has(title)) result.set(title, new Map())
-    const hourMap = result.get(title) ?? new Map()
-    const cur = hourMap.get(hour) || 0
-    hourMap.set(hour, Math.min(cur + minutes / 60, 1))
-  }
-
-  for (const start of starts) {
-    const end = ends.find(e => e.sessionId === start.sessionId)
-    const startTs = start.timestamp
-    const endTs = end ? end.timestamp : Date.now()
-    const title = end ? end.taskTitle : start.taskTitle
-    if (!title) continue
-
-    const startDate = new Date(startTs)
-    const endDate = new Date(endTs)
-    const startHour = startDate.getHours()
-    const endHour = endDate.getHours()
-
-    if (startHour === endHour) {
-      addMinutes(title, startHour, (endTs - startTs) / 60000)
-    } else {
-      addMinutes(title, startHour, 60 - startDate.getMinutes() - startDate.getSeconds() / 60)
-      if (startHour < endHour) {
-        for (let h = startHour + 1; h < endHour; h++) addMinutes(title, h, 60)
-      } else {
-        for (let h = startHour + 1; h < 24; h++) addMinutes(title, h, 60)
-        for (let h = 0; h < endHour; h++) addMinutes(title, h, 60)
-      }
-      const endMin = endDate.getMinutes() + endDate.getSeconds() / 60
-      if (endMin > 0) addMinutes(title, endHour, endMin)
-    }
-  }
-  return result
-}
+/* buildTaskHourRatioMap 暂时隐藏，展开功能恢复时再启用 */
 
 function fmtHour(h: number): string {
   return `${String(h % 24).padStart(2, '0')}:00`
 }
 
-function ratioToPercentStr(ratio: number): string {
-  return `${Math.round(ratio * 100)}%`
+/* ratioToPercentStr 暂时隐藏 */
+
+/**
+ * 根据一周多天的活动数据计算自适应的可见时间范围。
+ * 被周热力图和周节奏曲线共用，确保横轴一致。
+ */
+export function computeWeekActiveTimeRange(
+  days: WeekDayData[],
+): { rangeStart: number; rangeEnd: number } {
+  let firstActive = 24
+  let lastActive = -1
+
+  for (const d of days) {
+    const levels = aggregateToHourlyLevels(d.activity)
+    levels.forEach((lv, h) => {
+      if (lv > 0) { firstActive = Math.min(firstActive, h); lastActive = Math.max(lastActive, h) }
+    })
+  }
+
+  if (firstActive > lastActive) {
+    return { rangeStart: DEFAULT_START, rangeEnd: DEFAULT_END }
+  }
+
+  let start = Math.max(0, firstActive - 1)
+  let end = Math.min(24, lastActive + 2)
+  const span = end - start
+  if (span < MIN_SPAN) {
+    const deficit = MIN_SPAN - span
+    const padBefore = Math.floor(deficit / 2)
+    const padAfter = deficit - padBefore
+    start = Math.max(0, start - padBefore)
+    end = Math.min(24, end + padAfter)
+    if (end - start < MIN_SPAN) {
+      if (start === 0) end = Math.min(24, start + MIN_SPAN)
+      else start = Math.max(0, end - MIN_SPAN)
+    }
+  }
+  return { rangeStart: start, rangeEnd: end }
 }
 
 // ===================== Props =====================
 
 interface Props {
   days: WeekDayData[]
+  rangeStart?: number
+  rangeEnd?: number
 }
 
 // ===================== 主组件 =====================
 
-export default function WeekHeatmapGrid({ days }: Props) {
-  const [expandedDate, setExpandedDate] = useState<string | null>(null)
+export default function WeekHeatmapGrid({ days, rangeStart: propStart, rangeEnd: propEnd }: Props) {
+  // 展开功能暂时隐藏
+  // const [expandedDate, setExpandedDate] = useState<string | null>(null)
 
   // 计算每天的 24 小时 level
   const dayLevels = useMemo(() => {
@@ -132,65 +121,24 @@ export default function WeekHeatmapGrid({ days }: Props) {
     }))
   }, [days])
 
-  // ---- 自适应时间范围（扫描 7 天合集） ----
+  // ---- 自适应时间范围（优先使用外部传入的值） ----
   const { rangeStart, rangeEnd } = useMemo(() => {
-    let firstActive = 24
-    let lastActive = -1
-
-    for (const dl of dayLevels) {
-      dl.levels.forEach((lv, h) => {
-        if (lv > 0) {
-          firstActive = Math.min(firstActive, h)
-          lastActive = Math.max(lastActive, h)
-        }
-      })
+    if (propStart != null && propEnd != null) {
+      return { rangeStart: propStart, rangeEnd: propEnd }
     }
-
-    if (firstActive > lastActive) {
-      return { rangeStart: DEFAULT_START, rangeEnd: DEFAULT_END }
-    }
-
-    let start = Math.max(0, firstActive - 1)
-    let end = Math.min(24, lastActive + 2)
-
-    const span = end - start
-    if (span < MIN_SPAN) {
-      const deficit = MIN_SPAN - span
-      const padBefore = Math.floor(deficit / 2)
-      const padAfter = deficit - padBefore
-      start = Math.max(0, start - padBefore)
-      end = Math.min(24, end + padAfter)
-      if (end - start < MIN_SPAN) {
-        if (start === 0) end = Math.min(24, start + MIN_SPAN)
-        else start = Math.max(0, end - MIN_SPAN)
-      }
-    }
-
-    return { rangeStart: start, rangeEnd: end }
-  }, [dayLevels])
+    return computeWeekActiveTimeRange(days)
+  }, [propStart, propEnd, days])
 
   const visibleSpan = rangeEnd - rangeStart
 
-  // ---- 动态时间刻度 ----
+  // ---- 每小时刻度 ----
   const timeTicks = useMemo(() => {
-    const step = visibleSpan <= 10 ? 2 : 3
-    const minGap = Math.ceil(step / 2)
     const ticks: number[] = []
-    const firstTick = Math.ceil(rangeStart / step) * step
-    for (let h = firstTick; h < rangeEnd; h += step) {
+    for (let h = rangeStart; h <= rangeEnd; h++) {
       ticks.push(h)
     }
-    // 起始刻度：与第一个常规刻度间距足够时才显示
-    if (ticks.length === 0 || (ticks[0] !== rangeStart && ticks[0] - rangeStart >= minGap)) {
-      ticks.unshift(rangeStart)
-    }
-    // 末尾刻度：与最后一个常规刻度间距足够时才显示
-    const lastTick = ticks[ticks.length - 1]
-    if (lastTick !== rangeEnd && rangeEnd - lastTick >= minGap) {
-      ticks.push(rangeEnd)
-    }
     return ticks
-  }, [rangeStart, rangeEnd, visibleSpan])
+  }, [rangeStart, rangeEnd])
 
   // 稳定高效时段洞察
   const insight = useMemo(() => {
@@ -226,20 +174,7 @@ export default function WeekHeatmapGrid({ days }: Props) {
     return `稳定高效时段：${ranges.join('、')}`
   }, [dayLevels])
 
-  // 展开面板数据（选中天的任务分布）
-  const expandedTaskEntries = useMemo(() => {
-    if (!expandedDate) return null
-    const day = days.find(d => d.date === expandedDate)
-    if (!day) return null
-    const taskMap = buildTaskHourRatioMap(day.events)
-    return Array.from(taskMap.entries())
-      .map(([title, hourMap]) => {
-        let totalMin = 0
-        hourMap.forEach(r => { totalMin += r * 60 })
-        return { title, hourMap, totalMinutes: Math.round(totalMin) }
-      })
-      .sort((a, b) => b.totalMinutes - a.totalMinutes)
-  }, [expandedDate, days])
+  // 展开面板数据（暂时隐藏）
 
   return (
     <div className="space-y-2">
@@ -256,86 +191,30 @@ export default function WeekHeatmapGrid({ days }: Props) {
 
       {/* 7×24 网格 */}
       <div className="space-y-0.5">
-        {dayLevels.map((dl) => {
-          const isExpanded = expandedDate === dl.date
-          return (
-            <div key={dl.date}>
-              {/* 一行：日期标签 + 24 个格子 */}
-              <div
-                className={`flex items-center gap-1.5 cursor-pointer rounded-md px-1 py-0.5 transition-colors
-                  ${isExpanded ? 'bg-indigo-50' : 'hover:bg-gray-50'}`}
-                onClick={() => setExpandedDate(isExpanded ? null : dl.date)}
+        {dayLevels.map((dl) => (
+          <div key={dl.date}>
+            <div className="flex items-center gap-1.5 rounded-md px-1 py-0.5 transition-colors hover:bg-gray-50">
+              <span
+                className="text-2xs text-gray-500 w-[80px] flex-shrink-0 text-right tabular-nums"
+                title={dl.dateFull}
               >
-                {/* 左侧日期标签 */}
-                <span
-                  className="text-2xs text-gray-500 w-[80px] flex-shrink-0 text-right tabular-nums"
-                  title={dl.dateFull}
-                >
-                  {dl.dateLabel} {dl.weekdayShort}
-                </span>
-
-                {/* 动态范围格子 */}
-                <div className="flex-1 flex gap-[1px]">
-                  {dl.levels.slice(rangeStart, rangeEnd).map((lv, i) => {
-                    const h = rangeStart + i
-                    return (
-                      <div
-                        key={h}
-                        className={`h-4 flex-1 rounded-[2px] transition-all ${LEVEL_BG[lv]}
-                          ${isExpanded ? 'opacity-90' : 'hover:scale-y-125'}`}
-                        title={`${dl.dateFull} ${fmtHour(h)}–${fmtHour(h + 1)}: ${LEVEL_LABELS[lv]}`}
-                      />
-                    )
-                  })}
-                </div>
-
-                {/* 展开箭头 */}
-                <span className={`text-[8px] text-gray-400 w-3 flex-shrink-0 transition-transform ${
-                  isExpanded ? 'rotate-180' : ''
-                }`}>
-                  ▼
-                </span>
+                {dl.dateLabel} {dl.weekdayShort}
+              </span>
+              <div className="flex-1 flex gap-[1px]">
+                {dl.levels.slice(rangeStart, rangeEnd).map((lv, i) => {
+                  const h = rangeStart + i
+                  return (
+                    <div
+                      key={h}
+                      className={`h-4 flex-1 rounded-[2px] transition-all ${LEVEL_BG[lv]} hover:scale-y-125`}
+                      title={`${dl.dateFull} ${fmtHour(h)}–${fmtHour(h + 1)}: ${LEVEL_LABELS[lv]}`}
+                    />
+                  )
+                })}
               </div>
-
-              {/* 展开：该天的任务时间分布（和主行完全对齐） */}
-              {isExpanded && expandedTaskEntries && (
-                <div className="mt-0.5 mb-1.5 space-y-0.5 animate-in fade-in slide-in-from-top-1 duration-200">
-                  {expandedTaskEntries.length === 0 ? (
-                    <div className="flex items-center gap-1.5 px-1 py-1">
-                      <span className="w-[80px] flex-shrink-0" />
-                      <p className="text-2xs text-gray-400">当天暂无任务数据</p>
-                    </div>
-                  ) : (
-                    expandedTaskEntries.map((task) => (
-                      <div key={task.title} className="flex items-center gap-1.5 px-1">
-                        {/* 和主行日期标签同宽，确保格子对齐 */}
-                        <span className="text-2xs text-gray-600 font-medium truncate w-[80px] flex-shrink-0 text-right" title={task.title}>
-                          {task.title}
-                        </span>
-                        <div className="flex gap-[1px] flex-1 min-w-0">
-                          {Array.from({ length: visibleSpan }, (_, i) => {
-                            const h = rangeStart + i
-                            const ratio = task.hourMap.get(h) || 0
-                            const level = ratioToLevel(ratio)
-                            return (
-                              <div
-                                key={h}
-                                className={`h-[10px] flex-1 rounded-[2px] ${LEVEL_BG[level]}`}
-                                title={ratio > 0 ? `${fmtHour(h)}–${fmtHour(h + 1)}: ${ratioToPercentStr(ratio)}` : ''}
-                              />
-                            )
-                          })}
-                        </div>
-                        {/* 和主行箭头同宽的占位 */}
-                        <span className="w-3 flex-shrink-0" />
-                      </div>
-                    ))
-                  )}
-                </div>
-              )}
             </div>
-          )
-        })}
+          </div>
+        ))}
       </div>
 
       {/* 底部时间刻度（与网格行使用相同的 flex 布局，确保对齐） */}
@@ -353,7 +232,7 @@ export default function WeekHeatmapGrid({ days }: Props) {
                   transform: pct === 0 ? 'none' : pct >= 100 ? 'translateX(-100%)' : 'translateX(-50%)',
                 }}
               >
-                {fmtHour(h)}
+                {h}
               </span>
             )
           })}

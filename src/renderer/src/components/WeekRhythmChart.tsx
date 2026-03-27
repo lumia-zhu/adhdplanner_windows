@@ -51,22 +51,23 @@ function toHourlyUsage(data: ActivityRecord[]): number[] {
   return buckets.map(total => Math.min((total / EXPECTED_RECORDS_PER_HOUR) * 100, 100))
 }
 
-/** 24 个点 → SVG 折线 path d */
-function toLinePath(hourly: number[]): string {
-  return hourly
-    .map((val, h) => {
-      const x = PAD_L + (h / 23) * CHART_W
-      const y = PAD_T + CHART_H - (val / MAX_VAL) * CHART_H
-      return `${h === 0 ? 'M' : 'L'} ${x} ${y}`
-    })
-    .join(' ')
+/** 可见范围内的折线 path d（点在每个小时区间的中点） */
+function toLinePath(hourly: number[], start: number, count: number): string {
+  const pts: string[] = []
+  for (let i = 0; i < count; i++) {
+    const h = start + i
+    const x = PAD_L + ((i + 0.5) / count) * CHART_W
+    const y = PAD_T + CHART_H - (hourly[h] / MAX_VAL) * CHART_H
+    pts.push(`${i === 0 ? 'M' : 'L'} ${x} ${y}`)
+  }
+  return pts.join(' ')
 }
 
 /** 折线 path → 闭合面积 path */
-function toAreaPath(linePath: string, hourly: number[]): string {
-  if (hourly.length === 0) return ''
-  const lastX = PAD_L + (23 / 23) * CHART_W
-  const firstX = PAD_L
+function toAreaPath(linePath: string, start: number, count: number): string {
+  if (count === 0) return ''
+  const firstX = PAD_L + (0.5 / count) * CHART_W
+  const lastX = PAD_L + ((count - 0.5) / count) * CHART_W
   const bottom = PAD_T + CHART_H
   return `${linePath} L ${lastX} ${bottom} L ${firstX} ${bottom} Z`
 }
@@ -75,11 +76,16 @@ function toAreaPath(linePath: string, hourly: number[]): string {
 
 interface Props {
   days: WeekDayData[]
+  rangeStart?: number
+  rangeEnd?: number
 }
 
 // ===================== 主组件 =====================
 
-export default function WeekRhythmChart({ days }: Props) {
+export default function WeekRhythmChart({ days, rangeStart: rs, rangeEnd: re }: Props) {
+  const rangeStart = rs ?? 0
+  const rangeEnd = re ?? 24
+  const visibleHours = rangeEnd - rangeStart
   const [selectedDates, setSelectedDates] = useState<string[]>([])
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const [hovered, setHovered] = useState<number | null>(null)
@@ -126,8 +132,8 @@ export default function WeekRhythmChart({ days }: Props) {
   const hasCompare = selectedDates.length > 0
 
   // ---- 周平均折线 path ----
-  const avgLinePath = toLinePath(avgHourly)
-  const avgAreaPath = toAreaPath(avgLinePath, avgHourly)
+  const avgLinePath = toLinePath(avgHourly, rangeStart, visibleHours)
+  const avgAreaPath = toAreaPath(avgLinePath, rangeStart, visibleHours)
 
   // ---- 对比线 paths ----
   const compareLines = useMemo(() => {
@@ -139,19 +145,19 @@ export default function WeekRhythmChart({ days }: Props) {
         label: `${dh.dateLabel} ${dh.weekdayShort}`,
         color: LINE_COLORS[idx % LINE_COLORS.length],
         hourly: dh.hourly,
-        path: toLinePath(dh.hourly),
+        path: toLinePath(dh.hourly, rangeStart, visibleHours),
       }
     }).filter(Boolean) as { date: string; label: string; color: string; hourly: number[]; path: string }[]
-  }, [selectedDates, dayHourly])
+  }, [selectedDates, dayHourly, rangeStart, visibleHours])
 
-  // ---- 高峰时段（周平均） ----
+  // ---- 高峰时段（限定在可见范围内） ----
   const peakHour = useMemo(() => {
-    let peak = 0, peakVal = 0
-    for (let h = 0; h < 24; h++) {
+    let peak = rangeStart, peakVal = 0
+    for (let h = rangeStart; h < rangeEnd; h++) {
       if (avgHourly[h] > peakVal) { peakVal = avgHourly[h]; peak = h }
     }
     return { hour: peak, val: peakVal }
-  }, [avgHourly])
+  }, [avgHourly, rangeStart, rangeEnd])
 
   // ---- 切换选中日期 ----
   const toggleDate = (date: string) => {
@@ -162,13 +168,17 @@ export default function WeekRhythmChart({ days }: Props) {
     })
   }
 
-  // ---- 24 个点坐标 ----
-  const avgPoints = avgHourly.map((val, h) => ({
-    x: PAD_L + (h / 23) * CHART_W,
-    y: PAD_T + CHART_H - (val / MAX_VAL) * CHART_H,
-    hour: h,
-    val,
-  }))
+  // ---- 可见范围内的点坐标（点在每个小时区间的中点） ----
+  const avgPoints = useMemo(() => {
+    const pts: { x: number; y: number; hour: number; val: number }[] = []
+    for (let i = 0; i < visibleHours; i++) {
+      const h = rangeStart + i
+      const x = PAD_L + ((i + 0.5) / visibleHours) * CHART_W
+      const y = PAD_T + CHART_H - (avgHourly[h] / MAX_VAL) * CHART_H
+      pts.push({ x, y, hour: h, val: avgHourly[h] })
+    }
+    return pts
+  }, [avgHourly, rangeStart, visibleHours])
 
   const daysWithData = dayHourly.filter(d => d.hasData)
   if (daysWithData.length === 0) {
@@ -276,12 +286,19 @@ export default function WeekRhythmChart({ days }: Props) {
           )
         })}
 
-        {/* x 轴标签（每 3 小时） */}
-        {avgPoints.filter(p => p.hour % 3 === 0).map(p => (
-          <text key={p.hour} x={p.x} y={H - 4} textAnchor="middle" fontSize={7} fill="#9ca3af">
-            {p.hour}:00
-          </text>
-        ))}
+        {/* x 轴标签（在小时边界处，与热力图刻度对齐） */}
+        {(() => {
+          const step = visibleHours <= 10 ? 2 : 3
+          const labels: { hour: number; x: number }[] = []
+          for (let h = rangeStart; h <= rangeEnd; h += step) {
+            labels.push({ hour: h, x: PAD_L + ((h - rangeStart) / visibleHours) * CHART_W })
+          }
+          return labels.map(l => (
+            <text key={l.hour} x={l.x} y={H - 4} textAnchor="middle" fontSize={7} fill="#9ca3af">
+              {l.hour % 24}
+            </text>
+          ))
+        })()}
 
         {/* 周平均面积填充（只在没有对比线时显示，有对比线时隐藏，保持清晰） */}
         {!hasCompare && (
@@ -366,7 +383,8 @@ export default function WeekRhythmChart({ days }: Props) {
         {/* 对比线的数据点（悬停时显示） */}
         {hovered !== null && compareLines.map(cl => {
           const val = cl.hourly[hovered]
-          const x = PAD_L + (hovered / 23) * CHART_W
+          const idx = hovered - rangeStart
+          const x = PAD_L + ((idx + 0.5) / visibleHours) * CHART_W
           const y = PAD_T + CHART_H - (val / MAX_VAL) * CHART_H
           return (
             <circle

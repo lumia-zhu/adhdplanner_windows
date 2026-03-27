@@ -22,7 +22,7 @@ import ActivityHeatmap from './ActivityHeatmap'
 import type { ActivityRecord } from './ActivityHeatmap'
 import { getActiveRatio } from './ActivityHeatmap'
 import ActivityRhythmChart from './ActivityRhythmChart'
-import InteractiveActivityHeatmap from './InteractiveActivityHeatmap'
+import InteractiveActivityHeatmap, { computeActiveTimeRange } from './InteractiveActivityHeatmap'
 import ReflectionChat from './ReflectionChat'
 import ManualTimeEntry from './ManualTimeEntry'
 import MiniCalendar from './MiniCalendar'
@@ -456,6 +456,12 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
   }, [events, tasks])
 
   // ---- 生产力指标（基于使用时长模型：1 分钟无操作 → 未使用） ----
+
+  // 热力图与节奏曲线共享的动态时间范围
+  const { rangeStart: sharedRangeStart, rangeEnd: sharedRangeEnd } = useMemo(
+    () => computeActiveTimeRange(activityData),
+    [activityData],
+  )
 
   /** 电脑使用总时长（分钟）：所有 30 秒窗口的 usageRatio 之和 × 0.5 */
   const totalUsageMinutes = useMemo(() => {
@@ -978,18 +984,11 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
                 <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
                   🔍 任务活动分布
                 </h3>
-                <InteractiveActivityHeatmap data={activityData} events={events} />
+                <InteractiveActivityHeatmap data={activityData} events={events} rangeStart={sharedRangeStart} rangeEnd={sharedRangeEnd} />
               </div>
 
-              {/* 分隔线 */}
-              <div className="border-t border-gray-100" />
-
-              {/* 使用节奏曲线 */}
-              <div id="chart-rhythm">
-                <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
-                  📈 使用节奏曲线
-                </h3>
-                <ActivityRhythmChart data={activityData} />
+              <div id="chart-rhythm" className="-mt-3">
+                <ActivityRhythmChart data={activityData} rangeStart={sharedRangeStart} rangeEnd={sharedRangeEnd} />
               </div>
 
               {/* 遗留任务（仅今天显示，历史日期没有任务快照） */}

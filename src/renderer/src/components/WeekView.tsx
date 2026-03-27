@@ -16,7 +16,7 @@ import type { TaskDurationItem, StuckMark } from './TaskDurationChart'
 import WeekCompletionBars from './WeekCompletionBars'
 import WeekMetricCards from './WeekMetricCards'
 import WeekTaskRanking from './WeekTaskRanking'
-import WeekHeatmapGrid from './WeekHeatmapGrid'
+import WeekHeatmapGrid, { computeWeekActiveTimeRange } from './WeekHeatmapGrid'
 import WeekRhythmChart from './WeekRhythmChart'
 import { tracker } from '../services/tracker'
 
@@ -254,6 +254,15 @@ export default function WeekView({ weekEndDate, onDataReady, chatOpen }: WeekVie
     return () => { cancelled = true }
   }, [weekDates]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // 热力图与节奏曲线共享的动态时间范围（必须在所有早期 return 之前调用）
+  const { rangeStart: weekRangeStart, rangeEnd: weekRangeEnd } = useMemo(
+    () => computeWeekActiveTimeRange(weekData),
+    [weekData],
+  )
+
+  // 有数据的天数
+  const daysWithData = weekData.filter(d => d.hasData).length
+
   // ---- 加载中 ----
   if (loading) {
     return (
@@ -265,9 +274,6 @@ export default function WeekView({ weekEndDate, onDataReady, chatOpen }: WeekVie
       </div>
     )
   }
-
-  // 有数据的天数
-  const daysWithData = weekData.filter(d => d.hasData).length
 
   // ---- 全部 7 天无数据 ----
   if (daysWithData === 0) {
@@ -322,7 +328,7 @@ export default function WeekView({ weekEndDate, onDataReady, chatOpen }: WeekVie
         <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
           🔍 活动分布热力图
         </h3>
-        <WeekHeatmapGrid days={weekData} />
+        <WeekHeatmapGrid days={weekData} rangeStart={weekRangeStart} rangeEnd={weekRangeEnd} />
       </div>
 
       {/* 分隔线 */}
@@ -333,7 +339,7 @@ export default function WeekView({ weekEndDate, onDataReady, chatOpen }: WeekVie
         <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
           📈 使用节奏曲线
         </h3>
-        <WeekRhythmChart days={weekData} />
+        <WeekRhythmChart days={weekData} rangeStart={weekRangeStart} rangeEnd={weekRangeEnd} />
       </div>
     </div>
   )

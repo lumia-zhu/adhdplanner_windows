@@ -12,14 +12,58 @@ import { useMemo, useState } from 'react'
 import type { ActivityRecord } from './ActivityHeatmap'
 import { getActiveRatio } from './ActivityHeatmap'
 import type { TrackEvent } from '../services/tracker'
+import { HEATMAP_PAD_LEFT_PCT, HEATMAP_PAD_RIGHT_PCT } from './ActivityRhythmChart'
 
 // ===================== 常量 =====================
 
 const TOTAL_BLOCKS = 24
 const EXPECTED_RECORDS_PER_BLOCK = 120
-const MIN_SPAN = 12         // 最少显示 12 小时，避免活动集中时格子太宽
-const DEFAULT_START = 7      // 无数据时的默认起始
-const DEFAULT_END = 23       // 无数据时的默认结束
+const MIN_SPAN = 12
+const DEFAULT_START = 7
+const DEFAULT_END = 23
+
+/**
+ * 根据活跃度数据计算自适应的可见时间范围。
+ * 被热力图和节奏曲线共用，确保横轴一致。
+ */
+export function computeActiveTimeRange(
+  data: ActivityRecord[],
+): { rangeStart: number; rangeEnd: number } {
+  const buckets: number[] = Array(24).fill(0)
+  for (const r of data) {
+    const h = new Date(r.ts).getHours()
+    buckets[h] += getActiveRatio(r)
+  }
+
+  let firstActive = 24
+  let lastActive = -1
+  for (let i = 0; i < 24; i++) {
+    if (buckets[i] / EXPECTED_RECORDS_PER_BLOCK > 0) {
+      firstActive = Math.min(firstActive, i)
+      lastActive = Math.max(lastActive, i)
+    }
+  }
+
+  if (firstActive > lastActive) {
+    return { rangeStart: DEFAULT_START, rangeEnd: DEFAULT_END }
+  }
+
+  let start = Math.max(0, firstActive - 1)
+  let end = Math.min(24, lastActive + 2)
+  const span = end - start
+  if (span < MIN_SPAN) {
+    const deficit = MIN_SPAN - span
+    const padBefore = Math.floor(deficit / 2)
+    const padAfter = deficit - padBefore
+    start = Math.max(0, start - padBefore)
+    end = Math.min(24, end + padAfter)
+    if (end - start < MIN_SPAN) {
+      if (start === 0) end = Math.min(24, start + MIN_SPAN)
+      else start = Math.max(0, end - MIN_SPAN)
+    }
+  }
+  return { rangeStart: start, rangeEnd: end }
+}
 
 function ratioToLevel(usageRatio: number): number {
   if (usageRatio <= 0) return 0
@@ -41,6 +85,8 @@ const LEVEL_LABELS = ['未使用', '< 25%', '25%~50%', '50%~75%', '> 75%']
 interface Props {
   data: ActivityRecord[]
   events: TrackEvent[]
+  rangeStart?: number
+  rangeEnd?: number
 }
 
 // ===================== 工具函数 =====================
@@ -125,7 +171,7 @@ function ratioToPercentStr(ratio: number): string {
 
 // ===================== 主组件 =====================
 
-export default function InteractiveActivityHeatmap({ data, events }: Props) {
+export default function InteractiveActivityHeatmap({ data, events, rangeStart: propStart, rangeEnd: propEnd }: Props) {
   const [tooltip, setTooltip] = useState<{
     x: number; y: number; label: string; usagePct: number; level: number; taskName?: string
   } | null>(null)
@@ -156,88 +202,24 @@ export default function InteractiveActivityHeatmap({ data, events }: Props) {
   // ---- 任务小时比例 ----
   const taskHourRatioMap = useMemo(() => buildTaskHourRatioMap(events), [events])
 
-  const taskEntries = useMemo(() => {
-    return Array.from(taskHourRatioMap.entries())
-      .map(([title, hourMap]) => {
-        let totalMinutes = 0
-        hourMap.forEach(r => { totalMinutes += r * 60 })
-        return { title, hourMap, totalMinutes: Math.round(totalMinutes) }
-      })
-      .sort((a, b) => b.totalMinutes - a.totalMinutes)
-  }, [taskHourRatioMap])
-
-  // ---- 自适应时间范围 ----
+  // ---- 自适应时间范围（优先使用外部传入的值） ----
   const { rangeStart, rangeEnd } = useMemo(() => {
-    let firstActive = 24
-    let lastActive = -1
-
-    // 从活跃度数据中找范围
-    for (const b of blocks) {
-      if (b.avgUsageRatio > 0) {
-        firstActive = Math.min(firstActive, b.index)
-        lastActive = Math.max(lastActive, b.index)
-      }
+    if (propStart != null && propEnd != null) {
+      return { rangeStart: propStart, rangeEnd: propEnd }
     }
-
-    // 也从任务事件中找范围（覆盖活跃度采样可能遗漏的时段）
-    for (const [, hourMap] of taskHourRatioMap) {
-      for (const [h, ratio] of hourMap) {
-        if (ratio > 0) {
-          firstActive = Math.min(firstActive, h)
-          lastActive = Math.max(lastActive, h)
-        }
-      }
-    }
-
-    // 无活动数据 → 默认范围
-    if (firstActive > lastActive) {
-      return { rangeStart: DEFAULT_START, rangeEnd: DEFAULT_END }
-    }
-
-    // 前后各加 1 小时缓冲（rangeEnd 是 exclusive，所以 lastActive + 2）
-    let start = Math.max(0, firstActive - 1)
-    let end = Math.min(24, lastActive + 2)
-
-    // 保证最小跨度
-    const span = end - start
-    if (span < MIN_SPAN) {
-      const deficit = MIN_SPAN - span
-      const padBefore = Math.floor(deficit / 2)
-      const padAfter = deficit - padBefore
-      start = Math.max(0, start - padBefore)
-      end = Math.min(24, end + padAfter)
-      // 边界补偿
-      if (end - start < MIN_SPAN) {
-        if (start === 0) end = Math.min(24, start + MIN_SPAN)
-        else start = Math.max(0, end - MIN_SPAN)
-      }
-    }
-
-    return { rangeStart: start, rangeEnd: end }
-  }, [blocks, taskHourRatioMap])
+    return computeActiveTimeRange(data)
+  }, [propStart, propEnd, data])
 
   const visibleSpan = rangeEnd - rangeStart
 
-  // ---- 动态时间刻度 ----
+  // ---- 每小时刻度 ----
   const timeTicks = useMemo(() => {
-    const step = visibleSpan <= 10 ? 2 : 3
-    const minGap = Math.ceil(step / 2)
     const ticks: number[] = []
-    const firstTick = Math.ceil(rangeStart / step) * step
-    for (let h = firstTick; h < rangeEnd; h += step) {
+    for (let h = rangeStart; h <= rangeEnd; h++) {
       ticks.push(h)
     }
-    // 起始刻度：与第一个常规刻度间距足够时才显示
-    if (ticks.length === 0 || (ticks[0] !== rangeStart && ticks[0] - rangeStart >= minGap)) {
-      ticks.unshift(rangeStart)
-    }
-    // 末尾刻度：与最后一个常规刻度间距足够时才显示
-    const lastTick = ticks[ticks.length - 1]
-    if (lastTick !== rangeEnd && rangeEnd - lastTick >= minGap) {
-      ticks.push(rangeEnd)
-    }
     return ticks
-  }, [rangeStart, rangeEnd, visibleSpan])
+  }, [rangeStart, rangeEnd])
 
   // ---- 裁剪后的热力块 ----
   const visibleBlocks = blocks.slice(rangeStart, rangeEnd)
@@ -264,88 +246,52 @@ export default function InteractiveActivityHeatmap({ data, events }: Props) {
         ))}
       </div>
 
-      {/* ======== 热力条（动态范围） ======== */}
-      <div className="relative flex gap-[2px] w-full">
-        {visibleBlocks.map((block) => {
-          const level = ratioToLevel(block.avgUsageRatio)
-
-          return (
-            <div
-              key={block.index}
-              className={`h-7 flex-1 rounded-[3px] transition-all hover:scale-y-110 ${LEVEL_COLORS[level]}`}
-              onMouseEnter={(e) => {
-                const rect = e.currentTarget.getBoundingClientRect()
-                setTooltip({
-                  x: rect.left + rect.width / 2,
-                  y: rect.top,
-                  label: block.label,
-                  usagePct: Math.min(Math.round(block.avgUsageRatio * 100), 100),
-                  level,
-                })
-              }}
-              onMouseLeave={() => setTooltip(null)}
-            />
-          )
-        })}
-      </div>
-
-      {/* ======== 底部时间刻度（动态） ======== */}
-      <div className="relative w-full h-4 mt-1">
-        {timeTicks.map((h) => {
-          const pct = ((h - rangeStart) / visibleSpan) * 100
-          return (
-            <span
-              key={h}
-              className="absolute text-3xs text-gray-400 tabular-nums"
-              style={{
-                left: `${pct}%`,
-                transform: pct === 0 ? 'none' : pct >= 100 ? 'translateX(-100%)' : 'translateX(-50%)',
-              }}
-            >
-              {fmtHour(h)}
-            </span>
-          )
-        })}
-      </div>
-
-      {/* ======== 任务时间分布（任务名单独一行，热力条全宽对齐上方） ======== */}
-      {taskEntries.length > 0 && (
-        <div className="mt-3 space-y-1">
-          {taskEntries.map((task) => (
-            <div key={task.title}>
-              <span className="text-xxs text-gray-500 font-medium truncate block mb-0.5" title={task.title}>
-                {task.title}
-              </span>
-              <div className="flex gap-[2px] w-full">
-                {Array.from({ length: visibleSpan }, (_, i) => {
-                  const h = rangeStart + i
-                  const ratio = task.hourMap.get(h) || 0
-                  const level = ratioToLevel(ratio)
-                  return (
-                    <div
-                      key={h}
-                      className={`h-5 flex-1 rounded-[3px] transition-all hover:scale-y-110 ${LEVEL_COLORS[level]}`}
-                      onMouseEnter={(e) => {
-                        if (ratio <= 0) return
-                        const rect = e.currentTarget.getBoundingClientRect()
-                        setTooltip({
-                          x: rect.left + rect.width / 2,
-                          y: rect.top,
-                          label: `${fmtHour(h)}–${fmtHour(h + 1)}`,
-                          usagePct: Math.min(Math.round(ratio * 100), 100),
-                          level,
-                          taskName: task.title,
-                        })
-                      }}
-                      onMouseLeave={() => setTooltip(null)}
-                    />
-                  )
-                })}
-              </div>
-            </div>
-          ))}
+      {/* ======== 热力条（动态范围，左右 padding 与折线图对齐） ======== */}
+      <div style={{ paddingLeft: HEATMAP_PAD_LEFT_PCT, paddingRight: HEATMAP_PAD_RIGHT_PCT }}>
+        <div className="relative flex gap-[2px] w-full">
+          {visibleBlocks.map((block) => {
+            const level = ratioToLevel(block.avgUsageRatio)
+            return (
+              <div
+                key={block.index}
+                className={`h-7 flex-1 rounded-[3px] transition-all hover:scale-y-110 ${LEVEL_COLORS[level]}`}
+                onMouseEnter={(e) => {
+                  const rect = e.currentTarget.getBoundingClientRect()
+                  setTooltip({
+                    x: rect.left + rect.width / 2,
+                    y: rect.top,
+                    label: block.label,
+                    usagePct: Math.min(Math.round(block.avgUsageRatio * 100), 100),
+                    level,
+                  })
+                }}
+                onMouseLeave={() => setTooltip(null)}
+              />
+            )
+          })}
         </div>
-      )}
+
+        {/* ======== 底部时间刻度 ======== */}
+        <div className="relative w-full h-3.5 mt-0.5">
+          {timeTicks.map((h) => {
+            const pct = ((h - rangeStart) / visibleSpan) * 100
+            return (
+              <span
+                key={h}
+                className="absolute text-3xs text-gray-400 tabular-nums"
+                style={{
+                  left: `${pct}%`,
+                  transform: pct === 0 ? 'none' : pct >= 100 ? 'translateX(-100%)' : 'translateX(-50%)',
+                }}
+              >
+                {h}
+              </span>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* ======== 任务时间分布（暂时隐藏） ======== */}
 
       {/* ======== 悬浮提示 ======== */}
       {tooltip && (
