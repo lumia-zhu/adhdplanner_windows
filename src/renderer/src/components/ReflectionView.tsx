@@ -970,7 +970,7 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
               {taskDurations.length > 0 && (
                 <div id="chart-task-duration">
                   <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
-                    ⏱ 任务实际用时
+                    ⏱ 任务用时
                   </h3>
                   <TaskDurationChart data={taskDurations} onTaskHover={setHoveredTask} />
                 </div>
@@ -981,8 +981,14 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
 
               {/* 任务活动分布（交互式热力图 + 任务时间轴） */}
               <div id="chart-activity-heatmap">
-                <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
+                <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-1.5">
                   🔍 电脑活动分布
+                  <span className="relative group">
+                    <span className="inline-flex items-center justify-center w-4 h-4 rounded-full border border-gray-300 text-gray-400 text-[10px] leading-none cursor-help group-hover:text-gray-600 group-hover:border-gray-400 transition-colors">?</span>
+                    <span className="pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-150 absolute left-1/2 -translate-x-1/2 top-full mt-1.5 z-50 w-[240px] bg-gray-800 text-white text-[11px] leading-relaxed rounded-lg px-3 py-2.5 shadow-lg normal-case tracking-normal font-normal">
+                      <b>每小时电脑活跃度</b> = 该小时内检测到的电脑使用时间 ÷ 1小时。颜色越深表示这个时段电脑使用越多。<br/><span className="text-gray-300 mt-1 inline-block">注：连续 1 分钟没有鼠标或键盘操作即视为不活跃。</span>
+                    </span>
+                  </span>
                 </h3>
                 <InteractiveActivityHeatmap data={activityData} events={events} rangeStart={sharedRangeStart} rangeEnd={sharedRangeEnd} highlightTask={hoveredTask} />
               </div>

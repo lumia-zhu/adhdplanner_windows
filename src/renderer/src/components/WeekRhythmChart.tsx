@@ -10,12 +10,13 @@ import { useMemo, useState, useRef, useEffect } from 'react'
 import type { ActivityRecord } from './ActivityHeatmap'
 import { getActiveRatio } from './ActivityHeatmap'
 import type { WeekDayData } from './WeekView'
+import type { TrackEvent } from '../services/tracker/types'
 
 // ===================== 常量 =====================
 
 const W = 400
 const H = 120
-const PAD_L = 26
+const PAD_L = 28
 const PAD_R = 4
 const PAD_T = 18
 const PAD_B = 20
@@ -76,6 +77,82 @@ function toAreaPath(linePath: string, start: number, count: number): string {
   return `${linePath} L ${lastX} ${bottom} L ${firstX} ${bottom} Z`
 }
 
+// ===================== 卡顿点 =====================
+
+interface CompareStuckPoint {
+  date: string
+  color: string
+  x: number
+  timestamp: number
+  timeLabel: string
+  taskTitle: string
+  microAction: string
+  reason: string
+  resolved: boolean
+}
+
+/** 从某天的 events 中提取卡顿点信息 */
+function extractStuckPoints(
+  events: TrackEvent[],
+  rangeStart: number,
+  rangeEnd: number
+): Omit<CompareStuckPoint, 'date' | 'color' | 'x'>[] {
+  const sessionTaskMap = new Map<string, string>()
+  for (const e of events) {
+    if (e.type === 'session.started') {
+      const p = e.payload as { sessionId: string; taskTitle: string }
+      if (p.taskTitle) sessionTaskMap.set(p.sessionId, p.taskTitle)
+    }
+  }
+
+  const resolveEvents = new Map<string, number[]>()
+  for (const e of events) {
+    if (
+      e.type === 'stuck.pivot_chosen' ||
+      e.type === 'exec.micro_started' ||
+      e.type === 'exec.micro_completed' ||
+      e.type === 'exec.flow_entered'
+    ) {
+      const p = e.payload as { sessionId?: string }
+      if (p.sessionId) {
+        if (!resolveEvents.has(p.sessionId)) resolveEvents.set(p.sessionId, [])
+        resolveEvents.get(p.sessionId)!.push(e.timestamp)
+      }
+    }
+  }
+
+  const pts: Omit<CompareStuckPoint, 'date' | 'color' | 'x'>[] = []
+  for (const e of events) {
+    if (e.type !== 'stuck.triggered') continue
+    const p = e.payload as { sessionId: string; microAction: string; elapsedSeconds: number }
+    const taskTitle = sessionTaskMap.get(p.sessionId) || '未知任务'
+
+    const d = new Date(e.timestamp)
+    const hourFraction = d.getHours() + d.getMinutes() / 60 + d.getSeconds() / 3600
+    if (hourFraction < rangeStart || hourFraction >= rangeEnd) continue
+
+    const timeLabel = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+
+    let reason = ''
+    for (const re of events) {
+      if (re.type === 'stuck.reason') {
+        const rp = re.payload as { sessionId: string; reason: string }
+        if (rp.sessionId === p.sessionId && re.timestamp >= e.timestamp) {
+          reason = rp.reason
+          break
+        }
+      }
+    }
+
+    const resolves = resolveEvents.get(p.sessionId) || []
+    const resolved = resolves.some(ts => ts > e.timestamp)
+
+    pts.push({ timestamp: e.timestamp, timeLabel, taskTitle, microAction: p.microAction, reason, resolved })
+  }
+
+  return pts.sort((a, b) => a.timestamp - b.timestamp)
+}
+
 // ===================== Props =====================
 
 interface Props {
@@ -93,6 +170,7 @@ export default function WeekRhythmChart({ days, rangeStart: rs, rangeEnd: re }: 
   const [selectedDates, setSelectedDates] = useState<string[]>([])
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const [hovered, setHovered] = useState<number | null>(null)
+  const [hoveredStuck, setHoveredStuck] = useState<number | null>(null)
   const dropdownRef = useRef<HTMLDivElement>(null)
 
   // 点击外部关闭下拉
@@ -153,6 +231,28 @@ export default function WeekRhythmChart({ days, rangeStart: rs, rangeEnd: re }: 
       }
     }).filter(Boolean) as { date: string; label: string; color: string; hourly: number[]; path: string }[]
   }, [selectedDates, dayHourly, rangeStart, visibleHours])
+
+  // ---- 对比线上的卡顿点 ----
+  const compareStuckPoints = useMemo(() => {
+    if (selectedDates.length === 0) return []
+
+    const result: CompareStuckPoint[] = []
+    for (let idx = 0; idx < selectedDates.length; idx++) {
+      const date = selectedDates[idx]
+      const dayData = days.find(d => d.date === date)
+      if (!dayData || !dayData.events || dayData.events.length === 0) continue
+
+      const color = LINE_COLORS[idx % LINE_COLORS.length]
+      const rawPts = extractStuckPoints(dayData.events, rangeStart, rangeEnd)
+      for (const pt of rawPts) {
+        const d = new Date(pt.timestamp)
+        const hourFraction = d.getHours() + d.getMinutes() / 60 + d.getSeconds() / 3600
+        const x = PAD_L + ((hourFraction - rangeStart) / visibleHours) * CHART_W
+        result.push({ ...pt, date, color, x })
+      }
+    }
+    return result
+  }, [selectedDates, days, rangeStart, rangeEnd, visibleHours])
 
   // ---- 高峰时段（限定在可见范围内） ----
   const peakHour = useMemo(() => {
@@ -218,7 +318,7 @@ export default function WeekRhythmChart({ days, rangeStart: rs, rangeEnd: re }: 
                 x1={PAD_L} y1={y} x2={PAD_L + CHART_W} y2={y}
                 stroke="#e5e7eb" strokeWidth={0.5} strokeDasharray={i === 0 ? undefined : '2,2'}
               />
-              <text x={PAD_L - 3} y={y + 3} textAnchor="end" fontSize={8} fill="#6b7280" fontWeight="500">
+              <text x={PAD_L - 3} y={y + 3} textAnchor="end" fontSize={9} fill="#6b7280" fontWeight="500">
                 {tickVal}%
               </text>
             </g>
@@ -230,7 +330,7 @@ export default function WeekRhythmChart({ days, rangeStart: rs, rangeEnd: re }: 
           const h = rangeStart + i
           const x = PAD_L + (i / visibleHours) * CHART_W
           return (
-            <text key={h} x={x} y={H - 4} textAnchor="middle" fontSize={8} fill="#6b7280">
+            <text key={h} x={x} y={H - 4} textAnchor="middle" fontSize={9} fill="#6b7280">
               {h % 24}
             </text>
           )
@@ -246,7 +346,7 @@ export default function WeekRhythmChart({ days, rangeStart: rs, rangeEnd: re }: 
           d={avgLinePath}
           fill="none"
           stroke={hasCompare ? '#9ca3af' : '#10b981'}
-          strokeWidth={hasCompare ? 1 : 1.5}
+          strokeWidth={hasCompare ? 1.2 : 1.8}
           strokeLinejoin="round"
           strokeDasharray={hasCompare ? '4,3' : undefined}
         />
@@ -258,7 +358,7 @@ export default function WeekRhythmChart({ days, rangeStart: rs, rangeEnd: re }: 
             d={cl.path}
             fill="none"
             stroke={cl.color}
-            strokeWidth={1.5}
+            strokeWidth={1.8}
             strokeLinejoin="round"
           />
         ))}
@@ -271,9 +371,9 @@ export default function WeekRhythmChart({ days, rangeStart: rs, rangeEnd: re }: 
               {/* 周平均点 */}
               <circle
                 cx={p.x} cy={p.y}
-                r={isHovered ? 3 : p.val > 0 ? 2 : 1.5}
+                r={isHovered ? 4.5 : p.val > 0 ? 3 : 2.5}
                 fill={hasCompare ? '#9ca3af' : (p.val > 0 ? '#10b981' : '#d1d5db')}
-                stroke="white" strokeWidth={isHovered ? 1.5 : 0.8}
+                stroke="white" strokeWidth={isHovered ? 1.8 : 1}
               />
               {/* 悬停热区 */}
               <circle
@@ -285,7 +385,7 @@ export default function WeekRhythmChart({ days, rangeStart: rs, rangeEnd: re }: 
               {isHovered && (() => {
                 const showBelow = p.y - PAD_T < 20
                 const nextHour = (p.hour + 1) % 24
-                const lines: string[] = [`均值 ${Math.round(p.val)}%`]
+                const lines: string[] = [`${Math.round(p.val)}%`]
                 for (const cl of compareLines) {
                   lines.push(`${cl.label} ${Math.round(cl.hourly[p.hour])}%`)
                 }
@@ -326,9 +426,81 @@ export default function WeekRhythmChart({ days, rangeStart: rs, rangeEnd: re }: 
           return (
             <circle
               key={cl.date}
-              cx={x} cy={y} r={3}
-              fill={cl.color} stroke="white" strokeWidth={1.5}
+              cx={x} cy={y} r={4}
+              fill={cl.color} stroke="white" strokeWidth={1.8}
             />
+          )
+        })}
+
+        {/* 对比线上的卡顿三角标记 */}
+        {compareStuckPoints.map((sp, idx) => {
+          const isHov = hoveredStuck === idx
+          const cl = compareLines.find(c => c.date === sp.date)
+          if (!cl) return null
+
+          // 在对比线的相邻两点间线性插值得到精确 y
+          let lineY = PAD_T + CHART_H
+          const linePoints = cl.hourly.slice(rangeStart, rangeStart + visibleHours).map((val, i) => ({
+            x: PAD_L + ((i + 0.5) / visibleHours) * CHART_W,
+            y: PAD_T + CHART_H - (val / MAX_VAL) * CHART_H,
+          }))
+          const leftPt = linePoints.filter(p => p.x <= sp.x).at(-1)
+          const rightPt = linePoints.find(p => p.x > sp.x)
+          if (leftPt && rightPt) {
+            const t = (sp.x - leftPt.x) / (rightPt.x - leftPt.x)
+            lineY = leftPt.y + t * (rightPt.y - leftPt.y)
+          } else if (leftPt) {
+            lineY = leftPt.y
+          } else if (rightPt) {
+            lineY = rightPt.y
+          }
+
+          const triSize = isHov ? 7 : 5
+          const triColor = sp.resolved ? '#f59e0b' : '#ef4444'
+          const tipY = lineY - triSize * 1.4 - 1
+
+          return (
+            <g key={`cstuck-${idx}`}>
+              <polygon
+                points={`${sp.x},${tipY + triSize * 1.4} ${sp.x - triSize},${tipY} ${sp.x + triSize},${tipY}`}
+                fill={triColor} stroke="white" strokeWidth={0.8}
+                opacity={isHov ? 1 : 0.85}
+                style={{ transition: 'opacity 0.15s', cursor: 'pointer' }}
+              />
+              <circle
+                cx={sp.x} cy={tipY + triSize * 0.7} r={8}
+                fill="transparent" style={{ cursor: 'pointer' }}
+                onMouseEnter={() => setHoveredStuck(idx)}
+                onMouseLeave={() => setHoveredStuck(null)}
+              />
+              {isHov && (() => {
+                const lines = [
+                  sp.timeLabel + ' · ' + sp.taskTitle,
+                  ...(sp.reason ? ['原因：' + sp.reason] : []),
+                ]
+                const measureTextW = (s: string) => [...s].reduce((w, c) => w + (/[\u4e00-\u9fff\u3000-\u303f\uff00-\uffef]/.test(c) ? 11 : 6), 0)
+                const boxW = Math.max(...lines.map(l => measureTextW(l) + 20), 100)
+                const boxH = lines.length * 16 + 10
+                const boxX = Math.max(0, Math.min(sp.x - boxW / 2, W - boxW))
+                const showBelow = tipY - boxH - 4 < 0
+                const boxY = showBelow ? tipY + triSize * 1.4 + 4 : tipY - boxH - 4
+                return (
+                  <g>
+                    <rect x={boxX} y={boxY} width={boxW} height={boxH}
+                      rx={4} fill="#1f2937" opacity={0.92} />
+                    {lines.map((line, li) => (
+                      <text key={li}
+                        x={boxX + 8} y={boxY + 15 + li * 16}
+                        fontSize={10} fill="white"
+                        fontWeight={li === 0 ? '600' : '400'}
+                      >
+                        {line}
+                      </text>
+                    ))}
+                  </g>
+                )
+              })()}
+            </g>
           )
         })}
       </svg>

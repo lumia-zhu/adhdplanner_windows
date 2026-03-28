@@ -225,7 +225,7 @@ export default function InteractiveActivityHeatmap({ data, events, rangeStart: p
 
       {/* ======== 图例 ======== */}
       <div className="flex items-center gap-3 mb-2.5 text-2xs text-gray-400">
-        <span>每小时活跃占比：</span>
+        <span>每小时电脑活跃度：</span>
         {LEVEL_COLORS.map((c, i) => (
           <div key={i} className="flex items-center gap-1">
             <div className={`w-3 h-3 rounded-sm ${c}`} />

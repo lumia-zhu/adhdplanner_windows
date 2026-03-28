@@ -298,8 +298,14 @@ export default function WeekView({ weekEndDate, onDataReady, chatOpen }: WeekVie
     }`}>
       {/* 每日完成率条形图 */}
       <div id="chart-week-completion">
-        <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
+        <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-1.5">
           📊 每日任务完成率
+          <span className="relative group">
+            <span className="inline-flex items-center justify-center w-4 h-4 rounded-full border border-gray-300 text-gray-400 text-[10px] leading-none cursor-help group-hover:text-gray-600 group-hover:border-gray-400 transition-colors">?</span>
+            <span className="pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-150 absolute left-1/2 -translate-x-1/2 top-full mt-1.5 z-50 w-[240px] bg-gray-800 text-white text-[11px] leading-relaxed rounded-lg px-3 py-2.5 shadow-lg normal-case tracking-normal font-normal">
+              <b>每日任务完成率</b> = 当天已完成的任务数 ÷ 当天全部任务数 × 100%。
+            </span>
+          </span>
         </h3>
         <WeekCompletionBars days={weekData} />
       </div>
@@ -325,8 +331,14 @@ export default function WeekView({ weekEndDate, onDataReady, chatOpen }: WeekVie
 
       {/* 7×24 活动分布热力网格 */}
       <div id="chart-week-heatmap">
-        <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
-          🔍 活动分布热力图
+        <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+          🔍 电脑活动分布
+          <span className="relative group">
+            <span className="inline-flex items-center justify-center w-4 h-4 rounded-full border border-gray-300 text-gray-400 text-[10px] leading-none cursor-help group-hover:text-gray-600 group-hover:border-gray-400 transition-colors">?</span>
+            <span className="pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-150 absolute left-1/2 -translate-x-1/2 top-full mt-1.5 z-50 w-[240px] bg-gray-800 text-white text-[11px] leading-relaxed rounded-lg px-3 py-2.5 shadow-lg normal-case tracking-normal font-normal">
+              <b>每小时电脑活跃度</b> = 该小时内检测到的电脑使用时间 ÷ 1小时。颜色越深表示这个时段电脑使用越多。<br/><span className="text-gray-300 mt-1 inline-block">注：连续 1 分钟没有鼠标或键盘操作即视为不活跃。</span>
+            </span>
+          </span>
         </h3>
         <WeekHeatmapGrid days={weekData} rangeStart={weekRangeStart} rangeEnd={weekRangeEnd} />
       </div>

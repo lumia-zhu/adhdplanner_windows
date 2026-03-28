@@ -306,7 +306,8 @@ export default function ActivityRhythmChart({ data, events, rangeStart: rs, rang
                   ...(sp.reason ? ['原因：' + sp.reason] : []),
                   sp.resolved ? '✓ 已解决' : '✗ 未解决',
                 ]
-                const boxW = Math.max(...lines.map(l => l.length * 5.5 + 12), 80)
+                const measureTextW = (s: string) => [...s].reduce((w, c) => w + (/[\u4e00-\u9fff\u3000-\u303f\uff00-\uffef]/.test(c) ? 8 : 4.5), 0)
+                const boxW = Math.max(...lines.map(l => measureTextW(l) + 16), 80)
                 const boxH = lines.length * 11 + 6
                 const boxX = Math.max(0, Math.min(sp.x - boxW / 2, W - boxW))
                 const showBelow = tipY - boxH - 4 < 0

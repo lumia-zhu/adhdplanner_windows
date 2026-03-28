@@ -253,7 +253,7 @@ export default function ManualTimeEntry({
           <div className="flex flex-col items-center gap-0.5">
             <span>✏️ 今天还做了别的事吗？补记一下让反思更完整</span>
             {unrecordedCount > 0 && (
-              <span className="text-indigo-400 text-xxs">
+              <span className="text-blue-600 text-xxs">
                 {unrecordedCount} 个任务没有专注记录
               </span>
             )}
