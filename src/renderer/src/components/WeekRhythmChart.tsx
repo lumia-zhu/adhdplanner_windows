@@ -15,12 +15,16 @@ import type { WeekDayData } from './WeekView'
 
 const W = 400
 const H = 120
-const PAD_L = 32
-const PAD_R = 8
+const PAD_L = 26
+const PAD_R = 4
 const PAD_T = 18
 const PAD_B = 20
 const CHART_W = W - PAD_L - PAD_R
 const CHART_H = H - PAD_T - PAD_B
+
+/** 周热力图需要加的左右 padding 百分比，保证和折线图绘图区对齐 */
+export const WEEK_PAD_LEFT_PCT = `${(PAD_L / W) * 100}%`
+export const WEEK_PAD_RIGHT_PCT = `${(PAD_R / W) * 100}%`
 
 const MAX_VAL = 100
 const Y_TICKS = [0, 25, 50, 75, 100]
@@ -191,7 +195,10 @@ export default function WeekRhythmChart({ days, rangeStart: rs, rangeEnd: re }: 
 
   return (
     <div>
-      {/* SVG 图表 */}
+      {/* SVG 图表（左侧占位与热力图日期标签对齐） */}
+      <div className="flex items-center gap-1">
+        <span className="w-[38px] flex-shrink-0" />
+        <div className="flex-1">
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ maxHeight: 140 }}>
         {/* 渐变定义 */}
         <defs>
@@ -211,26 +218,23 @@ export default function WeekRhythmChart({ days, rangeStart: rs, rangeEnd: re }: 
                 x1={PAD_L} y1={y} x2={PAD_L + CHART_W} y2={y}
                 stroke="#e5e7eb" strokeWidth={0.5} strokeDasharray={i === 0 ? undefined : '2,2'}
               />
-              <text x={PAD_L - 4} y={y + 3} textAnchor="end" fontSize={7} fill="#9ca3af">
+              <text x={PAD_L - 3} y={y + 3} textAnchor="end" fontSize={8} fill="#6b7280" fontWeight="500">
                 {tickVal}%
               </text>
             </g>
           )
         })}
 
-        {/* x 轴标签（在小时边界处，与热力图刻度对齐） */}
-        {(() => {
-          const step = visibleHours <= 10 ? 2 : 3
-          const labels: { hour: number; x: number }[] = []
-          for (let h = rangeStart; h <= rangeEnd; h += step) {
-            labels.push({ hour: h, x: PAD_L + ((h - rangeStart) / visibleHours) * CHART_W })
-          }
-          return labels.map(l => (
-            <text key={l.hour} x={l.x} y={H - 4} textAnchor="middle" fontSize={7} fill="#9ca3af">
-              {l.hour % 24}
+        {/* x 轴标签（每小时边界处） */}
+        {Array.from({ length: visibleHours + 1 }, (_, i) => {
+          const h = rangeStart + i
+          const x = PAD_L + (i / visibleHours) * CHART_W
+          return (
+            <text key={h} x={x} y={H - 4} textAnchor="middle" fontSize={8} fill="#6b7280">
+              {h % 24}
             </text>
-          ))
-        })()}
+          )
+        })}
 
         {/* 周平均面积填充（只在没有对比线时显示，有对比线时隐藏，保持清晰） */}
         {!hasCompare && (
@@ -280,15 +284,16 @@ export default function WeekRhythmChart({ days, rangeStart: rs, rangeEnd: re }: 
               {/* tooltip */}
               {isHovered && (() => {
                 const showBelow = p.y - PAD_T < 20
-                // 计算 tooltip 内容
+                const nextHour = (p.hour + 1) % 24
                 const lines: string[] = [`均值 ${Math.round(p.val)}%`]
                 for (const cl of compareLines) {
                   lines.push(`${cl.label} ${Math.round(cl.hourly[p.hour])}%`)
                 }
-                const text = `${p.hour}:00 · ${lines.join(' | ')}`
-                const textWidth = Math.min(text.length * 3.5, 160)
-                const ty = showBelow ? p.y + 10 : p.y - 20
-                const textY = showBelow ? p.y + 19.5 : p.y - 10.5
+                const text = `${p.hour}:00~${nextHour}:00 · ${lines.join(' | ')}`
+                const textWidth = Math.min(text.length * 4.5, 240)
+                const boxH = 18
+                const ty = showBelow ? p.y + 10 : p.y - 24
+                const textY = showBelow ? p.y + 21.5 : p.y - 12.5
 
                 return (
                   <g>
@@ -296,12 +301,12 @@ export default function WeekRhythmChart({ days, rangeStart: rs, rangeEnd: re }: 
                       x={Math.max(PAD_L, Math.min(p.x - textWidth / 2, W - PAD_R - textWidth))}
                       y={ty}
                       width={textWidth}
-                      height={14}
-                      rx={3} fill="#1f2937" opacity={0.85}
+                      height={boxH}
+                      rx={4} fill="#1f2937" opacity={0.88}
                     />
                     <text
                       x={p.x} y={textY}
-                      textAnchor="middle" fontSize={6} fill="white" fontWeight="500"
+                      textAnchor="middle" fontSize={8} fill="white" fontWeight="500"
                     >
                       {text}
                     </text>
@@ -327,21 +332,11 @@ export default function WeekRhythmChart({ days, rangeStart: rs, rangeEnd: re }: 
           )
         })}
       </svg>
-
-      {/* 图例 */}
-      <div className="flex items-center justify-between mt-1">
-        <div className="flex items-center gap-3 flex-wrap">
-          <span className="flex items-center gap-1 text-2xs text-gray-400">
-            <span className={`inline-block w-4 h-[2px] ${hasCompare ? 'border-t border-dashed border-gray-400' : 'bg-emerald-500 rounded'}`} />
-            周平均
-          </span>
-          {compareLines.map(cl => (
-            <span key={cl.date} className="flex items-center gap-1 text-2xs text-gray-500">
-              <span className="inline-block w-4 h-[2px] rounded" style={{ backgroundColor: cl.color }} />
-              {cl.label}
-            </span>
-          ))}
         </div>
+      </div>
+
+      {/* 对比按钮（左） + 图例（右） */}
+      <div className="flex items-center justify-between mt-1">
         <div className="relative" ref={dropdownRef}>
           <button
             onClick={() => setDropdownOpen(v => !v)}
@@ -359,7 +354,7 @@ export default function WeekRhythmChart({ days, rangeStart: rs, rangeEnd: re }: 
           </button>
 
           {dropdownOpen && (
-            <div className="absolute right-0 bottom-full mb-1 z-50 bg-white rounded-lg shadow-lg border border-gray-200 py-1 min-w-[140px]">
+            <div className="absolute left-0 bottom-full mb-1 z-50 bg-white rounded-lg shadow-lg border border-gray-200 py-1 min-w-[140px]">
               {dayHourly.map((d) => {
                 const isSelected = selectedDates.includes(d.date)
                 const isDisabled = !d.hasData || (!isSelected && selectedDates.length >= MAX_COMPARE)
@@ -397,6 +392,18 @@ export default function WeekRhythmChart({ days, rangeStart: rs, rangeEnd: re }: 
               )}
             </div>
           )}
+        </div>
+        <div className="flex items-center gap-3 flex-wrap">
+          <span className="flex items-center gap-1 text-2xs text-gray-400">
+            <span className={`inline-block w-4 h-[2px] ${hasCompare ? 'border-t border-dashed border-gray-400' : 'bg-emerald-500 rounded'}`} />
+            周平均
+          </span>
+          {compareLines.map(cl => (
+            <span key={cl.date} className="flex items-center gap-1 text-2xs text-gray-500">
+              <span className="inline-block w-4 h-[2px] rounded" style={{ backgroundColor: cl.color }} />
+              {cl.label}
+            </span>
+          ))}
         </div>
       </div>
 

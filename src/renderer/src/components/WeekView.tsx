@@ -331,11 +331,8 @@ export default function WeekView({ weekEndDate, onDataReady, chatOpen }: WeekVie
         <WeekHeatmapGrid days={weekData} rangeStart={weekRangeStart} rangeEnd={weekRangeEnd} />
       </div>
 
-      {/* 分隔线 */}
-      <div className="border-t border-gray-100" />
-
       {/* 周平均节奏曲线 */}
-      <div id="chart-week-rhythm" className="-mt-3">
+      <div id="chart-week-rhythm" className="-mt-6">
         <WeekRhythmChart days={weekData} rangeStart={weekRangeStart} rangeEnd={weekRangeEnd} />
       </div>
     </div>

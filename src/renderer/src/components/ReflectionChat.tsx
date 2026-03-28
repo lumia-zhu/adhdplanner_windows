@@ -67,8 +67,8 @@ function parseChartRefs(
           <button
             key={i}
             onClick={() => onRef(entry.domId)}
-            className="inline-flex items-center gap-0.5 text-indigo-500 hover:text-indigo-700
-                       underline underline-offset-2 decoration-indigo-300 hover:decoration-indigo-500
+            className="inline-flex items-center gap-0.5 text-blue-600 hover:text-blue-700
+                       underline underline-offset-2 decoration-blue-300 hover:decoration-blue-500
                        transition-colors cursor-pointer font-medium"
             title={`点击查看${entry.label}图表`}
           >
@@ -94,8 +94,8 @@ function parseChartRefs(
           <button
             key={i}
             onClick={() => onRef(entry.domId)}
-            className="inline-flex items-center gap-0.5 text-indigo-500 hover:text-indigo-700
-                       underline underline-offset-2 decoration-indigo-300 hover:decoration-indigo-500
+            className="inline-flex items-center gap-0.5 text-blue-600 hover:text-blue-700
+                       underline underline-offset-2 decoration-blue-300 hover:decoration-blue-500
                        transition-colors cursor-pointer font-medium"
             title={`点击查看${entry.label}图表`}
           >
@@ -509,20 +509,17 @@ export default function ReflectionChat({
                          focus:ring-2 outline-none bg-gray-50 focus:bg-white transition-all
                          disabled:opacity-50 disabled:cursor-not-allowed
                          placeholder-gray-400"
-              style={{ '--tw-ring-color': 'rgba(100,155,139,0.3)' } as React.CSSProperties}
-              onFocus={e => (e.currentTarget.style.borderColor = '#649b8b')}
+              style={{ '--tw-ring-color': 'rgba(37,99,235,0.3)' } as React.CSSProperties}
+              onFocus={e => (e.currentTarget.style.borderColor = '#2563eb')}
               onBlur={e => (e.currentTarget.style.borderColor = '')}
             />
             <button
               onClick={handleSend}
               disabled={!input.trim() || !canSend}
-              className="px-4 py-2.5 rounded-xl text-white text-sm font-semibold
+              className="px-4 py-2.5 rounded-xl text-blue-600 bg-blue-50 hover:bg-blue-100 text-sm font-semibold
                          active:scale-95
                          disabled:opacity-40 disabled:cursor-not-allowed
-                         shadow-md transition-all flex-shrink-0"
-              style={{ backgroundColor: '#649b8b', boxShadow: '0 4px 6px -1px rgba(100,155,139,0.3)' }}
-              onMouseEnter={e => { if (input.trim() && canSend) e.currentTarget.style.backgroundColor = '#548676' }}
-              onMouseLeave={e => e.currentTarget.style.backgroundColor = '#649b8b'}
+                         transition-all flex-shrink-0"
             >
               发送
             </button>

@@ -9,6 +9,7 @@
 import { useMemo } from 'react'
 import type { ActivityRecord } from './ActivityHeatmap'
 import { getActiveRatio } from './ActivityHeatmap'
+import { WEEK_PAD_LEFT_PCT, WEEK_PAD_RIGHT_PCT } from './WeekRhythmChart'
 
 import type { WeekDayData } from './WeekView'
 
@@ -129,17 +130,6 @@ export default function WeekHeatmapGrid({ days, rangeStart: propStart, rangeEnd:
     return computeWeekActiveTimeRange(days)
   }, [propStart, propEnd, days])
 
-  const visibleSpan = rangeEnd - rangeStart
-
-  // ---- 每小时刻度 ----
-  const timeTicks = useMemo(() => {
-    const ticks: number[] = []
-    for (let h = rangeStart; h <= rangeEnd; h++) {
-      ticks.push(h)
-    }
-    return ticks
-  }, [rangeStart, rangeEnd])
-
   // 稳定高效时段洞察
   const insight = useMemo(() => {
     // 对每个小时，统计 7 天中有几天 level >= 2
@@ -193,14 +183,14 @@ export default function WeekHeatmapGrid({ days, rangeStart: propStart, rangeEnd:
       <div className="space-y-0.5">
         {dayLevels.map((dl) => (
           <div key={dl.date}>
-            <div className="flex items-center gap-1.5 rounded-md px-1 py-0.5 transition-colors hover:bg-gray-50">
+            <div className="flex items-center gap-1 rounded-md py-0.5 transition-colors hover:bg-gray-50">
               <span
-                className="text-2xs text-gray-500 w-[80px] flex-shrink-0 text-right tabular-nums"
+                className="text-2xs text-gray-500 w-[38px] flex-shrink-0 text-right tabular-nums"
                 title={dl.dateFull}
               >
                 {dl.dateLabel} {dl.weekdayShort}
               </span>
-              <div className="flex-1 flex gap-[1px]">
+              <div className="flex-1 flex gap-[1px]" style={{ paddingLeft: WEEK_PAD_LEFT_PCT, paddingRight: WEEK_PAD_RIGHT_PCT }}>
                 {dl.levels.slice(rangeStart, rangeEnd).map((lv, i) => {
                   const h = rangeStart + i
                   return (
@@ -215,29 +205,6 @@ export default function WeekHeatmapGrid({ days, rangeStart: propStart, rangeEnd:
             </div>
           </div>
         ))}
-      </div>
-
-      {/* 底部时间刻度（与网格行使用相同的 flex 布局，确保对齐） */}
-      <div className="flex items-center gap-1.5 px-1">
-        <span className="w-[80px] flex-shrink-0" />
-        <div className="flex-1 relative h-4">
-          {timeTicks.map((h) => {
-            const pct = ((h - rangeStart) / visibleSpan) * 100
-            return (
-              <span
-                key={h}
-                className="absolute text-3xs text-gray-400 tabular-nums"
-                style={{
-                  left: `${pct}%`,
-                  transform: pct === 0 ? 'none' : pct >= 100 ? 'translateX(-100%)' : 'translateX(-50%)',
-                }}
-              >
-                {h}
-              </span>
-            )
-          })}
-        </div>
-        <span className="w-3 flex-shrink-0" />
       </div>
     </div>
   )

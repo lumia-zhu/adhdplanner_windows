@@ -777,7 +777,7 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
                   <button
                     onClick={goToday}
                     className="ml-1 px-2 py-0.5 rounded-full text-2xs font-semibold
-                               bg-indigo-50 text-indigo-500 hover:bg-indigo-100 transition-colors"
+                               bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors"
                   >
                     今天
                   </button>
@@ -823,7 +823,7 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
                   <button
                     onClick={() => { setWeekEndDate(getToday()); resetChatOnDateChange() }}
                     className="ml-1 px-2 py-0.5 rounded-full text-2xs font-semibold
-                               bg-indigo-50 text-indigo-500 hover:bg-indigo-100 transition-colors"
+                               bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors"
                   >
                     本周
                   </button>
@@ -982,7 +982,7 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
               {/* 任务活动分布（交互式热力图 + 任务时间轴） */}
               <div id="chart-activity-heatmap">
                 <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
-                  🔍 任务活动分布
+                  🔍 电脑活动分布
                 </h3>
                 <InteractiveActivityHeatmap data={activityData} events={events} rangeStart={sharedRangeStart} rangeEnd={sharedRangeEnd} highlightTask={hoveredTask} />
               </div>
@@ -1054,10 +1054,7 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
               <button
                 onClick={closeChat}
                 className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-semibold
-                           text-white active:scale-95 transition-all"
-                style={{ backgroundColor: '#649b8b' }}
-                onMouseEnter={e => (e.currentTarget.style.backgroundColor = '#548676')}
-                onMouseLeave={e => (e.currentTarget.style.backgroundColor = '#649b8b')}
+                           text-blue-600 bg-blue-50 hover:bg-blue-100 active:scale-95 transition-all"
               >
                 <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
