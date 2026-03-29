@@ -707,6 +707,7 @@ export function buildReflectionSystemPrompt(
   summaryContext: string,
   hasScreenshot = false,
   isToday = true,
+  memoryContext = '',
 ): string {
   // 日期称谓：今天 vs 那天
   const dayRef = isToday ? '今天' : '那天'
@@ -798,7 +799,19 @@ ${isToday ? '- 【chart:completion-rate】任务完成率\n' : ''}- 【chart:met
 
 ========== ${dayRefShort}数据 ==========
 ${summaryContext}
-========== 数据结束 ==========`
+========== 数据结束 ==========${memoryContext ? `
+
+========== 对话记忆 ==========
+${memoryContext}
+========== 记忆结束 ==========
+
+使用记忆的原则：
+- 如果用户近期的想法和今天的数据自然相关，可以温和地提一句（"你之前提到过想试试..."）
+- 绝对不要追问用户"之前说的 XX 做到了吗"——承诺只是当时的想法，不是任务，用户没有义务完成
+- 标记为"仅供了解背景"的内容只用于你自己理解上下文，不要主动提起
+- 不要主动列举所有记忆，只在自然的时候引用
+- 不要用"根据记录"这种说法，用"你之前提到过..."
+- 如果记忆和当前话题不相关就不要提` : ''}`
 }
 
 /**
@@ -812,6 +825,7 @@ export function buildWeeklyReflectionSystemPrompt(
   weekContext: string,
   hasScreenshot = false,
   weekLabel = '',
+  memoryContext = '',
 ): string {
   const screenshotNote = hasScreenshot
     ? `\n## 视觉数据\n用户的下一条消息会附带一张"周数据仪表板"截图，包含每日任务完成率柱状图、周汇总指标卡片、任务用时排行、7×24活动热力图和使用节奏曲线。你可以直接观察截图中的视觉特征（柱状高低、颜色深浅、曲线走势），结合数据一起分析。\n`
@@ -895,7 +909,19 @@ ${screenshotNote}
 
 ========== 周数据 ==========
 ${weekContext}
-========== 数据结束 ==========`
+========== 数据结束 ==========${memoryContext ? `
+
+========== 对话记忆 ==========
+${memoryContext}
+========== 记忆结束 ==========
+
+使用记忆的原则：
+- 如果用户近期的想法和本周的数据自然相关，可以温和地提一句（"你之前提到过想试试..."）
+- 绝对不要追问用户"之前说的 XX 做到了吗"——承诺只是当时的想法，不是任务，用户没有义务完成
+- 标记为"仅供了解背景"的内容只用于你自己理解上下文，不要主动提起
+- 不要主动列举所有记忆，只在自然的时候引用
+- 不要用"根据记录"这种说法，用"你之前提到过..."
+- 如果记忆和当前话题不相关就不要提` : ''}`
 }
 
 /**
@@ -998,5 +1024,82 @@ export async function generateSuggestions(
   } catch (e) {
     console.warn('[generateSuggestions] 异常', e)
     return []
+  }
+}
+
+// ===================== Memory: 从对话中提取记忆 =====================
+
+export interface ExtractedMemory {
+  summary: string
+  commitments: string[]
+}
+
+/**
+ * 从反思对话中提取结构化记忆（summary + commitments）
+ * 使用 mini 模型，成本低、速度快
+ */
+export async function extractMemoryFromChat(
+  chatMessages: { role: 'user' | 'assistant'; content: string }[],
+  config: AIConfig,
+): Promise<ExtractedMemory> {
+  const fallback: ExtractedMemory = { summary: '', commitments: [] }
+
+  if (!config.apiKey || !config.apiUrl) return fallback
+  if (chatMessages.length < 2) return fallback
+
+  const conversationText = chatMessages
+    .map(m => `${m.role === 'user' ? '用户' : 'AI'}：${m.content}`)
+    .join('\n\n')
+
+  const systemPrompt = `你是一个记忆提取助手。请从以下反思对话中提取两类信息，用 JSON 格式返回：
+
+1. summary：用 2-3 句话概括这次反思聊了什么主题和关键发现（不要评价用户，只客观描述）
+2. commitments：用户明确说想尝试、想改变、想下次做的事（原话提炼，最多 2 条）。如果用户没有明确表达任何承诺或计划，返回空数组。
+
+返回格式：
+{"summary": "...", "commitments": ["...", "..."]}
+
+只返回 JSON，不要其他文字。`
+
+  const messages = [
+    { role: 'system' as const, content: systemPrompt },
+    { role: 'user' as const, content: conversationText },
+  ]
+
+  const miniModel = 'doubao-seed-2-0-mini-260215'
+  const body = JSON.stringify({
+    model: miniModel,
+    messages,
+    temperature: 0.3,
+    max_tokens: 400,
+    thinking: { type: 'disabled' },
+  })
+
+  try {
+    const res = await window.electronAPI.aiRequest({
+      url: config.apiUrl,
+      apiKey: config.apiKey,
+      body,
+    })
+
+    if (!res.ok) {
+      console.warn('[extractMemory] HTTP', res.status, res.body?.slice(0, 200))
+      return fallback
+    }
+
+    const json = JSON.parse(res.body)
+    const content = json?.choices?.[0]?.message?.content || ''
+    const cleaned = content.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim()
+    const parsed = JSON.parse(cleaned)
+
+    return {
+      summary: typeof parsed.summary === 'string' ? parsed.summary : '',
+      commitments: Array.isArray(parsed.commitments)
+        ? parsed.commitments.filter((c: unknown) => typeof c === 'string' && c.length > 0).slice(0, 2)
+        : [],
+    }
+  } catch (e) {
+    console.warn('[extractMemory] 提取失败:', e)
+    return fallback
   }
 }

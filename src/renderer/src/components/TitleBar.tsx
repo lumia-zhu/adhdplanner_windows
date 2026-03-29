@@ -10,14 +10,17 @@ interface TitleBarProps {
   taskCount: number         // 未完成的任务数量，显示在标题旁边
   onOpenProfile?: () => void    // 打开个人资料设置
   onOpenAISettings?: () => void // 打开 AI 设置面板
+  onOpenMemory?: () => void     // 打开 AI 记忆管理面板
   onOpenReflection?: () => void // 打开每日反思页面
   onEnterStandby?: () => void   // 收起为待命 widget
   hasProfile?: boolean          // 是否已填写个人资料（用于显示小绿点）
+  hasMemory?: boolean           // 是否有记忆数据（用于显示小圆点提示）
 }
 
 export default function TitleBar({
   taskCount,
-  onOpenProfile, onOpenAISettings, onOpenReflection, onEnterStandby, hasProfile,
+  onOpenProfile, onOpenAISettings, onOpenMemory, onOpenReflection, onEnterStandby,
+  hasProfile, hasMemory,
 }: TitleBarProps) {
   // 设置下拉菜单的开关状态
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -143,6 +146,26 @@ export default function TitleBar({
                       />
                     </svg>
                     <span>AI 配置</span>
+                  </button>
+                )}
+
+                {/* AI 记忆 */}
+                {onOpenMemory && (
+                  <button
+                    onClick={() => { setSettingsOpen(false); onOpenMemory() }}
+                    className="w-full flex items-center gap-2.5 px-3 py-2 text-left
+                               text-sm text-gray-600 hover:bg-indigo-50 hover:text-indigo-600
+                               transition-colors"
+                  >
+                    <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8}
+                        d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"
+                      />
+                    </svg>
+                    <span>AI 记忆</span>
+                    {hasMemory && (
+                      <span className="ml-auto w-1.5 h-1.5 rounded-full bg-indigo-400 flex-shrink-0" />
+                    )}
                   </button>
                 )}
               </div>

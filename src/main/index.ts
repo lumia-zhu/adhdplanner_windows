@@ -17,6 +17,8 @@ import {
   safeWriteJSON, getReflectionChatPath,
   getTodayStr,
   setUserDataDir, migrateRootDataToUser,
+  saveRawSession, loadRawSession, listRawSessionKeys,
+  loadMemoryStore, saveMemoryStore,
 } from './storage'
 import {
   MAIN_WIDTH, MAIN_HEIGHT,
@@ -369,6 +371,25 @@ function setupIPC(): void {
       if (fs.existsSync(p)) return JSON.parse(fs.readFileSync(p, 'utf-8'))
     } catch (e) { console.error('[reflection:load]', e) }
     return null
+  })
+
+  // -------- Memory: Raw Session --------
+  ipcMain.handle('memory:saveRawSession', (_, key: string, data: unknown) => {
+    return saveRawSession(key, data as any)
+  })
+  ipcMain.handle('memory:loadRawSession', (_, key: string) => {
+    return loadRawSession(key)
+  })
+  ipcMain.handle('memory:listRawSessionKeys', () => {
+    return listRawSessionKeys()
+  })
+
+  // -------- Memory: Structured Store --------
+  ipcMain.handle('memory:loadStore', () => {
+    return loadMemoryStore()
+  })
+  ipcMain.handle('memory:saveStore', (_, store: unknown) => {
+    return saveMemoryStore(store as any)
   })
 
   // -------- 活跃度数据 --------

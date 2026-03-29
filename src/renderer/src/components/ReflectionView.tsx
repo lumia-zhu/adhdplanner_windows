@@ -10,7 +10,7 @@ import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import html2canvas from 'html2canvas'
 import type { Task } from '../types'
 import type { AIConfig } from '../services/ai'
-import { buildReflectionSystemPrompt, buildWeeklyReflectionSystemPrompt } from '../services/ai'
+import { buildReflectionSystemPrompt, buildWeeklyReflectionSystemPrompt, extractMemoryFromChat } from '../services/ai'
 import type { TrackEvent, DailySummary } from '../services/tracker'
 import { buildDailySummary, summaryToLLMContext, buildWeeklyLLMContext } from '../services/tracker'
 import DonutChart from './DonutChart'
@@ -156,6 +156,7 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
   const [events, setEvents] = useState<TrackEvent[]>([])
   const [summary, setSummary] = useState<DailySummary | null>(null)
   const [activityData, setActivityData] = useState<ActivityRecord[]>([])
+  const [memoryContext, setMemoryContext] = useState('')
   const [loadingData, setLoadingData] = useState(true)
 
   // ---- 侧边栏状态 ----
@@ -258,6 +259,61 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
     loadEvents()
     return () => { cancelled = true }
   }, [selectedDate])
+
+  // 加载记忆上下文（开场 prompt 注入用）
+  useEffect(() => {
+    (async () => {
+      try {
+        const store = (await window.electronAPI.loadMemoryStore()) as {
+          sessions?: { date: string; mode: string; summary: string; createdAt: number }[]
+          commitments?: { text: string; sourceDate: string; status: string; createdAt: number }[]
+        } | null
+        if (!store) return
+
+        const parts: string[] = []
+
+        // 最近 3 次对话摘要
+        const sessions = Array.isArray(store.sessions) ? store.sessions : []
+        const recentSessions = sessions.slice(-3)
+        if (recentSessions.length > 0) {
+          parts.push('## 近期反思摘要')
+          for (const s of recentSessions) {
+            parts.push(`- [${s.date}] ${s.summary}`)
+          }
+        }
+
+        // 承诺分两层：近期可自然引用，稍早仅作背景
+        const commitments = Array.isArray(store.commitments) ? store.commitments : []
+        const threeDaysAgo = Date.now() - 3 * 24 * 60 * 60 * 1000
+        const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000
+        const recentCommitments = commitments
+          .filter(c => c.status === 'active' && c.createdAt >= threeDaysAgo)
+          .slice(-3)
+        const olderCommitments = commitments
+          .filter(c => c.status === 'active' && c.createdAt < threeDaysAgo && c.createdAt >= sevenDaysAgo)
+          .slice(-2)
+
+        if (recentCommitments.length > 0) {
+          parts.push('## 用户近期提到想尝试的事')
+          for (const c of recentCommitments) {
+            parts.push(`- [${c.sourceDate}] ${c.text}`)
+          }
+        }
+        if (olderCommitments.length > 0) {
+          parts.push('## 用户之前提过的想法（仅供了解背景，绝对不要主动提起或追问）')
+          for (const c of olderCommitments) {
+            parts.push(`- [${c.sourceDate}] ${c.text}`)
+          }
+        }
+
+        if (parts.length > 0) {
+          setMemoryContext(parts.join('\n'))
+        }
+      } catch (e) {
+        console.warn('[Memory] 加载记忆上下文失败:', e)
+      }
+    })()
+  }, [])
 
   // 数据加载完后，后台预截图（避免点浮标时阻塞）
   useEffect(() => {
@@ -531,8 +587,8 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
     const activityInfo = activityTimeDistribution
       ? `\n\n精力时间分布（每小时电脑活跃度）：\n${activityTimeDistribution}`
       : ''
-    return buildReflectionSystemPrompt(context + taskInfo + productivityInfo + activityInfo, !!screenshotBase64, isToday)
-  }, [summary, events, tasks, completionRate, totalUsageMinutes, productivityRatio, flowRatio, activityTimeDistribution, screenshotBase64, isToday])
+    return buildReflectionSystemPrompt(context + taskInfo + productivityInfo + activityInfo, !!screenshotBase64, isToday, memoryContext)
+  }, [summary, events, tasks, completionRate, totalUsageMinutes, productivityRatio, flowRatio, activityTimeDistribution, screenshotBase64, isToday, memoryContext])
 
   // ---- 周视图数据回调 ----
   const handleWeekDataReady = useCallback((data: WeekDayData[]) => {
@@ -545,11 +601,74 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
     const context = buildWeeklyLLMContext(weekDayData)
     const dates = getWeekDates(weekEndDate)
     const weekLabel = `${formatDateFriendly(dates[0]).replace(/ .+/, '')} – ${formatDateFriendly(dates[6]).replace(/ .+/, '')}`
-    return buildWeeklyReflectionSystemPrompt(context, !!screenshotBase64, weekLabel)
-  }, [weekDayData, weekEndDate, screenshotBase64])
+    return buildWeeklyReflectionSystemPrompt(context, !!screenshotBase64, weekLabel, memoryContext)
+  }, [weekDayData, weekEndDate, screenshotBase64, memoryContext])
 
   // 根据当前视图模式选择对应的 system prompt
   const activeSystemPrompt = viewMode === 'week' ? weekSystemPrompt : systemPrompt
+
+  // 补提取未处理的 raw session（和页面加载并行，零体感延迟）
+  useEffect(() => {
+    (async () => {
+      try {
+        const keys = await window.electronAPI.listRawSessionKeys()
+        for (const key of keys) {
+          const raw = await window.electronAPI.loadRawSession(key) as {
+            date: string; mode: string; status: string; startedAt: number
+            messages: { role: 'user' | 'assistant'; content: string; ts: number }[]
+          } | null
+          if (!raw || raw.status !== 'in_progress') continue
+          if (raw.messages.length < 4) {
+            // 对话太短，直接标记为 processed
+            raw.status = 'processed'
+            await window.electronAPI.saveRawSession(key, raw)
+            continue
+          }
+          console.log(`[Memory] 补提取未处理的会话: ${key}`)
+          const chatMsgs = raw.messages.filter(m => m.content.length > 0)
+          const result = await extractMemoryFromChat(chatMsgs, aiConfig)
+          if (result && (result.summary || result.commitments.length > 0)) {
+            const store = (await window.electronAPI.loadMemoryStore()) as {
+              sessions?: unknown[]; commitments?: unknown[]; lastUpdated?: number
+            } || { sessions: [], commitments: [], lastUpdated: 0 }
+
+            if (result.summary) {
+              const sessions = Array.isArray(store.sessions) ? store.sessions : []
+              sessions.push({
+                id: `${raw.date}-${raw.mode}`,
+                date: raw.date,
+                mode: raw.mode,
+                summary: result.summary,
+                createdAt: Date.now(),
+              })
+              store.sessions = sessions
+            }
+            if (result.commitments.length > 0) {
+              const commitments = Array.isArray(store.commitments) ? store.commitments : []
+              for (const text of result.commitments) {
+                commitments.push({
+                  id: `${raw.date}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+                  text,
+                  sourceDate: raw.date,
+                  status: 'active',
+                  createdAt: Date.now(),
+                })
+              }
+              store.commitments = commitments
+            }
+            store.lastUpdated = Date.now()
+            await window.electronAPI.saveMemoryStore(store)
+            console.log(`[Memory] 补提取完成: ${key}`, result.summary?.slice(0, 50))
+          }
+          raw.status = 'processed'
+          await window.electronAPI.saveRawSession(key, raw)
+        }
+      } catch (e) {
+        console.warn('[Memory] 补提取失败:', e)
+      }
+    })()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // 反思完成回调
   const handleReflectionComplete = (summaryText: string) => {
@@ -1053,22 +1172,6 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
           style={{ width: chatOpen ? chatWidth : 0 }}
         >
           <div className="flex flex-col h-full" style={{ minWidth: MIN_CHAT_WIDTH }}>
-            <div className="flex items-center justify-between px-4 py-2.5 border-b border-gray-100 flex-shrink-0">
-              <span className="text-xs font-semibold text-gray-500">
-                AI {viewMode === 'week' ? '周' : ''}反思助手
-              </span>
-              <button
-                onClick={closeChat}
-                className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-semibold
-                           text-blue-600 bg-blue-50 hover:bg-blue-100 active:scale-95 transition-all"
-              >
-                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                </svg>
-                结束反思
-              </button>
-            </div>
-
             <div className="flex-1 min-h-0">
               {!hasAI ? (
                 <div className="flex-1 flex items-center justify-center h-full">

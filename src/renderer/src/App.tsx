@@ -17,6 +17,7 @@ import ProfileSettings from './components/ProfileSettings'
 import ReflectionView from './components/ReflectionView'
 import QuickFocusEndDialog from './components/QuickFocusEndDialog'
 import AuthPage from './components/AuthPage'
+import MemoryPanel from './components/MemoryPanel'
 
 import { useDateNavigation, getToday } from './hooks/useDateNavigation'
 import { useWidgetMode } from './hooks/useWidgetMode'
@@ -48,6 +49,10 @@ export default function App() {
   // -------- 用户资料 --------
   const [userProfile, setUserProfile] = useState<UserProfile>({ ...EMPTY_PROFILE })
   const [showProfile, setShowProfile] = useState(false)
+
+  // -------- AI 记忆面板 --------
+  const [showMemory, setShowMemory] = useState(false)
+  const [hasMemory, setHasMemory] = useState(false)
 
   // -------- 专注会话 --------
   const focusSession = useFocusSession({
@@ -102,10 +107,11 @@ export default function App() {
   useEffect(() => {
     const initApp = async () => {
       try {
-        const [savedConfig, savedProfile, windowMode] = await Promise.all([
+        const [savedConfig, savedProfile, windowMode, memoryStore] = await Promise.all([
           window.electronAPI.loadAIConfig(),
           window.electronAPI.loadProfile(),
           window.electronAPI.getWindowMode(),
+          window.electronAPI.loadMemoryStore().catch(() => null),
         ])
         if (savedConfig && savedConfig.apiKey) {
           setAIConfig({
@@ -129,6 +135,10 @@ export default function App() {
           if (!savedSession) {
             widgetMode.setIsStandbyMode(true)
           }
+        }
+        if (memoryStore && typeof memoryStore === 'object') {
+          const ms = memoryStore as { sessions?: unknown[]; commitments?: unknown[] }
+          setHasMemory((ms.sessions?.length || 0) > 0 || (ms.commitments?.length || 0) > 0)
         }
       } catch (e) {
         console.error('初始化数据加载失败:', e)
@@ -404,9 +414,11 @@ export default function App() {
         taskCount={pendingTasks.length}
         onOpenProfile={() => setShowProfile(true)}
         onOpenAISettings={() => setShowAISettings(true)}
+        onOpenMemory={() => setShowMemory(true)}
         onOpenReflection={() => widgetMode.setShowReflection(true)}
         onEnterStandby={widgetMode.handleEnterStandby}
         hasProfile={hasProfile}
+        hasMemory={hasMemory}
       />
 
       <NoteEditor
@@ -506,6 +518,11 @@ export default function App() {
         profile={userProfile}
         onSave={handleSaveProfile}
         onClose={() => setShowProfile(false)}
+      />
+
+      <MemoryPanel
+        visible={showMemory}
+        onClose={() => setShowMemory(false)}
       />
 
       {focusSession.quickFocusEnd && (

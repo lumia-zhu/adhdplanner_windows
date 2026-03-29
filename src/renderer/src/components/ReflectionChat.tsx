@@ -7,7 +7,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import type { AIConfig, ReflectionMessage, MessageContentPart } from '../services/ai'
-import { chatReflectionStream, generateSuggestions } from '../services/ai'
+import { chatReflectionStream, generateSuggestions, extractMemoryFromChat } from '../services/ai'
 
 interface ChatBubble {
   role: 'user' | 'assistant'
@@ -160,11 +160,29 @@ export default function ReflectionChat({
   const [storageReady, setStorageReady] = useState(false)
   const [restartKey, setRestartKey] = useState(0)
   const [suggestions, setSuggestions] = useState<string[]>([])
+  const [endingState, setEndingState] = useState<'idle' | 'saving' | 'saved'>('idle')
   const scrollRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const messagesRef = useRef<ReflectionMessage[]>([])
   const initCalledRef = useRef(false)
   const streamCleanupRef = useRef<(() => void) | null>(null)
+  const rawSessionRef = useRef<{ date: string; mode: 'daily' | 'weekly'; status: 'in_progress' | 'processed'; startedAt: number; messages: { role: 'user' | 'assistant'; content: string; ts: number }[] }>({
+    date: selectedDate || new Date().toISOString().slice(0, 10),
+    mode,
+    status: 'in_progress',
+    startedAt: Date.now(),
+    messages: [],
+  })
+
+  /** 追加消息到 raw session 并持久化 */
+  const persistRawMessage = useCallback((role: 'user' | 'assistant', content: string) => {
+    const session = rawSessionRef.current
+    session.messages.push({ role, content, ts: Date.now() })
+    const key = storageKey || session.date
+    window.electronAPI.saveRawSession(key, session).catch(e =>
+      console.warn('[Memory] raw session 保存失败:', e)
+    )
+  }, [storageKey])
 
   const scrollToBottom = useCallback(() => {
     requestAnimationFrame(() => {
@@ -246,6 +264,7 @@ export default function ReflectionChat({
               ...newMessages,
               { role: 'assistant', content },
             ]
+            persistRawMessage('assistant', content)
             resolve(content)
 
             // 主回复完成后，独立调用生成探索方向（不阻塞主流程）
@@ -344,14 +363,81 @@ export default function ReflectionChat({
     setRestartKey(k => k + 1)
   }, [storageKey])
 
-  // ---- 结束反思 ----
-  const handleEndChat = useCallback(() => {
-    const lastAssistant = bubbles.filter(b => b.role === 'assistant').pop()
-    if (onComplete && lastAssistant?.content) {
-      onComplete(lastAssistant.content)
+  // ---- 结束反思（带收尾流程） ----
+  const handleEndChat = useCallback(async () => {
+    if (endingState !== 'idle') return
+    setEndingState('saving')
+
+    try {
+      // 埋点
+      const lastAssistant = bubbles.filter(b => b.role === 'assistant').pop()
+      if (onComplete && lastAssistant?.content) {
+        onComplete(lastAssistant.content)
+      }
+
+      // 从对话中提取记忆（带 3 秒超时保护）
+      const session = rawSessionRef.current
+      const chatMsgs = session.messages.filter(m => m.content.length > 0)
+
+      if (chatMsgs.length >= 2) {
+        const extractPromise = extractMemoryFromChat(chatMsgs, aiConfig)
+        const timeoutPromise = new Promise<null>(r => setTimeout(() => r(null), 3000))
+        const result = await Promise.race([extractPromise, timeoutPromise])
+
+        if (result && (result.summary || result.commitments.length > 0)) {
+          const dateStr = selectedDate || new Date().toISOString().slice(0, 10)
+          try {
+            const store = (await window.electronAPI.loadMemoryStore()) as {
+              sessions?: unknown[]; commitments?: unknown[]; lastUpdated?: number
+            } || { sessions: [], commitments: [], lastUpdated: 0 }
+
+            if (result.summary) {
+              const sessions = Array.isArray(store.sessions) ? store.sessions : []
+              sessions.push({
+                id: `${dateStr}-${mode}`,
+                date: dateStr,
+                mode,
+                summary: result.summary,
+                createdAt: Date.now(),
+              })
+              store.sessions = sessions
+            }
+
+            if (result.commitments.length > 0) {
+              const commitments = Array.isArray(store.commitments) ? store.commitments : []
+              for (const text of result.commitments) {
+                commitments.push({
+                  id: `${dateStr}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+                  text,
+                  sourceDate: dateStr,
+                  status: 'active',
+                  createdAt: Date.now(),
+                })
+              }
+              store.commitments = commitments
+            }
+
+            store.lastUpdated = Date.now()
+            await window.electronAPI.saveMemoryStore(store)
+            console.log('[Memory] 记忆已保存:', result.summary?.slice(0, 50), result.commitments)
+          } catch (e) {
+            console.warn('[Memory] 保存记忆失败:', e)
+          }
+        }
+      }
+
+      // 标记 raw session 为已处理
+      session.status = 'processed'
+      const key = storageKey || session.date
+      window.electronAPI.saveRawSession(key, session).catch(() => {})
+
+      setEndingState('saved')
+      setTimeout(() => { onEndChat?.() }, 600)
+    } catch (e) {
+      console.error('[ReflectionChat] 结束反思收尾失败:', e)
+      onEndChat?.()
     }
-    onEndChat?.()
-  }, [bubbles, onComplete, onEndChat])
+  }, [endingState, bubbles, onComplete, onEndChat, aiConfig, mode, selectedDate, storageKey])
 
   // 初始化：发送第一条 AI 消息
   useEffect(() => {
@@ -395,6 +481,7 @@ export default function ReflectionChat({
     if (!text || !canSend) return
 
     setSuggestions([])
+    persistRawMessage('user', text)
     const userBubble: ChatBubble = { role: 'user', content: text, timestamp: Date.now() }
     setBubbles(prev => [...prev, userBubble])
 
@@ -405,7 +492,7 @@ export default function ReflectionChat({
 
     await sendToAI(newMessages)
     inputRef.current?.focus()
-  }, [canSend, sendToAI])
+  }, [canSend, sendToAI, persistRawMessage])
 
   const handleSend = () => {
     const text = input.trim()
@@ -414,8 +501,42 @@ export default function ReflectionChat({
     sendUserMessage(text)
   }
 
+  const endButtonLabel = endingState === 'saving' ? '正在保存记忆...'
+    : endingState === 'saved' ? '✓ 已保存' : '结束反思'
+
   return (
     <div className="flex flex-col h-full">
+      {/* 顶栏：结束反思按钮 */}
+      <div className="flex items-center justify-between px-4 py-2.5 border-b border-gray-100 flex-shrink-0">
+        <span className="text-xs font-semibold text-gray-500">
+          AI {mode === 'weekly' ? '周' : ''}反思助手
+        </span>
+        <button
+          onClick={handleEndChat}
+          disabled={endingState !== 'idle'}
+          className={`flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-semibold
+                     transition-all active:scale-95
+                     ${endingState === 'saved'
+                       ? 'text-emerald-600 bg-emerald-50'
+                       : endingState === 'saving'
+                         ? 'text-gray-400 bg-gray-50 cursor-wait'
+                         : 'text-blue-600 bg-blue-50 hover:bg-blue-100'
+                     }`}
+        >
+          {endingState === 'saving' ? (
+            <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+            </svg>
+          ) : (
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+            </svg>
+          )}
+          {endButtonLabel}
+        </button>
+      </div>
+
       {/* 聊天区域 */}
       <div
         ref={scrollRef}
