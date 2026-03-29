@@ -179,7 +179,7 @@ export default function ActivityRhythmChart({ data, events, rangeStart: rs, rang
                 stroke="#e5e7eb" strokeWidth={0.5}
                 strokeDasharray={tickVal === 0 ? undefined : '2,2'}
               />
-              <text x={PAD_L - 3} y={y + 3} textAnchor="end" fontSize={7.5} fill="#6b7280" fontWeight="500">
+              <text x={PAD_L - 3} y={y + 3} textAnchor="end" fontSize={9} fill="#6b7280" fontWeight="500">
                 {tickVal}%
               </text>
             </g>
@@ -191,7 +191,7 @@ export default function ActivityRhythmChart({ data, events, rangeStart: rs, rang
           const h = rangeStart + i
           const x = PAD_L + (i / visibleHours) * CHART_W
           return (
-            <text key={h} x={x} y={H - 4} textAnchor="middle" fontSize={7.5} fill="#6b7280" fontWeight="500">
+            <text key={h} x={x} y={H - 4} textAnchor="middle" fontSize={9} fill="#6b7280" fontWeight="500">
               {h}
             </text>
           )
@@ -209,7 +209,7 @@ export default function ActivityRhythmChart({ data, events, rangeStart: rs, rang
         <path d={areaPath} fill="url(#usageGradient)" opacity={0.4} />
 
         {/* 折线 */}
-        <path d={linePath} fill="none" stroke="#10b981" strokeWidth={1.5} strokeLinejoin="round" />
+        <path d={linePath} fill="none" stroke="#10b981" strokeWidth={1.8} strokeLinejoin="round" />
 
         {/* 数据点 + 悬停 */}
         {points.map(p => {
@@ -219,9 +219,9 @@ export default function ActivityRhythmChart({ data, events, rangeStart: rs, rang
             <g key={p.hour}>
               <circle
                 cx={p.x} cy={p.y}
-                r={isHovered ? 4 : isPeak ? 4 : 2.5}
+                r={isHovered ? 4.5 : isPeak ? 4.5 : 3}
                 fill={p.val > 0 ? '#10b981' : '#e5e7eb'}
-                stroke="white" strokeWidth={isHovered ? 2 : 1}
+                stroke="white" strokeWidth={isHovered ? 1.8 : 1}
                 style={{ transition: 'r 0.15s, stroke-width 0.15s' }}
               />
               <circle
@@ -231,22 +231,24 @@ export default function ActivityRhythmChart({ data, events, rangeStart: rs, rang
                 onMouseLeave={() => setHovered(null)}
               />
               {isHovered && (() => {
-                const showBelow = p.y - PAD_T < 18
-                const ty = showBelow ? p.y + 8 : p.y - 18
-                const textY = showBelow ? p.y + 17.5 : p.y - 8.5
-                const label = `${p.hour}:00–${p.hour + 1}:00 · ${Math.round(p.val)}%`
-                const rectW = label.length * 4 + 8
+                const showBelow = p.y - PAD_T < 22
+                const nextHour = (p.hour + 1) % 24
+                const label = `${p.hour}:00~${nextHour}:00 · ${Math.round(p.val)}%`
+                const rectW = Math.min(label.length * 5 + 12, 240)
+                const boxH = 18
+                const ty = showBelow ? p.y + 10 : p.y - 24
+                const textY = showBelow ? p.y + 21.5 : p.y - 12.5
                 return (
                   <g>
                     <rect
                       x={Math.max(0, Math.min(p.x - rectW / 2, W - rectW))}
-                      y={ty} width={rectW} height={13}
-                      rx={3} fill="#1f2937" opacity={0.85}
+                      y={ty} width={rectW} height={boxH}
+                      rx={4} fill="#1f2937" opacity={0.88}
                     />
                     <text
                       x={Math.max(rectW / 2, Math.min(p.x, W - rectW / 2))}
                       y={textY}
-                      textAnchor="middle" fontSize={7} fill="white" fontWeight="500"
+                      textAnchor="middle" fontSize={9} fill="white" fontWeight="500"
                     >
                       {label}
                     </text>
@@ -283,14 +285,14 @@ export default function ActivityRhythmChart({ data, events, rangeStart: rs, rang
             lineY = rightPt.y
           }
 
-          const triSize = isHov ? 5 : 3.5
+          const triSize = isHov ? 7 : 5
           const color = sp.resolved ? '#f59e0b' : '#ef4444'
           const tipY = lineY - triSize * 1.4 - 1
           return (
             <g key={`stuck-${idx}`}>
               <polygon
                 points={`${sp.x},${tipY + triSize * 1.4} ${sp.x - triSize},${tipY} ${sp.x + triSize},${tipY}`}
-                fill={color} stroke="white" strokeWidth={0.5}
+                fill={color} stroke="white" strokeWidth={0.8}
                 opacity={isHov ? 1 : 0.85}
                 style={{ transition: 'opacity 0.15s', cursor: 'pointer' }}
               />
@@ -304,11 +306,10 @@ export default function ActivityRhythmChart({ data, events, rangeStart: rs, rang
                 const lines = [
                   sp.timeLabel + ' · ' + sp.taskTitle,
                   ...(sp.reason ? ['原因：' + sp.reason] : []),
-                  sp.resolved ? '✓ 已解决' : '✗ 未解决',
                 ]
-                const measureTextW = (s: string) => [...s].reduce((w, c) => w + (/[\u4e00-\u9fff\u3000-\u303f\uff00-\uffef]/.test(c) ? 8 : 4.5), 0)
-                const boxW = Math.max(...lines.map(l => measureTextW(l) + 16), 80)
-                const boxH = lines.length * 11 + 6
+                const measureTextW = (s: string) => [...s].reduce((w, c) => w + (/[\u4e00-\u9fff\u3000-\u303f\uff00-\uffef]/.test(c) ? 11 : 6), 0)
+                const boxW = Math.max(...lines.map(l => measureTextW(l) + 20), 100)
+                const boxH = lines.length * 16 + 10
                 const boxX = Math.max(0, Math.min(sp.x - boxW / 2, W - boxW))
                 const showBelow = tipY - boxH - 4 < 0
                 const boxY = showBelow ? tipY + triSize * 1.4 + 4 : tipY - boxH - 4
@@ -318,8 +319,8 @@ export default function ActivityRhythmChart({ data, events, rangeStart: rs, rang
                       rx={4} fill="#1f2937" opacity={0.92} />
                     {lines.map((line, li) => (
                       <text key={li}
-                        x={boxX + 6} y={boxY + 11 + li * 11}
-                        fontSize={6.5} fill={li === lines.length - 1 ? (sp.resolved ? '#4ade80' : '#fca5a5') : 'white'}
+                        x={boxX + 8} y={boxY + 15 + li * 16}
+                        fontSize={10} fill="white"
                         fontWeight={li === 0 ? '600' : '400'}
                       >
                         {line}

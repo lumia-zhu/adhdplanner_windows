@@ -5,6 +5,8 @@
 -- ============================================================
 
 -- ====== 清理旧表（级联删除策略和索引） ======
+drop table if exists memory_store cascade;
+drop table if exists reflection_sessions cascade;
 drop table if exists reflection_chats cascade;
 drop table if exists tracker_events cascade;
 drop table if exists activity_records cascade;
@@ -118,5 +120,37 @@ create table if not exists reflection_chats (
 
 alter table reflection_chats enable row level security;
 create policy "reflection_user_policy" on reflection_chats
+  for all using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
+-- 7. 反思原始会话（Memory Raw Session）
+create table if not exists reflection_sessions (
+  user_id uuid not null references auth.users(id) on delete cascade,
+  session_key text not null,
+  date text not null,
+  mode text not null default 'daily',
+  status text not null default 'in_progress',
+  messages jsonb default '[]',
+  started_at bigint,
+  saved_at bigint,
+  primary key (user_id, session_key)
+);
+
+alter table reflection_sessions enable row level security;
+create policy "reflection_sessions_user_policy" on reflection_sessions
+  for all using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
+-- 8. 结构化记忆（Memory Store）
+create table if not exists memory_store (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  sessions jsonb default '[]',
+  commitments jsonb default '[]',
+  last_updated bigint default 0,
+  saved_at bigint
+);
+
+alter table memory_store enable row level security;
+create policy "memory_store_user_policy" on memory_store
   for all using (auth.uid() = user_id)
   with check (auth.uid() = user_id);

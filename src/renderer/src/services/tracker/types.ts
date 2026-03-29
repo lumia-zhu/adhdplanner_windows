@@ -177,6 +177,8 @@ export interface SessionStartedPayload {
   taskTitle: string
   /** 'manual' 表示用户通过补记功能手动添加，缺省为真实计时 */
   source?: 'manual'
+  /** 快速专注模式（无脚手架直接计时） */
+  isQuickFocus?: boolean
 }
 
 /** 专注会话结束 */
@@ -189,6 +191,8 @@ export interface SessionEndedPayload {
   endReason: 'task_done' | 'exit' | 'abandon' | 'pause' | 'manual_entry'
   /** 'manual' 表示用户通过补记功能手动添加，缺省为真实计时 */
   source?: 'manual'
+  /** 快速专注模式 */
+  isQuickFocus?: boolean
 }
 
 /** 专注会话暂停 */
@@ -227,43 +231,216 @@ export interface DailyLeftoversPayload {
   totalCount: number
 }
 
+/** ====== 7. 任务管理 (Task Management) ====== */
+
+export interface TaskCreatedPayload {
+  taskId: string
+  title: string
+  source: 'editor' | 'quick-add'
+}
+
+export interface TaskToggledPayload {
+  taskId: string
+  completed: boolean
+}
+
+export interface TaskDeletedPayload {
+  taskId: string
+}
+
+export interface TaskCarriedOverPayload {
+  taskIds: string[]
+  fromDate: string
+}
+
+export interface TaskReorderedPayload {
+  taskId: string
+  fromIndex: number
+  toIndex: number
+}
+
+export interface TaskEditedPayload {
+  taskId: string
+  field: 'title' | 'note'
+}
+
+/** ====== 8. 反思 (Reflection) ====== */
+
+export interface ReflectOpenedPayload {
+  date: string
+  mode: 'daily' | 'weekly'
+}
+
+export interface ReflectMessageSentPayload {
+  date: string
+  mode: string
+  messageIndex: number
+  charCount: number
+}
+
+export interface ReflectEndedPayload {
+  date: string
+  mode: string
+  messageCount: number
+  durationMs: number
+}
+
+export interface ReflectModeSwitchedPayload {
+  from: string
+  to: string
+}
+
+export interface ReflectChatOpenedPayload {
+  date: string
+  mode: string
+}
+
+export interface ReflectChartReferencedPayload {
+  chartId: string
+}
+
+/** ====== 9. 导航与模式 (Navigation & Mode) ====== */
+
+export interface NavDateChangedPayload {
+  from: string
+  to: string
+  method: 'arrow' | 'calendar' | 'today'
+}
+
+export interface ModeWidgetPayload {}
+
+/** ====== 10. 脚手架补充 (Scaffold) ====== */
+
+export interface PlanScaffoldSkippedPayload {
+  taskId: string
+}
+
+export interface PlanChipSelectedPayload {
+  taskId: string
+  chipText: string
+}
+
+export interface PlanTaskUnderstandingPayload {
+  taskId: string
+  taskTitle: string
+  understandingContext: string
+}
+
+/** ====== 补充：任务结构与清理 ====== */
+
+export interface TaskSubtaskCreatedPayload {
+  taskId: string
+  subtaskTitle: string
+}
+
+export interface TaskPriorityChangedPayload {
+  taskId: string
+  from: string
+  to: string
+}
+
+export interface TaskClearedCompletedPayload {
+  count: number
+}
+
+/** ====== 11. 记忆面板 (Memory) ====== */
+
+export interface MemoryOpenedPayload {}
+
+export interface MemoryDeletedPayload {
+  type: 'session' | 'commitment'
+  itemId: string
+}
+
+/** ====== 12. 设置与系统 (Settings & System) ====== */
+
+export interface SettingsSavedPayload {
+  settingType: 'profile' | 'ai_config'
+}
+
+export interface AuthLoginPayload {}
+
+export interface AppQuitPayload {}
+
+export interface ManualTimeAddedPayload {
+  date: string
+  entryCount: number
+}
+
 // ===================== 事件注册表 =====================
 // ★ 所有事件类型在这里集中注册，确保类型安全
 
 export interface TrackEventMap {
   // 计划阶段
-  'plan.brain_dump':        PlanBrainDumpPayload
-  'plan.focus_selected':    PlanFocusSelectedPayload
-  'plan.first_micro':       PlanFirstMicroPayload
+  'plan.brain_dump':            PlanBrainDumpPayload
+  'plan.focus_selected':        PlanFocusSelectedPayload
+  'plan.first_micro':           PlanFirstMicroPayload
+  'plan.task_understanding':    PlanTaskUnderstandingPayload
+  'plan.scaffold_skipped':      PlanScaffoldSkippedPayload
+  'plan.chip_selected':         PlanChipSelectedPayload
 
   // 执行阶段
-  'exec.micro_started':       ExecMicroStartedPayload
-  'exec.micro_completed':     ExecMicroCompletedPayload
-  'exec.subtask_completed':   ExecSubtaskCompletedPayload
-  'exec.flow_entered':        ExecFlowEnteredPayload
-  'exec.flow_ended':          ExecFlowEndedPayload
+  'exec.micro_started':         ExecMicroStartedPayload
+  'exec.micro_completed':       ExecMicroCompletedPayload
+  'exec.subtask_completed':     ExecSubtaskCompletedPayload
+  'exec.flow_entered':          ExecFlowEnteredPayload
+  'exec.flow_ended':            ExecFlowEndedPayload
 
   // 卡顿急救
-  'stuck.triggered':          StuckTriggeredPayload
-  'stuck.reason':             StuckReasonPayload
-  'stuck.reflection_shown':   StuckReflectionShownPayload
+  'stuck.triggered':            StuckTriggeredPayload
+  'stuck.reason':               StuckReasonPayload
+  'stuck.reflection_shown':     StuckReflectionShownPayload
   'stuck.hint_feedback_clicked': StuckHintFeedbackClickedPayload
   'stuck.hint_feedback_summary': StuckHintFeedbackSummaryPayload
-  'stuck.pivot_offered':      StuckPivotOfferedPayload
-  'stuck.pivot_chosen':       StuckPivotChosenPayload
+  'stuck.pivot_offered':        StuckPivotOfferedPayload
+  'stuck.pivot_chosen':         StuckPivotChosenPayload
 
   // 中断放弃
-  'abandon.exit':           AbandonExitPayload
+  'abandon.exit':               AbandonExitPayload
 
   // 会话生命周期
-  'session.started':        SessionStartedPayload
-  'session.ended':          SessionEndedPayload
-  'session.paused':         SessionPausedPayload
-  'session.resumed':        SessionResumedPayload
-  'session.macro_completed': MacroTaskCompletedPayload
+  'session.started':            SessionStartedPayload
+  'session.ended':              SessionEndedPayload
+  'session.paused':             SessionPausedPayload
+  'session.resumed':            SessionResumedPayload
+  'session.macro_completed':    MacroTaskCompletedPayload
 
   // 每日快照
-  'daily.leftovers':        DailyLeftoversPayload
+  'daily.leftovers':            DailyLeftoversPayload
+
+  // 任务管理
+  'task.created':               TaskCreatedPayload
+  'task.toggled':               TaskToggledPayload
+  'task.deleted':               TaskDeletedPayload
+  'task.carried_over':          TaskCarriedOverPayload
+  'task.reordered':             TaskReorderedPayload
+  'task.edited':                TaskEditedPayload
+  'task.subtask_created':       TaskSubtaskCreatedPayload
+  'task.priority_changed':      TaskPriorityChangedPayload
+  'task.cleared_completed':     TaskClearedCompletedPayload
+
+  // 反思
+  'reflect.opened':             ReflectOpenedPayload
+  'reflect.message_sent':       ReflectMessageSentPayload
+  'reflect.ended':              ReflectEndedPayload
+  'reflect.mode_switched':      ReflectModeSwitchedPayload
+  'reflect.chat_opened':        ReflectChatOpenedPayload
+  'reflect.chart_referenced':   ReflectChartReferencedPayload
+
+  // 导航与模式
+  'nav.date_changed':           NavDateChangedPayload
+  'mode.widget_entered':        ModeWidgetPayload
+  'mode.widget_expanded':       ModeWidgetPayload
+
+  // 记忆面板
+  'memory.opened':              MemoryOpenedPayload
+  'memory.deleted':             MemoryDeletedPayload
+
+  // 设置与系统
+  'settings.saved':             SettingsSavedPayload
+  'auth.login':                 AuthLoginPayload
+  'app.quit':                   AppQuitPayload
+  'manual.time_added':          ManualTimeAddedPayload
 }
 
 // 所有事件类型名称

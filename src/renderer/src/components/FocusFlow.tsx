@@ -17,6 +17,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import type { Task } from '../types'
 import type { AIConfig, MicroActionChip } from '../services/ai'
 import { generateReflectionQuestion, generateFollowUpQuestion, getRandomFallbackQuestion } from '../services/ai'
+import { tracker } from '../services/tracker'
 import { aiCache } from '../services/ai-cache'
 import AILoadingTips from './AILoadingTips'
 
@@ -255,8 +256,8 @@ export default function FocusFlow({ task, aiConfig, onStart, onCancel }: FocusFl
     }
   }, [phase, task.id])
 
-  // 退出动画
   const handleClose = () => {
+    tracker.track('plan.scaffold_skipped', { taskId: task.id })
     setVisible(false)
     setTimeout(onCancel, 300)
   }
@@ -279,6 +280,7 @@ export default function FocusFlow({ task, aiConfig, onStart, onCancel }: FocusFl
 
   /** AI chip 一键开始 */
   const handleChipStart = (chip: MicroActionChip) => {
+    tracker.track('plan.chip_selected', { taskId: task.id, chipText: chip.action })
     const ctx = buildUnderstandingContext(reflectionHistory)
     onStart(chip.action, 'ai_chip', ctx)
   }

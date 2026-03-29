@@ -114,6 +114,17 @@ const getTrackerPath = (date: string): string =>
   join(getUserDir(), `tracker-${date}.json`)
 const getWidgetPosPath = (): string => join(getUserDir(), 'widget-pos.json')
 
+// Memory 相关路径
+const getMemoryDir = (): string => {
+  const dir = join(getUserDir(), 'memory')
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
+  return dir
+}
+const getRawSessionPath = (key: string): string =>
+  join(getMemoryDir(), `raw-session-${key}.json`)
+const getMemoryStorePath = (): string =>
+  join(getMemoryDir(), 'memory.json')
+
 // ===================== 一次性迁移 =====================
 
 export function migrateTasksIfNeeded(): void {
@@ -495,4 +506,87 @@ export function loadWidgetPos(): { x: number; y: number } | null {
 export function saveWidgetPos(x: number, y: number): void {
   try { safeWriteJSON(getWidgetPosPath(), { x, y }) }
   catch (e) { console.error('[saveWidgetPos]', e) }
+}
+
+// ===================== Memory: Raw Session =====================
+
+export interface RawSessionMessage {
+  role: 'user' | 'assistant'
+  content: string
+  ts: number
+}
+
+export interface RawSessionData {
+  date: string
+  mode: 'daily' | 'weekly'
+  status: 'in_progress' | 'processed'
+  startedAt: number
+  messages: RawSessionMessage[]
+}
+
+export function loadRawSession(key: string): RawSessionData | null {
+  try {
+    const p = getRawSessionPath(key)
+    if (fs.existsSync(p)) return JSON.parse(fs.readFileSync(p, 'utf-8'))
+  } catch (e) { console.error('[loadRawSession]', e) }
+  return null
+}
+
+export function saveRawSession(key: string, data: RawSessionData): boolean {
+  try {
+    safeWriteJSON(getRawSessionPath(key), data)
+    markDirty('rawSession', key)
+    return true
+  } catch (e) { console.error('[saveRawSession]', e); return false }
+}
+
+/** 列出所有 raw session 文件的 key（用于查找未处理的会话） */
+export function listRawSessionKeys(): string[] {
+  try {
+    const dir = getMemoryDir()
+    return fs.readdirSync(dir)
+      .filter(f => f.startsWith('raw-session-') && f.endsWith('.json'))
+      .map(f => f.slice('raw-session-'.length, -'.json'.length))
+  } catch { return [] }
+}
+
+// ===================== Memory: Structured Memory Store =====================
+
+export interface MemorySessionSummary {
+  id: string
+  date: string
+  mode: 'daily' | 'weekly'
+  summary: string
+  createdAt: number
+}
+
+export interface MemoryCommitment {
+  id: string
+  text: string
+  sourceDate: string
+  status: 'active' | 'followed_up' | 'expired'
+  createdAt: number
+}
+
+export interface MemoryStore {
+  sessions: MemorySessionSummary[]
+  commitments: MemoryCommitment[]
+  lastUpdated: number
+}
+
+export function loadMemoryStore(): MemoryStore {
+  try {
+    const p = getMemoryStorePath()
+    if (fs.existsSync(p)) return JSON.parse(fs.readFileSync(p, 'utf-8'))
+  } catch (e) { console.error('[loadMemoryStore]', e) }
+  return { sessions: [], commitments: [], lastUpdated: 0 }
+}
+
+export function saveMemoryStore(store: MemoryStore): boolean {
+  try {
+    store.lastUpdated = Date.now()
+    safeWriteJSON(getMemoryStorePath(), store)
+    markDirty('memory')
+    return true
+  } catch (e) { console.error('[saveMemoryStore]', e); return false }
 }

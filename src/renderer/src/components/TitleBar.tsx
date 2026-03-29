@@ -5,6 +5,7 @@
  */
 
 import { useState, useRef, useEffect } from 'react'
+import { tracker } from '../services/tracker'
 
 interface TitleBarProps {
   taskCount: number         // 未完成的任务数量，显示在标题旁边
@@ -204,7 +205,7 @@ export default function TitleBar({
 
         {/* 退出按钮 */}
         <button
-          onClick={() => window.electronAPI.quitApp()}
+          onClick={() => { tracker.track('app.quit', {}); window.electronAPI.quitApp() }}
           className="w-7 h-7 rounded-md hover:bg-red-50 flex items-center justify-center text-gray-500 hover:text-red-500 transition-colors"
           title="退出应用"
         >

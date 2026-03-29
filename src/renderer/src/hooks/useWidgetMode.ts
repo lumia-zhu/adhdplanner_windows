@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import type { FocusSession } from '../components/WidgetView'
 import { getToday } from './useDateNavigation'
+import { tracker } from '../services/tracker'
 
 interface UseWidgetModeParams {
   session: FocusSession | null
@@ -74,15 +75,15 @@ export function useWidgetMode({
     return () => clearInterval(timer)
   }, [isWidgetMode, setCurrentDate])
 
-  // 主界面 → 待命 widget
   const handleEnterStandby = () => {
+    tracker.track('mode.widget_entered', {})
     window.electronAPI.enterWidget()
     setIsWidgetMode(true)
     setIsStandbyMode(true)
   }
 
-  // 待命 widget → 展开为主界面
   const handleExpandFromStandby = () => {
+    tracker.track('mode.widget_expanded', {})
     window.electronAPI.exitWidget()
     setIsWidgetMode(false)
     setIsStandbyMode(false)

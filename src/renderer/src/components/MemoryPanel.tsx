@@ -7,6 +7,7 @@
  */
 
 import { useState, useEffect, useCallback } from 'react'
+import { tracker } from '../services/tracker'
 
 interface SessionItem {
   id: string
@@ -75,6 +76,7 @@ export default function MemoryPanel({ visible, onClose }: MemoryPanelProps) {
   const threeDaysAgo = Date.now() - 3 * 24 * 60 * 60 * 1000
 
   const handleDelete = async (type: 'session' | 'commitment', id: string) => {
+    tracker.track('memory.deleted', { type, itemId: id })
     setDeletedId(id)
 
     setTimeout(async () => {

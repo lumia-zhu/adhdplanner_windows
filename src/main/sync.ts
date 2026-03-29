@@ -12,6 +12,7 @@ import { getSupabase, getCurrentUserId } from './supabase'
 import {
   loadTasks, loadProfile, loadAIConfig,
   loadActivityData, loadTrackerEvents,
+  loadRawSession, loadMemoryStore,
 } from './storage'
 import { getReflectionChatPath } from './storage'
 import fs from 'fs'
@@ -61,7 +62,9 @@ async function syncLoop(): Promise<void> {
       try {
         await pushToCloud(userId, entity, key)
       } catch (e: unknown) {
-        const msg = e instanceof Error ? e.message : String(e)
+        const msg = e instanceof Error ? e.message
+          : (e && typeof e === 'object' && 'message' in e) ? String((e as { message: unknown }).message)
+          : JSON.stringify(e)
         const isNetwork = msg.includes('fetch') || msg.includes('ECONNR') || msg.includes('network')
         if (!isNetwork) {
           console.error(`[Sync] Failed to push ${entity}/${key}:`, msg)
@@ -206,6 +209,39 @@ async function pushToCloud(userId: string, entity: string, key: string): Promise
       const { error } = await sb.from('tracker_events').insert(rows)
       if (error) throw error
       console.log(`[Sync] tracker/${date}: ${rows.length} rows`)
+      break
+    }
+
+    case 'rawSession': {
+      const sessionKey = key
+      const data = loadRawSession(sessionKey)
+      if (!data) break
+      const { error } = await sb.from('reflection_sessions').upsert({
+        user_id: userId,
+        session_key: sessionKey,
+        date: data.date,
+        mode: data.mode,
+        status: data.status,
+        messages: data.messages,
+        started_at: data.startedAt,
+        saved_at: Date.now(),
+      })
+      if (error) throw error
+      console.log(`[Sync] rawSession/${sessionKey} synced`)
+      break
+    }
+
+    case 'memory': {
+      const store = loadMemoryStore()
+      const { error } = await sb.from('memory_store').upsert({
+        user_id: userId,
+        sessions: store.sessions,
+        commitments: store.commitments,
+        last_updated: store.lastUpdated,
+        saved_at: Date.now(),
+      })
+      if (error) throw error
+      console.log('[Sync] memory store synced')
       break
     }
 

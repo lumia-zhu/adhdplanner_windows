@@ -226,6 +226,11 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
   const isDragging = useRef(false)
   const containerRef = useRef<HTMLDivElement>(null)
 
+  // 追踪反思页面打开
+  useEffect(() => {
+    tracker.track('reflect.opened', { date: selectedDate, mode: viewMode })
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
   // 加载选中日期的事件数据 + 活跃度数据
   useEffect(() => {
     let cancelled = false
@@ -681,10 +686,10 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
     console.log('[Reflection] 完成:', summaryText.slice(0, 100))
   }
 
-  // ---- 补记时间回调：写入 tracker 事件 + 新任务写入任务列表，然后刷新数据 ----
   const handleManualEntry = useCallback(
     async (newEvents: TrackEvent[], newTasks: { title: string }[]) => {
       if (newEvents.length === 0) return
+      tracker.track('manual.time_added', { date: selectedDate, entryCount: newEvents.length })
 
       // 1. 写入 tracker 事件
       await window.electronAPI.appendTrackerEvents(
@@ -722,8 +727,8 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
     [selectedDate],
   )
 
-  // ---- 图表引用：滚动 + 高亮对应图表 ----
   const handleChartRef = useCallback((chartId: string) => {
+    tracker.track('reflect.chart_referenced', { chartId })
     const el = document.getElementById(chartId)
     if (!el) return
 
@@ -754,6 +759,7 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
         console.warn('[Reflection] 补截图失败:', e)
       }
     }
+    tracker.track('reflect.chat_opened', { date: selectedDate, mode: viewMode })
     setChatOpen(true)
     window.electronAPI.resizeMainWindow(EXPANDED_WIDTH, MAIN_HEIGHT)
   }, [screenshotBase64])
@@ -953,6 +959,7 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
             <div className="flex rounded-md bg-gray-100 p-0.5">
               <button
                 onClick={() => {
+                  if (viewMode !== 'day') tracker.track('reflect.mode_switched', { from: viewMode, to: 'day' })
                   setViewMode('day')
                   resetChatOnDateChange()
                 }}
@@ -966,6 +973,7 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
               </button>
               <button
                 onClick={() => {
+                  if (viewMode !== 'week') tracker.track('reflect.mode_switched', { from: viewMode, to: 'week' })
                   setViewMode('week')
                   setWeekEndDate(selectedDate)
                   resetChatOnDateChange()

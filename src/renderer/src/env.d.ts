@@ -52,6 +52,12 @@ interface Window {
     // 活跃度数据
     /** 读取指定日期的活跃度采样记录 */
     loadActivityData: (date: string) => Promise<unknown[]>
+    // Memory
+    saveRawSession: (key: string, data: unknown) => Promise<boolean>
+    loadRawSession: (key: string) => Promise<unknown>
+    listRawSessionKeys: () => Promise<string[]>
+    loadMemoryStore: () => Promise<unknown>
+    saveMemoryStore: (store: unknown) => Promise<boolean>
     // 拖拽区域刷新（Windows Chromium bug workaround）
     onRefreshDrag: (cb: () => void) => void
     offRefreshDrag: (cb: () => void) => void

@@ -243,8 +243,8 @@ export default function ManualTimeEntry({
         className={`w-full text-center text-xs transition-all duration-200 rounded-lg px-3 py-2.5
           ${
             expanded
-              ? 'bg-indigo-50 border border-indigo-200 text-indigo-600'
-              : 'bg-gray-50 hover:bg-indigo-50 border border-dashed border-gray-300 hover:border-indigo-300 text-gray-400 hover:text-indigo-500'
+              ? 'bg-blue-50 border border-blue-200 text-blue-600'
+              : 'bg-gray-50 hover:bg-blue-50 border border-dashed border-gray-300 hover:border-blue-300 text-gray-400 hover:text-blue-500'
           }`}
       >
         {expanded ? (
@@ -315,7 +315,7 @@ export default function ManualTimeEntry({
                 onKeyDown={(e) => e.key === 'Enter' && addNewRow()}
                 placeholder="任务名称..."
                 className="flex-1 text-xs border border-gray-200 rounded-md px-2.5 py-1.5
-                           focus:outline-none focus:border-indigo-300 focus:ring-1 focus:ring-indigo-100"
+                           focus:outline-none focus:border-blue-300 focus:ring-1 focus:ring-blue-100"
               />
               <TimePicker value={newStart} onChange={setNewStart} />
               <span className="text-xs text-gray-300">→</span>
@@ -332,7 +332,7 @@ export default function ManualTimeEntry({
               </button>
             </div>
             {hasPendingInput && (
-              <p className="text-xxs text-indigo-400 mt-1 text-center">
+              <p className="text-xxs text-blue-400 mt-1 text-center">
                 点击"确认补记"会自动包含此任务
               </p>
             )}
@@ -344,8 +344,8 @@ export default function ManualTimeEntry({
             <button
               onClick={handleConfirm}
               disabled={totalToSubmit === 0 || hasInvalidTime || submitting}
-              className="text-xs px-4 py-1.5 rounded-md bg-indigo-500 text-white
-                         hover:bg-indigo-600 disabled:opacity-30 disabled:cursor-not-allowed
+              className="text-xs px-4 py-1.5 rounded-md bg-blue-500 text-white
+                         hover:bg-blue-600 disabled:opacity-30 disabled:cursor-not-allowed
                          transition-colors font-medium"
             >
               {submitting ? '保存中...' : '确认补记'}
@@ -379,7 +379,7 @@ function RowItem({
     <div
       className={`rounded-md text-xs transition-colors ${
         row.checked
-          ? 'bg-indigo-50/60 border border-indigo-100'
+          ? 'bg-blue-50/60 border border-blue-100'
           : 'bg-gray-50/60 border border-transparent hover:border-gray-200'
       } px-2.5 py-2`}
     >
@@ -389,7 +389,7 @@ function RowItem({
             type="checkbox"
             checked={row.checked}
             onChange={() => onToggle(row.id)}
-            className="accent-indigo-500 w-3.5 h-3.5 flex-shrink-0"
+            className="accent-blue-500 w-3.5 h-3.5 flex-shrink-0"
           />
           <span
             className={`truncate ${row.checked ? 'text-gray-700 font-medium' : 'text-gray-400'}`}
@@ -444,7 +444,7 @@ function TimePicker({
       value={value}
       onChange={(e) => onChange(Number(e.target.value))}
       className="text-xs border border-gray-200 rounded-md px-1.5 py-1 bg-white
-                 focus:outline-none focus:border-indigo-300 cursor-pointer"
+                 focus:outline-none focus:border-blue-300 cursor-pointer"
     >
       {TIME_OPTIONS.map((opt) => (
         <option key={opt.value} value={opt.value}>

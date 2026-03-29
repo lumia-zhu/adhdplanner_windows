@@ -145,6 +145,23 @@ contextBridge.exposeInMainWorld('electronAPI', {
   loadActivityData: (date: string): Promise<unknown[]> =>
     ipcRenderer.invoke('activity:load', date),
 
+  // -------- Memory --------
+  /** 保存反思对话原始记录 */
+  saveRawSession: (key: string, data: unknown): Promise<boolean> =>
+    ipcRenderer.invoke('memory:saveRawSession', key, data),
+  /** 加载反思对话原始记录 */
+  loadRawSession: (key: string): Promise<unknown> =>
+    ipcRenderer.invoke('memory:loadRawSession', key),
+  /** 列出所有原始会话的 key */
+  listRawSessionKeys: (): Promise<string[]> =>
+    ipcRenderer.invoke('memory:listRawSessionKeys'),
+  /** 加载结构化记忆 */
+  loadMemoryStore: (): Promise<unknown> =>
+    ipcRenderer.invoke('memory:loadStore'),
+  /** 保存结构化记忆 */
+  saveMemoryStore: (store: unknown): Promise<boolean> =>
+    ipcRenderer.invoke('memory:saveStore', store),
+
   // -------- 拖拽区域刷新（Windows Chromium bug workaround） --------
   /** 主进程 resize 后通知前端刷新 drag-region */
   onRefreshDrag: (cb: () => void): void => { ipcRenderer.on('widget:refreshDrag', cb) },

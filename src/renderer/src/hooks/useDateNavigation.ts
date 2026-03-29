@@ -1,4 +1,5 @@
 import { useState, useCallback } from 'react'
+import { tracker } from '../services/tracker'
 
 function getToday(): string {
   const d = new Date()
@@ -18,23 +19,37 @@ export function useDateNavigation() {
   const isToday = currentDate === getToday()
 
   const goPrevDate = useCallback(() => {
-    setCurrentDate(d => shiftDate(d, -1))
+    setCurrentDate(d => {
+      const to = shiftDate(d, -1)
+      tracker.track('nav.date_changed', { from: d, to, method: 'arrow' })
+      return to
+    })
   }, [])
 
   const goNextDate = useCallback(() => {
     setCurrentDate(d => {
       const next = shiftDate(d, 1)
-      return next > getToday() ? d : next
+      if (next > getToday()) return d
+      tracker.track('nav.date_changed', { from: d, to: next, method: 'arrow' })
+      return next
     })
   }, [])
 
   const goToday = useCallback(() => {
-    setCurrentDate(getToday())
+    setCurrentDate(d => {
+      const today = getToday()
+      if (d !== today) tracker.track('nav.date_changed', { from: d, to: today, method: 'today' })
+      return today
+    })
   }, [])
 
   const jumpToDate = useCallback((date: string) => {
     const today = getToday()
-    setCurrentDate(date > today ? today : date)
+    const to = date > today ? today : date
+    setCurrentDate(d => {
+      if (d !== to) tracker.track('nav.date_changed', { from: d, to, method: 'calendar' })
+      return to
+    })
   }, [])
 
   return {

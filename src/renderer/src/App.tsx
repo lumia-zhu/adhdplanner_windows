@@ -267,6 +267,7 @@ export default function App() {
   const handleSaveAIConfig = async (cfg: AIConfig) => {
     setAIConfig(cfg)
     aiCache.clearAll()
+    tracker.track('settings.saved', { settingType: 'ai_config' })
     try {
       await window.electronAPI.saveAIConfig(cfg as unknown as Record<string, string>)
     } catch (e) {
@@ -277,6 +278,7 @@ export default function App() {
   // -------- 个人资料保存 --------
   const handleSaveProfile = async (p: UserProfile) => {
     setUserProfile(p)
+    tracker.track('settings.saved', { settingType: 'profile' })
     try {
       await window.electronAPI.saveProfile(p as unknown as Record<string, unknown>)
     } catch (e) {
@@ -291,6 +293,9 @@ export default function App() {
     try {
       const ok = await window.electronAPI.multiCarryOverTasks(dateTaskMap, currentDate)
       if (ok) {
+        for (const [fromDate, taskIds] of Object.entries(dateTaskMap)) {
+          tracker.track('task.carried_over', { taskIds, fromDate })
+        }
         const refreshed = await window.electronAPI.loadTasks(currentDate)
         setTasks(refreshed as Task[])
         setCarryOverGroups([])
@@ -307,6 +312,8 @@ export default function App() {
   }
 
   const handleClearCompleted = () => {
+    const count = tasks.filter(t => t.completed).length
+    if (count > 0) tracker.track('task.cleared_completed', { count })
     setTasks(prev => prev.filter(t => !t.completed))
   }
 
@@ -333,7 +340,7 @@ export default function App() {
   // -------- 未登录：显示登录页 --------
   if (!currentUser) {
     return (
-      <AuthPage onLoginSuccess={(user) => setCurrentUser(user)} />
+      <AuthPage onLoginSuccess={(user) => { tracker.track('auth.login', {}); setCurrentUser(user) }} />
     )
   }
 
@@ -414,7 +421,7 @@ export default function App() {
         taskCount={pendingTasks.length}
         onOpenProfile={() => setShowProfile(true)}
         onOpenAISettings={() => setShowAISettings(true)}
-        onOpenMemory={() => setShowMemory(true)}
+        onOpenMemory={() => { tracker.track('memory.opened', {}); setShowMemory(true) }}
         onOpenReflection={() => widgetMode.setShowReflection(true)}
         onEnterStandby={widgetMode.handleEnterStandby}
         hasProfile={hasProfile}

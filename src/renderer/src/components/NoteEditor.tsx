@@ -13,6 +13,7 @@
  */
 
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react'
+import { tracker } from '../services/tracker'
 import {
   DndContext, closestCenter, PointerSensor, useSensor, useSensors,
   DragEndEvent,
@@ -113,6 +114,8 @@ export default function NoteEditor({
   carryOverGroups, onCarryOver, onDismissCarryOver,
   isToday = true, currentDate, onPrevDate, onNextDate, onGoToday, onJumpToDate,
 }: NoteEditorProps) {
+  const editedTaskIdsRef = useRef<Set<string>>(new Set())
+
   // 底部"新行"输入框文本
   const [newLineText, setNewLineText] = useState('')
   // 新行是否处于"子任务缩进"模式（先按 Tab 再打字）
@@ -154,6 +157,13 @@ export default function NoteEditor({
 
   /** 更新某行文字 */
   const updateText = useCallback((line: FlatLine, text: string) => {
+    if (line.type === 'task') {
+      const task = tasks[line.taskIndex]
+      if (task && !editedTaskIdsRef.current.has(task.id)) {
+        editedTaskIdsRef.current.add(task.id)
+        tracker.track('task.edited', { taskId: task.id, field: 'title' })
+      }
+    }
     setTasks(prev => {
       const next = [...prev]
       if (line.type === 'task') {
@@ -168,10 +178,14 @@ export default function NoteEditor({
       }
       return next
     })
-  }, [setTasks])
+  }, [setTasks, tasks])
 
   /** 切换勾选状态（父任务 / 子任务通用） */
   const toggleLine = useCallback((line: FlatLine) => {
+    if (line.type === 'task') {
+      const task = tasks[line.taskIndex]
+      if (task) tracker.track('task.toggled', { taskId: task.id, completed: !task.completed })
+    }
     setTasks(prev => prev.map((t, i) => {
       if (i !== line.taskIndex) return t
       if (line.type === 'task') {
@@ -193,13 +207,18 @@ export default function NoteEditor({
 
   /** 在列表末尾添加新任务 */
   const addTaskAtEnd = useCallback((title: string) => {
+    const newId = uid('t')
+    tracker.track('task.created', { taskId: newId, title, source: 'editor' })
     setTasks(prev => [...prev, {
-      id: uid('t'), title, note: '', priority: 'medium', completed: false, createdAt: Date.now(),
+      id: newId, title, note: '', priority: 'medium', completed: false, createdAt: Date.now(),
     }])
   }, [setTasks])
 
   /** 把文字作为最后一个任务的子任务添加 */
   const addSubtaskToLast = useCallback((title: string) => {
+    if (tasks.length > 0) {
+      tracker.track('task.subtask_created', { taskId: tasks[tasks.length - 1].id, subtaskTitle: title })
+    }
     setTasks(prev => {
       if (prev.length === 0) return prev
       const next = [...prev]
@@ -208,7 +227,7 @@ export default function NoteEditor({
       next[next.length - 1] = last
       return next
     })
-  }, [setTasks])
+  }, [setTasks, tasks])
 
   /** 删除一行，返回应该聚焦的前一行 ID（或 null 表示聚焦底部新行） */
   const deleteLine = useCallback((line: FlatLine): string | null => {
@@ -216,6 +235,8 @@ export default function NoteEditor({
     const prevLineId = lineIdx > 0 ? lines[lineIdx - 1].id : null
 
     if (line.type === 'task') {
+      const task = tasks[line.taskIndex]
+      if (task) tracker.track('task.deleted', { taskId: task.id })
       setTasks(prev => prev.filter((_, i) => i !== line.taskIndex))
     } else {
       setTasks(prev => {
@@ -246,8 +267,12 @@ export default function NoteEditor({
   const convertToSubtask = useCallback((line: FlatLine): string | null => {
     if (line.type !== 'task' || line.taskIndex === 0) return null
     const task = tasks[line.taskIndex]
-    // 如果这个任务已经有子任务，则不允许缩进（只支持两级）
     if ((task.subtasks ?? []).length > 0) return null
+
+    const parentTask = tasks[line.taskIndex - 1]
+    if (parentTask) {
+      tracker.track('task.subtask_created', { taskId: parentTask.id, subtaskTitle: task.title })
+    }
 
     setTasks(prev => {
       const next = prev.filter((_, i) => i !== line.taskIndex)
@@ -290,6 +315,12 @@ export default function NoteEditor({
   /** 切换优先级：低→中→高→低 */
   const cyclePriority = useCallback((taskIndex: number) => {
     const order: Array<'low' | 'medium' | 'high'> = ['low', 'medium', 'high']
+    const task = tasks[taskIndex]
+    if (task) {
+      const from = task.priority
+      const to = order[(order.indexOf(from) + 1) % order.length]
+      tracker.track('task.priority_changed', { taskId: task.id, from, to })
+    }
     setTasks(prev => {
       const next = [...prev]
       const t = { ...next[taskIndex] }
@@ -297,7 +328,7 @@ export default function NoteEditor({
       next[taskIndex] = t
       return next
     })
-  }, [setTasks])
+  }, [setTasks, tasks])
 
   // ===================== 键盘事件 =====================
 
@@ -422,14 +453,19 @@ export default function NoteEditor({
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event
     if (!over || active.id === over.id) return
+    const pending = tasks.filter(t => !t.completed)
+    const oldIdx = pending.findIndex(t => t.id === active.id)
+    const newIdx = pending.findIndex(t => t.id === over.id)
+    if (oldIdx !== -1 && newIdx !== -1) {
+      tracker.track('task.reordered', { taskId: String(active.id), fromIndex: oldIdx, toIndex: newIdx })
+    }
     setTasks(prev => {
-      // 只在 pending 组内部排序
-      const pending = prev.filter(t => !t.completed)
+      const p = prev.filter(t => !t.completed)
       const completed = prev.filter(t => t.completed)
-      const oldIdx = pending.findIndex(t => t.id === active.id)
-      const newIdx = pending.findIndex(t => t.id === over.id)
-      if (oldIdx === -1 || newIdx === -1) return prev
-      return [...arrayMove(pending, oldIdx, newIdx), ...completed]
+      const oi = p.findIndex(t => t.id === active.id)
+      const ni = p.findIndex(t => t.id === over.id)
+      if (oi === -1 || ni === -1) return prev
+      return [...arrayMove(p, oi, ni), ...completed]
     })
   }
 

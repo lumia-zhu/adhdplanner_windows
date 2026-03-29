@@ -6,6 +6,7 @@
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react'
+import { tracker } from '../services/tracker'
 import type { AIConfig, ReflectionMessage, MessageContentPart } from '../services/ai'
 import { chatReflectionStream, generateSuggestions, extractMemoryFromChat } from '../services/ai'
 
@@ -368,8 +369,15 @@ export default function ReflectionChat({
     if (endingState !== 'idle') return
     setEndingState('saving')
 
+    const session = rawSessionRef.current
+    tracker.track('reflect.ended', {
+      date: session.date,
+      mode: session.mode,
+      messageCount: bubbles.length,
+      durationMs: Date.now() - session.startedAt,
+    })
+
     try {
-      // 埋点
       const lastAssistant = bubbles.filter(b => b.role === 'assistant').pop()
       if (onComplete && lastAssistant?.content) {
         onComplete(lastAssistant.content)
@@ -479,6 +487,14 @@ export default function ReflectionChat({
   // 发送一条用户消息（文本来自输入框或备选问题点击）
   const sendUserMessage = useCallback(async (text: string) => {
     if (!text || !canSend) return
+
+    const msgIdx = bubbles.filter(b => b.role === 'user').length
+    tracker.track('reflect.message_sent', {
+      date: rawSessionRef.current.date,
+      mode: rawSessionRef.current.mode,
+      messageIndex: msgIdx,
+      charCount: text.length,
+    })
 
     setSuggestions([])
     persistRawMessage('user', text)
