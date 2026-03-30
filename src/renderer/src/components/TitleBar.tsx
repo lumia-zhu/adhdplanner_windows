@@ -47,16 +47,9 @@ export default function TitleBar({
     <div className="drag-region flex items-center justify-between px-4 py-3 bg-white border-b border-gray-100 select-none">
       {/* 左侧：应用图标 + 标题 + 任务数量 */}
       <div className="flex items-center gap-2 no-drag">
-        <div className="w-7 h-7 rounded-lg bg-indigo-500 flex items-center justify-center">
-          <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-              d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"
-            />
-          </svg>
-        </div>
         <span className="font-semibold text-gray-800 text-sm">我的任务</span>
         {taskCount > 0 && (
-          <span className="bg-indigo-500 text-white text-xs font-medium px-1.5 py-0.5 rounded-full">
+          <span className="text-white text-xs font-medium px-1.5 py-0.5 rounded-full" style={{ backgroundColor: '#91B493' }}>
             {taskCount}
           </span>
         )}
