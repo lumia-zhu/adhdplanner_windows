@@ -152,12 +152,13 @@ function formatDateFriendly(dateStr: string): string {
 
 // ===================== 主组件 =====================
 
-export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionViewProps) {
+export default function ReflectionView({ tasks: propTasks, aiConfig, onClose }: ReflectionViewProps) {
   const [events, setEvents] = useState<TrackEvent[]>([])
   const [summary, setSummary] = useState<DailySummary | null>(null)
   const [activityData, setActivityData] = useState<ActivityRecord[]>([])
   const [memoryContext, setMemoryContext] = useState('')
   const [loadingData, setLoadingData] = useState(true)
+  const [localTasks, setLocalTasks] = useState<Task[]>(propTasks)
 
   // ---- 侧边栏状态 ----
   const [chatOpen, setChatOpen] = useState(false)
@@ -231,7 +232,7 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
     tracker.track('reflect.opened', { date: selectedDate, mode: viewMode })
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // 加载选中日期的事件数据 + 活跃度数据
+  // 加载选中日期的事件数据 + 活跃度数据 + 任务
   useEffect(() => {
     let cancelled = false
     async function loadEvents() {
@@ -242,9 +243,10 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
           await tracker.flushAsync()
         }
 
-        const [raw, rawActivity] = await Promise.all([
+        const [raw, rawActivity, rawTasks] = await Promise.all([
           window.electronAPI.loadTrackerEvents(selectedDate),
           window.electronAPI.loadActivityData(selectedDate),
+          window.electronAPI.loadTasks(selectedDate),
         ])
 
         if (cancelled) return  // 防止切换日期后旧请求覆盖新数据
@@ -252,6 +254,7 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
         const typedEvents = raw as TrackEvent[]
         setEvents(typedEvents)
         setActivityData(rawActivity as ActivityRecord[])
+        setLocalTasks(rawTasks as Task[])
 
         const s = buildDailySummary(selectedDate, typedEvents)
         setSummary(s)
@@ -362,9 +365,9 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
 
   // 计算任务完成率
   const completionRate = useMemo(() => {
-    if (tasks.length === 0) return 0
-    return Math.round((tasks.filter(t => t.completed).length / tasks.length) * 100)
-  }, [tasks])
+    if (localTasks.length === 0) return 0
+    return Math.round((localTasks.filter(t => t.completed).length / localTasks.length) * 100)
+  }, [localTasks])
 
   // 构建时间轴条目
   const timelineEntries = useMemo(() => buildTimelineEntries(events), [events])
@@ -419,8 +422,8 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
       }
     }
 
-    // 建立 tasks 中已完成的任务名集合
-    const completedTaskTitles = new Set(tasks.filter(t => t.completed).map(t => t.title))
+    // 建立 localTasks 中已完成的任务名集合
+    const completedTaskTitles = new Set(localTasks.filter(t => t.completed).map(t => t.title))
 
     // ---- 5. 收集卡顿标记，并计算正确的累计偏移 ----
     const stuckMarksByTask = new Map<string, StuckMark[]>()
@@ -517,7 +520,7 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
       }))
       .filter(d => d.durationSec > 0)            // ★ 只过滤真正 0 秒的异常数据
       .sort((a, b) => b.durationSec - a.durationSec)
-  }, [events, tasks])
+  }, [events, localTasks])
 
   // ---- 生产力指标（基于使用时长模型：1 分钟无操作 → 未使用） ----
 
@@ -587,13 +590,13 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
   const systemPrompt = useMemo(() => {
     if (!summary) return ''
     const context = summaryToLLMContext(summary, events)
-    const taskInfo = `\n\n额外信息：\n- 当前任务总数：${tasks.length}\n- 已完成任务：${tasks.filter(t => t.completed).length}\n- 完成率：${completionRate}%\n- 待办任务：${tasks.filter(t => !t.completed).map(t => t.title).join('、') || '无'}`
+    const taskInfo = `\n\n额外信息：\n- 当前任务总数：${localTasks.length}\n- 已完成任务：${localTasks.filter(t => t.completed).length}\n- 完成率：${completionRate}%\n- 待办任务：${localTasks.filter(t => !t.completed).map(t => t.title).join('、') || '无'}`
     const productivityInfo = `\n\n生产力指标：\n- 电脑使用时长：${totalUsageMinutes}分钟\n- 专注时长：${summary.stats.totalFocusMinutes}分钟\n- 生产力比率：${productivityRatio}%（专注/使用）\n- 心流占比：${flowRatio}%（心流/专注）`
     const activityInfo = activityTimeDistribution
       ? `\n\n精力时间分布（每小时电脑活跃度）：\n${activityTimeDistribution}`
       : ''
     return buildReflectionSystemPrompt(context + taskInfo + productivityInfo + activityInfo, !!screenshotBase64, isToday, memoryContext)
-  }, [summary, events, tasks, completionRate, totalUsageMinutes, productivityRatio, flowRatio, activityTimeDistribution, screenshotBase64, isToday, memoryContext])
+  }, [summary, events, localTasks, completionRate, totalUsageMinutes, productivityRatio, flowRatio, activityTimeDistribution, screenshotBase64, isToday, memoryContext])
 
   // ---- 周视图数据回调 ----
   const handleWeekDataReady = useCallback((data: WeekDayData[]) => {
@@ -678,10 +681,10 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
   // 反思完成回调
   const handleReflectionComplete = (summaryText: string) => {
     tracker.track('daily.leftovers', {
-      leftoverTasks: tasks
+      leftoverTasks: localTasks
         .filter(t => !t.completed)
         .map(t => ({ id: t.id, title: t.title, priority: t.priority })),
-      totalCount: tasks.filter(t => !t.completed).length,
+      totalCount: localTasks.filter(t => !t.completed).length,
     })
     console.log('[Reflection] 完成:', summaryText.slice(0, 100))
   }
@@ -1040,7 +1043,7 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
                   {chatOpen && (
                     <div id="chart-key-metrics" className="grid grid-cols-3 gap-3 flex-1">
                       <div className="text-center bg-gray-100 rounded-xl py-2.5 px-2">
-                        <p className="text-lg font-bold text-gray-600">{tasks.filter(t => t.completed).length}</p>
+                        <p className="text-lg font-bold text-gray-600">{localTasks.filter(t => t.completed).length}</p>
                         <p className="text-2xs text-gray-500 mt-0.5">完成任务数</p>
                       </div>
                       <div className="text-center bg-emerald-50 rounded-xl py-2.5 px-2">
@@ -1069,7 +1072,7 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
               }`}>
                 <div className="text-center bg-gray-100 rounded-xl py-2.5 px-2">
                   <p className="text-lg font-bold text-gray-600">
-                    {tasks.filter(t => t.completed).length}
+                    {localTasks.filter(t => t.completed).length}
                   </p>
                   <p className="text-2xs text-gray-500 mt-0.5">完成任务数</p>
                 </div>
@@ -1149,7 +1152,7 @@ export default function ReflectionView({ tasks, aiConfig, onClose }: ReflectionV
               {/* 补记时间入口 */}
               <div className="border-t border-gray-100" />
               <ManualTimeEntry
-                tasks={tasks}
+                tasks={localTasks}
                 events={events}
                 selectedDate={selectedDate}
                 onConfirm={handleManualEntry}

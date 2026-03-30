@@ -768,7 +768,7 @@ ${isToday ? '- 【chart:completion-rate】任务完成率\n' : ''}- 【chart:met
    不要用"您好"这种正式称呼，保持朋友感。
 2. **数据洞察**（2-3 句），从${dayRef}的整体行为模式出发，引用 1-2 个图表，帮用户看见${dayRef}的行为节奏和状态特征。不做任务间对比，聚焦于用户整体的状态和模式。
 
-结尾简短邀请用户分享想法，如"有什么想聊的随时说～"。**不要提"点下面的问题"**（探索方向由系统单独生成，你不需要管）。
+结尾简短邀请用户分享想法，如"有什么想聊的随时说～"。
 
 寻找整体模式的优先级：
 1. ${dayRef}的活跃节奏——高峰在什么时段、什么时候平缓下来（引用【chart:rhythm】）
@@ -776,7 +776,7 @@ ${isToday ? '- 【chart:completion-rate】任务完成率\n' : ''}- 【chart:met
 3. 卡住和恢复的整体情况（如有卡住数据）
 4. ${dayRef}整体的完成节奏（引用【chart:completion-rate】或【chart:activity】）
 
-示例："嗨～来看看${dayRef}的情况吧 😊\n\n【chart:rhythm】你${dayRef}的活跃节奏在上午有个比较明显的高峰，下午逐渐平缓了。【chart:metrics】总共专注了 45 分钟，其中 15 分钟进入了心流。\n\n有什么想聊的随时说～"
+示例："嗨～来看看${dayRef}的情况吧 😊\n\n【chart:rhythm】你${dayRef}的活跃节奏在上午有个比较明显的高峰，下午逐渐平缓了。【chart:metrics】总共专注了 45 分钟，其中 15 分钟进入了心流。\n\n有什么想聊的随时说～\n\n<!--SUGGESTIONS:["分析上午高峰时段做了什么","看看卡住的时候在做哪个任务"]-->"
 
 ### 后续
 - 如果用户对开场洞察有反应，顺着他感兴趣的方向深入
@@ -786,6 +786,17 @@ ${isToday ? '- 【chart:completion-rate】任务完成率\n' : ''}- 【chart:met
 - 没覆盖所有方向也没关系，跟着用户走
 - 当对话自然收敛时（用户表示没什么要说的、回复简短），用一两句话温和收尾：复述用户自己的发现 + 简短鼓励，不挽留
 - 如果用户主动想结束，简短鼓励后结束
+
+## 探索方向（必须遵守）
+每条回复末尾必须附带探索方向，格式为 HTML 注释：
+<!--SUGGESTIONS:["方向1","方向2","方向3"]-->
+
+规则：
+- 生成 2-3 条用户可以让你分析的数据探索方向
+- 每条 ≤ 25 字，是用户让你分析数据的短句（如"分析下午卡住的原因"）
+- 不能与用户已问过的话题重复
+- 必须放在回复的最后一行
+- 用户看不到这个标签，它会被系统提取并显示为可点击按钮
 
 ## 严格规则
 - 直接开始，不自我介绍
@@ -878,7 +889,7 @@ ${screenshotNote}
    不要用"您好"这种正式称呼，保持朋友感。
 2. **数据洞察**（2-3 句），从这一周的整体行为模式出发，引用 1-2 个图表，帮用户看见跨天的节奏和状态特征。聚焦于整体趋势，不对比具体任务。
 
-结尾简短邀请用户分享想法，如"有什么想聊的随时说～"。**不要提"点下面的问题"**（探索方向由系统单独生成，你不需要管）。
+结尾简短邀请用户分享想法，如"有什么想聊的随时说～"。
 
 寻找整体模式的优先级：
 1. 一周的活跃节奏趋势——哪几天活跃、哪几天平缓（引用【chart:week-completion】或【chart:week-heatmap】）
@@ -886,7 +897,7 @@ ${screenshotNote}
 3. 跨天的时段规律——是否有固定的"黄金时段"（引用【chart:week-heatmap】）
 4. 一周整体的完成节奏和趋势（引用【chart:week-rhythm】）
 
-示例："嗨～一周过去了，来看看整体情况吧 😊\n\n【chart:week-completion】这一周前几天的完成率在逐步上升，周四到了最高点，之后有所回落。【chart:week-heatmap】整体来看上午 10-11 点是你最活跃的时段。\n\n有什么想聊的随时说～"
+示例："嗨～一周过去了，来看看整体情况吧 😊\n\n【chart:week-completion】这一周前几天的完成率在逐步上升，周四到了最高点，之后有所回落。【chart:week-heatmap】整体来看上午 10-11 点是你最活跃的时段。\n\n有什么想聊的随时说～\n\n<!--SUGGESTIONS:["看看周四高峰是怎么来的","分析周末活跃度下降的原因"]-->"
 
 ### 后续
 - 如果用户对开场洞察有反应，顺着他感兴趣的方向深入
@@ -896,6 +907,17 @@ ${screenshotNote}
 - 没覆盖所有方向也没关系，跟着用户走
 - 当对话自然收敛时（用户表示没什么要说的、回复简短），用一两句话温和收尾：复述用户自己的发现 + 简短鼓励，不挽留
 - 如果用户主动想结束，简短鼓励后结束
+
+## 探索方向（必须遵守）
+每条回复末尾必须附带探索方向，格式为 HTML 注释：
+<!--SUGGESTIONS:["方向1","方向2","方向3"]-->
+
+规则：
+- 生成 2-3 条用户可以让你分析的数据探索方向
+- 每条 ≤ 25 字，是用户让你分析数据的短句（如"分析周三活跃度突然下降的原因"）
+- 不能与用户已问过的话题重复
+- 必须放在回复的最后一行
+- 用户看不到这个标签，它会被系统提取并显示为可点击按钮
 
 ## 严格规则
 - 直接开始，不自我介绍
@@ -962,68 +984,95 @@ export async function generateSuggestions(
     ? '这是一周的数据回顾，方向可涉及跨天趋势、不同天对比、时段跨天规律等。'
     : '这是某一天的数据回顾，方向可涉及时段分析、任务切换、专注节奏、卡住变化等。'
 
-  const systemPrompt = `根据对话上下文，调用 suggest_directions 生成探索方向。${modeHint}
-要求：方向是用户让你分析数据的，不是让用户反思；每条≤25字；严禁与用户已问过的话题重复或含义相近。已问过：「${askedTopics || '无'}」`
+  const systemPrompt = `你是一个数据探索助手。根据对话上下文，生成 2-3 个数据探索方向。${modeHint}
+要求：
+- 方向是用户让你分析数据的短句，不是让用户自己反思
+- 每条 ≤ 25 字
+- 严禁与用户已问过的话题重复或含义相近
+- 已问过：「${askedTopics || '无'}」
 
-  const tools = [{
-    type: 'function' as const,
-    function: {
-      name: 'suggest_directions',
-      description: '生成2-3个数据探索方向供用户点选',
-      parameters: {
-        type: 'object',
-        properties: {
-          directions: {
-            type: 'array',
-            items: { type: 'string', maxLength: 25 },
-            minItems: 2,
-            maxItems: 3,
-            description: '探索方向列表，每条是用户让AI分析数据的简短请求',
-          },
-        },
-        required: ['directions'],
-      },
-    },
-  }]
+你必须严格按以下 JSON 格式输出，不要输出任何其他内容：
+{"directions":["方向1","方向2","方向3"]}`
 
   const messages = [
     { role: 'system', content: systemPrompt },
     ...contextMessages,
   ]
 
-  const body = JSON.stringify({
-    model: 'doubao-seed-2-0-mini-260215',
-    messages,
-    tools,
-    tool_choice: { type: 'function', function: { name: 'suggest_directions' } },
-    thinking: { type: 'disabled' },
-  })
+  const parseDirections = (content: string): string[] => {
+    // 1. 尝试提取 JSON 对象
+    const jsonMatch = content.match(/\{[\s\S]*"directions"[\s\S]*\}/)
+    if (jsonMatch) {
+      try {
+        const parsed = JSON.parse(jsonMatch[0])
+        if (Array.isArray(parsed.directions)) {
+          return parsed.directions
+            .map((d: string) => String(d).trim())
+            .filter((d: string) => d.length >= 4 && d.length <= 30)
+            .slice(0, 3)
+        }
+      } catch { /* JSON 解析失败，继续尝试数组格式 */ }
+    }
+    // 2. 尝试提取 JSON 数组 ["a","b","c"]
+    const arrMatch = content.match(/\[[\s\S]*\]/)
+    if (arrMatch) {
+      try {
+        const arr = JSON.parse(arrMatch[0])
+        if (Array.isArray(arr)) {
+          return arr
+            .map((d: unknown) => String(d).trim())
+            .filter((d: string) => d.length >= 4 && d.length <= 30)
+            .slice(0, 3)
+        }
+      } catch { /* 继续 */ }
+    }
+    return []
+  }
 
-  try {
+  const doRequest = async (useJsonFormat: boolean): Promise<string[]> => {
+    const body: Record<string, unknown> = {
+      model: config.modelId,
+      messages,
+      max_tokens: 200,
+    }
+    if (useJsonFormat) {
+      body.response_format = { type: 'json_object' }
+    }
+
     const res = await window.electronAPI.aiRequest({
       url: config.apiUrl,
       apiKey: config.apiKey,
-      body,
+      body: JSON.stringify(body),
     })
 
     if (!res.ok) {
-      console.warn('[generateSuggestions] HTTP', res.status, res.body?.slice(0, 200))
+      console.warn(`[generateSuggestions] HTTP ${res.status} (jsonFormat=${useJsonFormat})`, res.body?.slice(0, 200))
       return []
     }
 
     const json = JSON.parse(res.body)
-    const toolCall = json?.choices?.[0]?.message?.tool_calls?.[0]
-    if (!toolCall?.function?.arguments) {
-      console.warn('[generateSuggestions] 无 tool_calls', JSON.stringify(json).slice(0, 300))
-      return []
-    }
+    const content: string = json?.choices?.[0]?.message?.content ?? ''
+    console.log(`[generateSuggestions] 返回 (jsonFormat=${useJsonFormat}):`, content.slice(0, 200))
+    return parseDirections(content)
+  }
 
-    const args = JSON.parse(toolCall.function.arguments)
-    const directions: string[] = args.directions || []
-    return directions.filter(d => d.length > 0 && d.length <= 30).slice(0, 3)
+  try {
+    // 先尝试带 response_format 的 JSON 模式
+    let results = await doRequest(true)
+    if (results.length > 0) return results
+
+    // 如果失败或为空，不带 response_format 重试一次
+    console.log('[generateSuggestions] JSON 模式无结果，重试普通模式')
+    results = await doRequest(false)
+    return results
   } catch (e) {
     console.warn('[generateSuggestions] 异常', e)
-    return []
+    try {
+      return await doRequest(false)
+    } catch (e2) {
+      console.warn('[generateSuggestions] 重试也失败', e2)
+      return []
+    }
   }
 }
 

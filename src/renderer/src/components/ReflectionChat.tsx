@@ -8,7 +8,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { tracker } from '../services/tracker'
 import type { AIConfig, ReflectionMessage, MessageContentPart } from '../services/ai'
-import { chatReflectionStream, generateSuggestions, extractMemoryFromChat } from '../services/ai'
+import { chatReflectionStream, extractMemoryFromChat } from '../services/ai'
 
 interface ChatBubble {
   role: 'user' | 'assistant'
@@ -59,54 +59,55 @@ function parseChartRefs(
 
     const inner = match[1]
 
-    // ---- 新格式：【chart:xxx】 精确 ID 匹配 ----
+    const renderChartButton = (entry: { domId: string; label: string }) => (
+      <button
+        key={i}
+        onClick={() => onRef(entry.domId)}
+        className="inline-flex items-center gap-0.5 text-blue-600 hover:text-blue-700
+                   underline underline-offset-2 decoration-blue-300 hover:decoration-blue-500
+                   transition-colors cursor-pointer font-medium"
+        title={`点击查看${entry.label}图表`}
+      >
+        📊 {entry.label}
+      </button>
+    )
+
+    // ---- 1. 精确 ID 匹配：【chart:week-heatmap】 ----
     const idMatch = inner.match(/^chart:(.+)$/)
     if (idMatch) {
       const entry = CHART_ID_MAP[idMatch[1]]
-      if (entry) {
-        return (
-          <button
-            key={i}
-            onClick={() => onRef(entry.domId)}
-            className="inline-flex items-center gap-0.5 text-blue-600 hover:text-blue-700
-                       underline underline-offset-2 decoration-blue-300 hover:decoration-blue-500
-                       transition-colors cursor-pointer font-medium"
-            title={`点击查看${entry.label}图表`}
-          >
-            📊 {entry.label}
-          </button>
-        )
+      if (entry) return renderChartButton(entry)
+    }
+
+    // ---- 2. 模糊 ID 匹配：AI 输出乱码时，在内容中搜索已知 chart ID ----
+    const allChartIds = Object.keys(CHART_ID_MAP)
+    for (const cid of allChartIds) {
+      if (inner.includes(cid)) {
+        return renderChartButton(CHART_ID_MAP[cid])
       }
     }
 
-    // ---- 旧格式兜底：【中文名】 关键词模糊匹配 ----
+    // ---- 3. 中文 + 英文关键词兜底匹配 ----
     const keywordRules: [string[], string][] = [
-      [['完成率'],                     'completion-rate'],
-      [['指标', '卡片'],               'metrics'],
-      [['用时', '时长'],               'task-duration'],
-      [['活动', '热力', '分布'],       'activity'],
-      [['节奏', '曲线'],               'rhythm'],
+      [['完成率', 'completion'],                       'completion-rate'],
+      [['指标', '卡片', 'metrics'],                    'metrics'],
+      [['用时', '时长', 'duration'],                   'task-duration'],
+      [['活动', '热力', '分布', 'activity', 'heatmap', 'atmap'], 'activity'],
+      [['节奏', '曲线', 'rhythm'],                     'rhythm'],
+      [['week-completion', '每日任务', '日完成'],        'week-completion'],
+      [['week-metrics', '周汇总', '周指标'],            'week-metrics'],
+      [['week-ranking', '排行'],                       'week-ranking'],
+      [['week-heatmap', '周热力', '周活动'],            'week-heatmap'],
+      [['week-rhythm', '周节奏'],                      'week-rhythm'],
     ]
     for (const [keywords, id] of keywordRules) {
-      if (keywords.some(kw => inner.includes(kw))) {
+      if (keywords.some(kw => inner.toLowerCase().includes(kw))) {
         const entry = CHART_ID_MAP[id]
-        if (!entry) continue
-        return (
-          <button
-            key={i}
-            onClick={() => onRef(entry.domId)}
-            className="inline-flex items-center gap-0.5 text-blue-600 hover:text-blue-700
-                       underline underline-offset-2 decoration-blue-300 hover:decoration-blue-500
-                       transition-colors cursor-pointer font-medium"
-            title={`点击查看${entry.label}图表`}
-          >
-            📊 {entry.label}
-          </button>
-        )
+        if (entry) return renderChartButton(entry)
       }
     }
 
-    // ---- 都没匹配上：去掉【】，渲染为加粗文字（不展示为可点击链接） ----
+    // ---- 4. 都没匹配上：去掉【】，渲染为加粗文字 ----
     return <strong key={i} className="text-gray-700 font-semibold">{inner}</strong>
   })
 }
@@ -158,6 +159,7 @@ export default function ReflectionChat({
   const [error, setError] = useState<string | null>(null)
   const [chatActive, setChatActive] = useState(false) // false=等待AI首条, true=对话中
   const [restored, setRestored] = useState(false)
+  const [restoredCount, setRestoredCount] = useState(0)
   const [storageReady, setStorageReady] = useState(false)
   const [restartKey, setRestartKey] = useState(0)
   const [suggestions, setSuggestions] = useState<string[]>([])
@@ -254,29 +256,47 @@ export default function ReflectionChat({
           setStreaming(false)
           setLoading(false)
 
-          const content = fullText.trim()
-          if (!content) {
+          const rawContent = fullText.trim()
+          if (!rawContent) {
             console.warn('[ReflectionChat] AI 回复为空')
             setError('AI 回复为空')
             setBubbles(prev => prev.slice(0, -1))
             resolve(null)
           } else {
+            // 提取嵌入的探索方向标签
+            const sugMatch = rawContent.match(/<!--SUGGESTIONS:\s*(\[[\s\S]*?\])\s*-->/)
+            const content = rawContent.replace(/\s*<!--SUGGESTIONS:[\s\S]*?-->\s*$/, '').trim()
+
+            if (sugMatch) {
+              try {
+                const dirs: string[] = JSON.parse(sugMatch[1])
+                const cleaned = dirs
+                  .map(d => d.trim())
+                  .filter(d => d.length >= 4 && d.length <= 30)
+                  .slice(0, 3)
+                console.log('[ReflectionChat] 内嵌探索方向:', cleaned)
+                if (cleaned.length > 0) setSuggestions(cleaned)
+              } catch (e) {
+                console.warn('[ReflectionChat] 解析探索方向失败:', e, sugMatch[1])
+              }
+            }
+
+            // 更新 bubbles 中的最后一条消息为去掉标签后的内容
+            setBubbles(prev => {
+              const updated = [...prev]
+              const last = updated[updated.length - 1]
+              if (last?.role === 'assistant') {
+                updated[updated.length - 1] = { ...last, content }
+              }
+              return updated
+            })
+
             messagesRef.current = [
               ...newMessages,
               { role: 'assistant', content },
             ]
             persistRawMessage('assistant', content)
             resolve(content)
-
-            // 主回复完成后，独立调用生成探索方向（不阻塞主流程）
-            const sugStart = Date.now()
-            generateSuggestions(messagesRef.current, aiConfig, mode)
-              .then(items => {
-                const sugElapsed = ((Date.now() - sugStart) / 1000).toFixed(1)
-                console.log(`[ReflectionChat] 探索方向生成完成，耗时 ${sugElapsed}s，数量 ${items.length}`, items)
-                if (items.length > 0) setSuggestions(items)
-              })
-              .catch(e => { console.warn('[ReflectionChat] 探索方向生成失败', e) })
           }
         },
         (errMsg) => {
@@ -322,6 +342,7 @@ export default function ReflectionChat({
             messagesRef.current = saved.messages || []
             setChatActive((saved.step ?? 0) > 0)
             setRestored(true)
+            setRestoredCount(cleaned.length)
             initCalledRef.current = true
           }
         }
@@ -356,6 +377,7 @@ export default function ReflectionChat({
     messagesRef.current = []
     setChatActive(false)
     setRestored(false)
+    setRestoredCount(0)
     setError(null)
     setLoading(false)
     setStreaming(false)
@@ -518,7 +540,7 @@ export default function ReflectionChat({
   }
 
   const endButtonLabel = endingState === 'saving' ? '正在保存记忆...'
-    : endingState === 'saved' ? '✓ 已保存' : '结束反思'
+    : endingState === 'saved' ? '已保存' : '结束反思'
 
   return (
     <div className="flex flex-col h-full">
@@ -560,31 +582,61 @@ export default function ReflectionChat({
       >
         {bubbles.map((b, i) => {
           const isLastEmpty = b.role === 'assistant' && !b.content && i === bubbles.length - 1
+          const showRestoredBanner = restored && restoredCount > 0 && i === restoredCount - 1 && bubbles.length > restoredCount
           return (
-            <div
-              key={i}
-              className={`flex ${b.role === 'user' ? 'justify-end' : 'justify-start'}`}
-            >
-              <div
-                className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap ${
-                  b.role === 'user'
-                    ? 'bg-indigo-500 text-white rounded-br-md'
-                    : 'bg-gray-50 text-gray-800 border border-gray-100 rounded-bl-md'
-                }`}
-              >
-                {isLastEmpty ? (
-                  <div className="flex gap-1.5">
-                    <span className="w-2 h-2 bg-gray-300 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                    <span className="w-2 h-2 bg-gray-300 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                    <span className="w-2 h-2 bg-gray-300 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-                  </div>
-                ) : b.role === 'assistant' && onChartRef
-                  ? parseChartRefs(b.content, onChartRef)
-                  : b.content}
+            <div key={i}>
+              <div className={`flex ${b.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                <div
+                  className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap ${
+                    b.role === 'user'
+                      ? 'bg-blue-400/80 text-white rounded-br-md'
+                      : 'bg-gray-50 text-gray-800 border border-gray-100 rounded-bl-md'
+                  }`}
+                >
+                  {isLastEmpty ? (
+                    <div className="flex gap-1.5">
+                      <span className="w-2 h-2 bg-gray-300 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                      <span className="w-2 h-2 bg-gray-300 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                      <span className="w-2 h-2 bg-gray-300 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                    </div>
+                  ) : b.role === 'assistant' && onChartRef
+                    ? parseChartRefs(b.content, onChartRef)
+                    : b.content}
+                </div>
               </div>
+              {showRestoredBanner && (
+                <div className="flex items-center gap-3 my-3">
+                  <div className="flex-1 h-px bg-amber-200" />
+                  <div className="flex items-center gap-2 bg-amber-50 border border-amber-200/60 text-amber-600 text-xxs px-3 py-1.5 rounded-full flex-shrink-0">
+                    <span>📋 以上是上次的对话记录</span>
+                    <button
+                      onClick={handleRestart}
+                      className="text-amber-500 hover:text-amber-700 font-medium underline underline-offset-2 transition-colors"
+                    >
+                      重新开始
+                    </button>
+                  </div>
+                  <div className="flex-1 h-px bg-amber-200" />
+                </div>
+              )}
             </div>
           )
         })}
+
+        {/* 没有新消息时，在底部显示恢复提示 */}
+        {restored && restoredCount > 0 && bubbles.length <= restoredCount && (
+          <div className="flex justify-center">
+            <div className="flex items-center gap-2 bg-amber-50 border border-amber-200/60 text-amber-600 text-xxs px-3 py-1.5 rounded-full">
+              <span>📋 这是上次的对话记录</span>
+              <button
+                onClick={handleRestart}
+                className="text-amber-500 hover:text-amber-700 font-medium underline underline-offset-2 transition-colors"
+              >
+                重新开始
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* 备选反思问题 */}
         {suggestions.length > 0 && !isBusy && (
@@ -601,21 +653,6 @@ export default function ReflectionChat({
                 {q}
               </button>
             ))}
-          </div>
-        )}
-
-        {/* 历史记录恢复提示 */}
-        {restored && (
-          <div className="flex justify-center">
-            <div className="flex items-center gap-2 bg-amber-50 border border-amber-200/60 text-amber-600 text-xxs px-3 py-1.5 rounded-full">
-              <span>📋 这是上次的对话记录</span>
-              <button
-                onClick={handleRestart}
-                className="text-amber-500 hover:text-amber-700 font-medium underline underline-offset-2 transition-colors"
-              >
-                重新开始
-              </button>
-            </div>
           </div>
         )}
 
