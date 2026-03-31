@@ -335,8 +335,9 @@ export default function ActivityRhythmChart({ data, events, rangeStart: rs, rang
       </svg>
 
       {peakHour.val > 0 && (
-        <p className="text-xxs text-gray-500 mt-1">
-          🌟 今日使用高峰：<span className="font-semibold text-emerald-600">{peakHour.hour}:00</span> 时段
+        <p className="text-xxs text-gray-500 mt-1 flex items-center gap-1">
+          <span className="inline-block w-2 h-2 rounded-full bg-emerald-500 flex-shrink-0" />
+          今日使用高峰：<span className="font-semibold text-emerald-600">{peakHour.hour}:00</span> 时段
           <span className="text-gray-400 ml-1">（{Math.round(peakHour.val)}% 活跃度）</span>
         </p>
       )}
