@@ -67,6 +67,7 @@ npm run build:portable
 - `docs/rq-data-analysis-mapping.md`：研究问题、数据和分析方向的对应关系
 - `docs/entry-trigger-strategy.md`：针对 ADHD 用户“忘记或懒得打开主界面”的入口触发策略
 - `docs/memory-plan.md`：三阶段原型中的 Memory 目标、类型与反思阶段设计思路
+- `paper-writing/introduction-chi-draft.md`：论文写作用中文引言草稿
 
 这次新增 `docs/entry-trigger-strategy.md` 的目的，是把一个重要风险说清楚：
 

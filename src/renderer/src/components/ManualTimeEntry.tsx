@@ -16,7 +16,7 @@ interface ManualTimeEntryProps {
   tasks: Task[]
   events: TrackEvent[]
   selectedDate: string
-  onConfirm: (newEvents: TrackEvent[], newTasks: { title: string }[]) => void
+  onConfirm: (newEvents: TrackEvent[], newTasks: { title: string }[], completedTaskIds: string[]) => void
   onExpandChange?: (expanded: boolean) => void
 }
 
@@ -210,7 +210,8 @@ export default function ManualTimeEntry({
         if (newTask) allNewTasks.push(newTask)
       }
 
-      await onConfirm(allEvents, allNewTasks)
+      const completedIds = allRows.filter(r => !r.isNew).map(r => r.id)
+      await onConfirm(allEvents, allNewTasks, completedIds)
 
       setExpanded(false)
       onExpandChange?.(false)

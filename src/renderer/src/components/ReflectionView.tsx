@@ -690,7 +690,7 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, onClose }: 
   }
 
   const handleManualEntry = useCallback(
-    async (newEvents: TrackEvent[], newTasks: { title: string }[]) => {
+    async (newEvents: TrackEvent[], newTasks: { title: string }[], completedTaskIds: string[]) => {
       if (newEvents.length === 0) return
       tracker.track('manual.time_added', { date: selectedDate, entryCount: newEvents.length })
 
@@ -700,22 +700,23 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, onClose }: 
         newEvents as unknown[],
       )
 
-      // 2. 新任务写入今日任务列表
-      if (newTasks.length > 0) {
-        const existingTasks = await window.electronAPI.loadTasks(selectedDate)
-        const tasksToAdd = newTasks.map((t) => ({
-          id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-          title: t.title,
-          note: '',
-          priority: 'medium' as const,
-          completed: false,
-          createdAt: Date.now(),
-        }))
-        await window.electronAPI.saveTasks(selectedDate, [
-          ...(existingTasks as unknown[]),
-          ...tasksToAdd,
-        ])
-      }
+      // 2. 加载当前任务列表，标记已补记的为完成，并追加新任务（也标记为完成）
+      const existingTasks = (await window.electronAPI.loadTasks(selectedDate)) as Task[]
+      const completedSet = new Set(completedTaskIds)
+      const updatedTasks = existingTasks.map(t =>
+        completedSet.has(t.id) ? { ...t, completed: true } : t,
+      )
+      const tasksToAdd = newTasks.map((t) => ({
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        title: t.title,
+        note: '',
+        priority: 'medium' as const,
+        completed: true,
+        createdAt: Date.now(),
+      }))
+      const finalTasks = [...updatedTasks, ...tasksToAdd]
+      await window.electronAPI.saveTasks(selectedDate, finalTasks)
+      setLocalTasks(finalTasks)
 
       // 3. 重新加载事件数据以刷新图表
       const [raw, rawActivity] = await Promise.all([
