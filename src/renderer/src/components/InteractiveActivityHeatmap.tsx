@@ -236,7 +236,7 @@ export default function InteractiveActivityHeatmap({ data, events, rangeStart: p
 
       {/* ======== 热力条（动态范围，左右 padding 与折线图对齐） ======== */}
       <div style={{ paddingLeft: HEATMAP_PAD_LEFT_PCT, paddingRight: HEATMAP_PAD_RIGHT_PCT }}>
-        <div className="relative flex gap-[2px] w-full">
+        <div className="relative flex w-full">
           {visibleBlocks.map((block) => {
             const level = ratioToLevel(block.avgUsageRatio)
             const isHighlighting = !!highlightTask
@@ -245,7 +245,7 @@ export default function InteractiveActivityHeatmap({ data, events, rangeStart: p
             return (
               <div
                 key={block.index}
-                className={`h-7 flex-1 rounded-[3px] transition-colors duration-200 relative overflow-hidden ${
+                className={`h-7 flex-1 rounded-[3px] transition-colors duration-200 relative overflow-hidden outline outline-1 outline-white ${
                   isHighlighting ? 'bg-gray-100' : LEVEL_COLORS[level]
                 }`}
                 onMouseEnter={(e) => {
@@ -276,24 +276,6 @@ export default function InteractiveActivityHeatmap({ data, events, rangeStart: p
           })}
         </div>
 
-        {/* ======== 底部时间刻度 ======== */}
-        <div className="relative w-full h-3.5 mt-0.5">
-          {timeTicks.map((h) => {
-            const pct = ((h - rangeStart) / visibleSpan) * 100
-            return (
-              <span
-                key={h}
-                className="absolute text-3xs text-gray-400 tabular-nums"
-                style={{
-                  left: `${pct}%`,
-                  transform: pct === 0 ? 'none' : pct >= 100 ? 'translateX(-100%)' : 'translateX(-50%)',
-                }}
-              >
-                {h}
-              </span>
-            )
-          })}
-        </div>
       </div>
 
       {/* ======== 任务时间分布（暂时隐藏） ======== */}

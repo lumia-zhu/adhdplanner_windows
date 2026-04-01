@@ -190,13 +190,13 @@ export default function WeekHeatmapGrid({ days, rangeStart: propStart, rangeEnd:
               >
                 {dl.dateLabel} {dl.weekdayShort}
               </span>
-              <div className="flex-1 flex gap-[1px]" style={{ paddingLeft: WEEK_PAD_LEFT_PCT, paddingRight: WEEK_PAD_RIGHT_PCT }}>
+              <div className="flex-1 flex" style={{ paddingLeft: WEEK_PAD_LEFT_PCT, paddingRight: WEEK_PAD_RIGHT_PCT }}>
                 {dl.levels.slice(rangeStart, rangeEnd).map((lv, i) => {
                   const h = rangeStart + i
                   return (
                     <div
                       key={h}
-                      className={`h-4 flex-1 rounded-[2px] transition-all ${LEVEL_BG[lv]} hover:scale-y-125`}
+                      className={`h-4 flex-1 rounded-[2px] transition-all outline outline-[0.5px] outline-white ${LEVEL_BG[lv]} hover:scale-y-125`}
                       title={`${dl.dateFull} ${fmtHour(h)}–${fmtHour(h + 1)}: ${LEVEL_LABELS[lv]}`}
                     />
                   )

@@ -432,7 +432,7 @@ export default function WeekRhythmChart({ days, rangeStart: rs, rangeEnd: re }: 
           )
         })}
 
-        {/* 对比线上的卡顿三角标记 */}
+        {/* 对比线上的卡顿红色圆点标记 */}
         {compareStuckPoints.map((sp, idx) => {
           const isHov = hoveredStuck === idx
           const cl = compareLines.find(c => c.date === sp.date)
@@ -455,20 +455,19 @@ export default function WeekRhythmChart({ days, rangeStart: rs, rangeEnd: re }: 
             lineY = rightPt.y
           }
 
-          const triSize = isHov ? 7 : 5
-          const triColor = sp.resolved ? '#f59e0b' : '#ef4444'
-          const tipY = lineY - triSize * 1.4 - 1
+          const dotR = isHov ? 5 : 3.5
 
           return (
             <g key={`cstuck-${idx}`}>
-              <polygon
-                points={`${sp.x},${tipY + triSize * 1.4} ${sp.x - triSize},${tipY} ${sp.x + triSize},${tipY}`}
-                fill={triColor} stroke="white" strokeWidth={0.8}
+              <circle
+                cx={sp.x} cy={lineY}
+                r={dotR}
+                fill="#ef4444" stroke="white" strokeWidth={1}
                 opacity={isHov ? 1 : 0.85}
-                style={{ transition: 'opacity 0.15s', cursor: 'pointer' }}
+                style={{ transition: 'all 0.15s', cursor: 'pointer' }}
               />
               <circle
-                cx={sp.x} cy={tipY + triSize * 0.7} r={8}
+                cx={sp.x} cy={lineY} r={8}
                 fill="transparent" style={{ cursor: 'pointer' }}
                 onMouseEnter={() => setHoveredStuck(idx)}
                 onMouseLeave={() => setHoveredStuck(null)}
@@ -482,8 +481,8 @@ export default function WeekRhythmChart({ days, rangeStart: rs, rangeEnd: re }: 
                 const boxW = Math.max(...lines.map(l => measureTextW(l) + 20), 100)
                 const boxH = lines.length * 16 + 10
                 const boxX = Math.max(0, Math.min(sp.x - boxW / 2, W - boxW))
-                const showBelow = tipY - boxH - 4 < 0
-                const boxY = showBelow ? tipY + triSize * 1.4 + 4 : tipY - boxH - 4
+                const showBelow = lineY - dotR - boxH - 4 < 0
+                const boxY = showBelow ? lineY + dotR + 4 : lineY - dotR - boxH - 4
                 return (
                   <g>
                     <rect x={boxX} y={boxY} width={boxW} height={boxH}

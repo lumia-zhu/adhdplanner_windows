@@ -1124,7 +1124,7 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, onClose }: 
                 <InteractiveActivityHeatmap data={activityData} events={events} rangeStart={sharedRangeStart} rangeEnd={sharedRangeEnd} highlightTask={hoveredTask} />
               </div>
 
-              <div id="chart-rhythm" className="-mt-3">
+              <div id="chart-rhythm" className="-mt-5">
                 <ActivityRhythmChart data={activityData} events={events} rangeStart={sharedRangeStart} rangeEnd={sharedRangeEnd} />
               </div>
 
