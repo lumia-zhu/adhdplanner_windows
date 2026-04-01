@@ -1110,7 +1110,7 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, onClose }: 
               {/* 分隔线 */}
               {taskDurations.length > 0 && <div className="border-t border-gray-100" />}
 
-              {/* 任务活动分布（交互式热力图 + 任务时间轴） */}
+              {/* 电脑活动分布（折线图 + 热力条，共享 x 轴） */}
               <div id="chart-activity-heatmap">
                 <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-1.5">
                   🔍 电脑活动分布
@@ -1121,11 +1121,12 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, onClose }: 
                     </span>
                   </span>
                 </h3>
-                <InteractiveActivityHeatmap data={activityData} events={events} rangeStart={sharedRangeStart} rangeEnd={sharedRangeEnd} highlightTask={hoveredTask} />
-              </div>
-
-              <div id="chart-rhythm" className="-mt-5">
-                <ActivityRhythmChart data={activityData} events={events} rangeStart={sharedRangeStart} rangeEnd={sharedRangeEnd} />
+                <div id="chart-rhythm">
+                  <ActivityRhythmChart data={activityData} events={events} rangeStart={sharedRangeStart} rangeEnd={sharedRangeEnd} />
+                </div>
+                <div className="mt-0">
+                  <InteractiveActivityHeatmap data={activityData} events={events} rangeStart={sharedRangeStart} rangeEnd={sharedRangeEnd} highlightTask={hoveredTask} />
+                </div>
               </div>
 
               {/* 遗留任务（仅今天显示，历史日期没有任务快照） */}

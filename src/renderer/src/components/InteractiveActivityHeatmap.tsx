@@ -223,17 +223,6 @@ export default function InteractiveActivityHeatmap({ data, events, rangeStart: p
   return (
     <div className="relative select-none">
 
-      {/* ======== 图例 ======== */}
-      <div className="flex items-center gap-3 mb-2.5 text-2xs text-gray-400">
-        <span>每小时电脑活跃度：</span>
-        {LEVEL_COLORS.map((c, i) => (
-          <div key={i} className="flex items-center gap-1">
-            <div className={`w-3 h-3 rounded-sm ${c}`} />
-            <span>{LEVEL_LABELS[i]}</span>
-          </div>
-        ))}
-      </div>
-
       {/* ======== 热力条（动态范围，左右 padding 与折线图对齐） ======== */}
       <div style={{ paddingLeft: HEATMAP_PAD_LEFT_PCT, paddingRight: HEATMAP_PAD_RIGHT_PCT }}>
         <div className="relative flex w-full">
@@ -278,7 +267,16 @@ export default function InteractiveActivityHeatmap({ data, events, rangeStart: p
 
       </div>
 
-      {/* ======== 任务时间分布（暂时隐藏） ======== */}
+      {/* ======== 图例（热力条下方） ======== */}
+      <div className="flex items-center gap-3 mt-1 text-2xs text-gray-400">
+        <span>每小时电脑活跃度：</span>
+        {LEVEL_COLORS.map((c, i) => (
+          <div key={i} className="flex items-center gap-1">
+            <div className={`w-3 h-3 rounded-sm ${c}`} />
+            <span>{LEVEL_LABELS[i]}</span>
+          </div>
+        ))}
+      </div>
 
       {/* ======== 悬浮提示 ======== */}
       {tooltip && (

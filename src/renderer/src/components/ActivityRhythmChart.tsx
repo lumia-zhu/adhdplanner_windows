@@ -33,7 +33,7 @@ const H = 110
 const PAD_L = 28
 const PAD_R = 4
 const PAD_T = 14
-const PAD_B = 18
+const PAD_B = 16
 const CHART_W = W - PAD_L - PAD_R
 const CHART_H = H - PAD_T - PAD_B
 
@@ -75,11 +75,33 @@ export default function ActivityRhythmChart({ data, events, rangeStart: rs, rang
     return pts
   }, [hourlyUsage, maxVal, rangeStart, visibleHours])
 
-  const linePath = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ')
+  // Catmull-Rom → cubic bezier 平滑曲线（控制点 clamp 在绘图区内，防止过冲）
+  const smoothLinePath = useMemo(() => {
+    if (points.length < 2) return points.length === 1 ? `M ${points[0].x} ${points[0].y}` : ''
+    const tension = 0.3
+    const yMin = PAD_T
+    const yMax = PAD_T + CHART_H
+    const clampY = (y: number) => Math.max(yMin, Math.min(yMax, y))
+    let d = `M ${points[0].x} ${points[0].y}`
+    for (let i = 0; i < points.length - 1; i++) {
+      const p0 = points[Math.max(i - 1, 0)]
+      const p1 = points[i]
+      const p2 = points[i + 1]
+      const p3 = points[Math.min(i + 2, points.length - 1)]
+      const cp1x = p1.x + (p2.x - p0.x) * tension
+      const cp1y = clampY(p1.y + (p2.y - p0.y) * tension)
+      const cp2x = p2.x - (p3.x - p1.x) * tension
+      const cp2y = clampY(p2.y - (p3.y - p1.y) * tension)
+      d += ` C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${p2.x} ${p2.y}`
+    }
+    return d
+  }, [points])
 
-  const areaPath = points.length > 0
-    ? `${linePath} L ${points[points.length - 1].x} ${PAD_T + CHART_H} L ${points[0].x} ${PAD_T + CHART_H} Z`
-    : ''
+  const smoothAreaPath = useMemo(() => {
+    if (points.length < 2) return ''
+    const baseline = PAD_T + CHART_H
+    return `${smoothLinePath} L ${points[points.length - 1].x} ${baseline} L ${points[0].x} ${baseline} Z`
+  }, [smoothLinePath, points])
 
   const peakHour = useMemo(() => {
     let peak = rangeStart, peakVal = 0
@@ -168,6 +190,13 @@ export default function ActivityRhythmChart({ data, events, rangeStart: rs, rang
 
   return (
     <div>
+      {peakHour.val > 0 && (
+        <p className="text-xxs text-gray-500 mb-1.5 flex items-center gap-1">
+          <span className="inline-block w-2 h-2 rounded-full bg-emerald-500 flex-shrink-0" />
+          今日使用高峰：<span className="font-semibold text-emerald-600">{peakHour.hour}:00~{peakHour.hour + 1}:00</span>
+          <span className="text-gray-400 ml-1">（{Math.round(peakHour.val)}% 活跃度）</span>
+        </p>
+      )}
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ aspectRatio: `${W}/${H}`, maxHeight: 160 }}>
         {/* y 轴网格线 + 刻度 */}
         {yTicks.map((tickVal, i) => {
@@ -186,17 +215,6 @@ export default function ActivityRhythmChart({ data, events, rangeStart: rs, rang
           )
         })}
 
-        {/* x 轴标签（在小时边界，与热力图对齐） */}
-        {Array.from({ length: visibleHours + 1 }, (_, i) => {
-          const h = rangeStart + i
-          const x = PAD_L + (i / visibleHours) * CHART_W
-          return (
-            <text key={h} x={x} y={H - 4} textAnchor="middle" fontSize={9} fill="#6b7280" fontWeight="500">
-              {h}
-            </text>
-          )
-        })}
-
         {/* 渐变 */}
         <defs>
           <linearGradient id="usageGradient" x1="0" y1="0" x2="0" y2="1">
@@ -206,66 +224,54 @@ export default function ActivityRhythmChart({ data, events, rangeStart: rs, rang
         </defs>
 
         {/* 面积填充 */}
-        <path d={areaPath} fill="url(#usageGradient)" opacity={0.4} />
+        <path d={smoothAreaPath} fill="url(#usageGradient)" opacity={0.4} />
 
-        {/* 折线 */}
-        <path d={linePath} fill="none" stroke="#10b981" strokeWidth={1.8} strokeLinejoin="round" />
+        {/* 平滑曲线 */}
+        <path d={smoothLinePath} fill="none" stroke="#10b981" strokeWidth={1.8} strokeLinejoin="round" />
 
-        {/* 数据点 + 悬停 */}
+        {/* 每小时段 hover 交互（垂直高亮带 + tooltip） */}
         {points.map(p => {
           const isHovered = hovered === p.hour
-          const isPeak = peakHour.val > 0 && p.hour === peakHour.hour
+          const colW = CHART_W / visibleHours
+          const colX = PAD_L + ((p.hour - rangeStart) / visibleHours) * CHART_W
           return (
             <g key={p.hour}>
-              <circle
-                cx={p.x} cy={p.y}
-                r={isHovered ? 4.5 : isPeak ? 4.5 : 3}
-                fill={p.val > 0 ? '#10b981' : '#e5e7eb'}
-                stroke="white" strokeWidth={isHovered ? 1.8 : 1}
-                style={{ transition: 'r 0.15s, stroke-width 0.15s' }}
-              />
-              <circle
-                cx={p.x} cy={p.y} r={10}
+              <rect
+                x={colX} y={PAD_T} width={colW} height={CHART_H}
                 fill="transparent" style={{ cursor: 'pointer' }}
                 onMouseEnter={() => setHovered(p.hour)}
                 onMouseLeave={() => setHovered(null)}
               />
-              {isHovered && (() => {
-                const showBelow = p.y - PAD_T < 22
-                const nextHour = (p.hour + 1) % 24
-                const label = `${p.hour}:00~${nextHour}:00 · ${Math.round(p.val)}%`
-                const rectW = Math.min(label.length * 5 + 12, 240)
-                const boxH = 18
-                const ty = showBelow ? p.y + 10 : p.y - 24
-                const textY = showBelow ? p.y + 21.5 : p.y - 12.5
-                return (
-                  <g>
-                    <rect
-                      x={Math.max(0, Math.min(p.x - rectW / 2, W - rectW))}
-                      y={ty} width={rectW} height={boxH}
-                      rx={4} fill="#1f2937" opacity={0.88}
-                    />
-                    <text
-                      x={Math.max(rectW / 2, Math.min(p.x, W - rectW / 2))}
-                      y={textY}
-                      textAnchor="middle" fontSize={9} fill="white" fontWeight="500"
-                    >
-                      {label}
-                    </text>
-                  </g>
-                )
-              })()}
-              {isPeak && !isHovered && (() => {
-                const showBelow = p.y - PAD_T < 12
-                const labelY = showBelow ? p.y + 13 : p.y - 6
-                return (
-                  <text x={p.x} y={labelY}
-                    textAnchor="middle" fontSize={7} fill="#059669" fontWeight="bold"
-                  >
-                    ★ {Math.round(peakHour.val)}%
-                  </text>
-                )
-              })()}
+              {isHovered && (
+                <g pointerEvents="none">
+                  <rect
+                    x={colX} y={PAD_T} width={colW} height={CHART_H}
+                    fill="#10b981" opacity={0.07} rx={1}
+                  />
+                  {(() => {
+                    const nextHour = (p.hour + 1) % 24
+                    const label = `${p.hour}:00~${nextHour}:00 · ${Math.round(p.val)}%`
+                    const rectW = Math.min(label.length * 5 + 12, 240)
+                    const boxH = 18
+                    const tipX = Math.max(0, Math.min(colX + colW / 2 - rectW / 2, W - rectW))
+                    const showBelow = p.y - PAD_T < 22
+                    const tipY = showBelow ? p.y + 8 : p.y - boxH - 4
+                    const textY = tipY + 12.5
+                    return (
+                      <g>
+                        <rect x={tipX} y={tipY} width={rectW} height={boxH}
+                          rx={4} fill="#1f2937" opacity={0.88} />
+                        <text
+                          x={tipX + rectW / 2} y={textY}
+                          textAnchor="middle" fontSize={9} fill="white" fontWeight="500"
+                        >
+                          {label}
+                        </text>
+                      </g>
+                    )
+                  })()}
+                </g>
+              )}
             </g>
           )
         })}
@@ -291,7 +297,7 @@ export default function ActivityRhythmChart({ data, events, rangeStart: rs, rang
               <circle
                 cx={sp.x} cy={lineY}
                 r={dotR}
-                fill="#ef4444" stroke="white" strokeWidth={1}
+                fill="white" stroke="#ef4444" strokeWidth={1.5}
                 opacity={isHov ? 1 : 0.85}
                 style={{ transition: 'all 0.15s', cursor: 'pointer' }}
               />
@@ -331,15 +337,18 @@ export default function ActivityRhythmChart({ data, events, rangeStart: rs, rang
             </g>
           )
         })}
+        {/* x 轴标签（最后渲染，显示在最上层） */}
+        {Array.from({ length: visibleHours + 1 }, (_, i) => {
+          const h = rangeStart + i
+          const x = PAD_L + (i / visibleHours) * CHART_W
+          return (
+            <text key={h} x={x} y={PAD_T + CHART_H + 11} textAnchor="middle" fontSize={9} fill="#6b7280" fontWeight="500">
+              {h}
+            </text>
+          )
+        })}
       </svg>
 
-      {peakHour.val > 0 && (
-        <p className="text-xxs text-gray-500 mt-1 flex items-center gap-1">
-          <span className="inline-block w-2 h-2 rounded-full bg-emerald-500 flex-shrink-0" />
-          今日使用高峰：<span className="font-semibold text-emerald-600">{peakHour.hour}:00</span> 时段
-          <span className="text-gray-400 ml-1">（{Math.round(peakHour.val)}% 活跃度）</span>
-        </p>
-      )}
     </div>
   )
 }

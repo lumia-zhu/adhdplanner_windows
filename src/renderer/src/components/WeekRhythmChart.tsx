@@ -462,7 +462,7 @@ export default function WeekRhythmChart({ days, rangeStart: rs, rangeEnd: re }: 
               <circle
                 cx={sp.x} cy={lineY}
                 r={dotR}
-                fill="#ef4444" stroke="white" strokeWidth={1}
+                fill="white" stroke="#ef4444" strokeWidth={1.5}
                 opacity={isHov ? 1 : 0.85}
                 style={{ transition: 'all 0.15s', cursor: 'pointer' }}
               />
