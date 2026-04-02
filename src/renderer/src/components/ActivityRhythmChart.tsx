@@ -75,27 +75,38 @@ export default function ActivityRhythmChart({ data, events, rangeStart: rs, rang
     return pts
   }, [hourlyUsage, maxVal, rangeStart, visibleHours])
 
-  // Catmull-Rom → cubic bezier 平滑曲线（控制点 clamp 在绘图区内，防止过冲）
-  const smoothLinePath = useMemo(() => {
-    if (points.length < 2) return points.length === 1 ? `M ${points[0].x} ${points[0].y}` : ''
+  // Catmull-Rom → cubic bezier 曲线段（控制点 clamp 在绘图区内，防止过冲）
+  const curveSegments = useMemo(() => {
+    if (points.length < 2) return []
     const tension = 0.3
     const yMin = PAD_T
     const yMax = PAD_T + CHART_H
     const clampY = (y: number) => Math.max(yMin, Math.min(yMax, y))
-    let d = `M ${points[0].x} ${points[0].y}`
+    const segs: { p1: typeof points[0]; p2: typeof points[0]; cp1x: number; cp1y: number; cp2x: number; cp2y: number }[] = []
     for (let i = 0; i < points.length - 1; i++) {
       const p0 = points[Math.max(i - 1, 0)]
       const p1 = points[i]
       const p2 = points[i + 1]
       const p3 = points[Math.min(i + 2, points.length - 1)]
-      const cp1x = p1.x + (p2.x - p0.x) * tension
-      const cp1y = clampY(p1.y + (p2.y - p0.y) * tension)
-      const cp2x = p2.x - (p3.x - p1.x) * tension
-      const cp2y = clampY(p2.y - (p3.y - p1.y) * tension)
-      d += ` C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${p2.x} ${p2.y}`
+      segs.push({
+        p1, p2,
+        cp1x: p1.x + (p2.x - p0.x) * tension,
+        cp1y: clampY(p1.y + (p2.y - p0.y) * tension),
+        cp2x: p2.x - (p3.x - p1.x) * tension,
+        cp2y: clampY(p2.y - (p3.y - p1.y) * tension),
+      })
+    }
+    return segs
+  }, [points])
+
+  const smoothLinePath = useMemo(() => {
+    if (points.length < 2) return points.length === 1 ? `M ${points[0].x} ${points[0].y}` : ''
+    let d = `M ${points[0].x} ${points[0].y}`
+    for (const s of curveSegments) {
+      d += ` C ${s.cp1x} ${s.cp1y}, ${s.cp2x} ${s.cp2y}, ${s.p2.x} ${s.p2.y}`
     }
     return d
-  }, [points])
+  }, [points, curveSegments])
 
   const smoothAreaPath = useMemo(() => {
     if (points.length < 2) return ''
@@ -282,17 +293,18 @@ export default function ActivityRhythmChart({ data, events, rangeStart: rs, rang
         {/* 卡顿标记（红色圆点，在折线上） */}
         {stuckPoints.map((sp, idx) => {
           const isHov = hoveredStuck === idx
-          // 在折线的相邻两个数据点之间线性插值得到精确 y
+          // 在 cubic bezier 曲线段上精确采样 y
           let lineY = PAD_T + CHART_H
-          const leftPt = points.filter(p => p.x <= sp.x).at(-1)
-          const rightPt = points.find(p => p.x > sp.x)
-          if (leftPt && rightPt) {
-            const t = (sp.x - leftPt.x) / (rightPt.x - leftPt.x)
-            lineY = leftPt.y + t * (rightPt.y - leftPt.y)
-          } else if (leftPt) {
-            lineY = leftPt.y
-          } else if (rightPt) {
-            lineY = rightPt.y
+          const seg = curveSegments.find(s => sp.x >= s.p1.x && sp.x <= s.p2.x)
+          if (seg) {
+            const t = (sp.x - seg.p1.x) / (seg.p2.x - seg.p1.x)
+            const mt = 1 - t
+            lineY = mt*mt*mt * seg.p1.y + 3*mt*mt*t * seg.cp1y + 3*mt*t*t * seg.cp2y + t*t*t * seg.p2.y
+          } else {
+            const leftPt = points.filter(p => p.x <= sp.x).at(-1)
+            const rightPt = points.find(p => p.x > sp.x)
+            if (leftPt) lineY = leftPt.y
+            else if (rightPt) lineY = rightPt.y
           }
 
           const dotR = isHov ? 5 : 3.5
