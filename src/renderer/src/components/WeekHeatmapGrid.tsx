@@ -6,7 +6,7 @@
  * 顶部一句话洞察：统计"稳定高效时段"。
  */
 
-import { useMemo } from 'react'
+import { useMemo, useState, useRef, useCallback } from 'react'
 import type { ActivityRecord } from './ActivityHeatmap'
 import { getActiveRatio } from './ActivityHeatmap'
 import { WEEK_PAD_LEFT_PCT, WEEK_PAD_RIGHT_PCT } from './WeekRhythmChart'
@@ -48,6 +48,16 @@ function aggregateToHourlyLevels(data: ActivityRecord[]): number[] {
     buckets[h].totalRatio += getActiveRatio(r)
   }
   return buckets.map(b => ratioToLevel(b.totalRatio / EXPECTED_RECORDS_PER_HOUR))
+}
+
+/** 每小时真实活跃度百分比（0~100） */
+function aggregateToHourlyPercent(data: ActivityRecord[]): number[] {
+  const buckets = Array(TOTAL_HOURS).fill(0)
+  for (const r of data) {
+    const h = new Date(r.ts).getHours()
+    buckets[h] += getActiveRatio(r)
+  }
+  return buckets.map(total => Math.min(Math.round((total / EXPECTED_RECORDS_PER_HOUR) * 100), 100))
 }
 
 /* buildTaskHourRatioMap 暂时隐藏，展开功能恢复时再启用 */
@@ -107,8 +117,24 @@ interface Props {
 // ===================== 主组件 =====================
 
 export default function WeekHeatmapGrid({ days, rangeStart: propStart, rangeEnd: propEnd }: Props) {
-  // 展开功能暂时隐藏
-  // const [expandedDate, setExpandedDate] = useState<string | null>(null)
+  const [hoveredCell, setHoveredCell] = useState<{ date: string; hour: number } | null>(null)
+  const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 })
+  const gridRef = useRef<HTMLDivElement>(null)
+
+  const handleCellEnter = useCallback((date: string, hour: number, e: React.MouseEvent) => {
+    setHoveredCell({ date, hour })
+    if (gridRef.current) {
+      const rect = gridRef.current.getBoundingClientRect()
+      setTooltipPos({ x: e.clientX - rect.left, y: e.clientY - rect.top })
+    }
+  }, [])
+
+  const handleCellMove = useCallback((e: React.MouseEvent) => {
+    if (gridRef.current) {
+      const rect = gridRef.current.getBoundingClientRect()
+      setTooltipPos({ x: e.clientX - rect.left, y: e.clientY - rect.top })
+    }
+  }, [])
 
   // 计算每天的 24 小时 level
   const dayLevels = useMemo(() => {
@@ -119,6 +145,7 @@ export default function WeekHeatmapGrid({ days, rangeStart: propStart, rangeEnd:
       dateFull: d.dateFull,
       hasData: d.hasData,
       levels: aggregateToHourlyLevels(d.activity),
+      percent: aggregateToHourlyPercent(d.activity),
     }))
   }, [days])
 
@@ -166,43 +193,70 @@ export default function WeekHeatmapGrid({ days, rangeStart: propStart, rangeEnd:
 
   // 展开面板数据（暂时隐藏）
 
-  return (
-    <div className="space-y-2">
-      {/* 图例 */}
-      <div className="flex items-center gap-3 text-2xs text-gray-400">
-        <span>每小时电脑活跃度：</span>
-        {LEVEL_BG.map((c, i) => (
-          <div key={i} className="flex items-center gap-1">
-            <div className={`w-3 h-3 rounded-sm ${c}`} />
-            <span>{LEVEL_LABELS[i]}</span>
-          </div>
-        ))}
-      </div>
+  const visibleSpan = rangeEnd - rangeStart
 
+  return (
+    <div ref={gridRef} className="relative">
       {/* 7×24 网格 */}
       <div className="space-y-0.5">
         {dayLevels.map((dl) => (
           <div key={dl.date}>
-            <div className="flex items-center gap-1 rounded-md py-0.5 transition-colors hover:bg-gray-50">
+            <div className="flex items-center rounded-md py-0.5 transition-colors hover:bg-gray-50">
               <span
-                className="text-2xs text-gray-500 w-[38px] flex-shrink-0 text-right tabular-nums"
-                title={dl.dateFull}
+                className="flex-shrink-0 text-2xs text-gray-500 text-right pr-1 tabular-nums"
+                style={{ width: WEEK_PAD_LEFT_PCT }}
               >
                 {dl.dateLabel} {dl.weekdayShort}
               </span>
-              <div className="flex-1 flex" style={{ paddingLeft: WEEK_PAD_LEFT_PCT, paddingRight: WEEK_PAD_RIGHT_PCT }}>
+              <div className="flex flex-1" style={{ marginRight: WEEK_PAD_RIGHT_PCT }}>
                 {dl.levels.slice(rangeStart, rangeEnd).map((lv, i) => {
                   const h = rangeStart + i
                   return (
                     <div
                       key={h}
                       className={`h-4 flex-1 rounded-[2px] transition-all outline outline-[0.5px] outline-white ${LEVEL_BG[lv]} hover:scale-y-125`}
-                      title={`${dl.dateFull} ${fmtHour(h)}–${fmtHour(h + 1)}: ${LEVEL_LABELS[lv]}`}
+                      onMouseEnter={(e) => handleCellEnter(dl.date, h, e)}
+                      onMouseMove={handleCellMove}
+                      onMouseLeave={() => setHoveredCell(null)}
                     />
                   )
                 })}
               </div>
             </div>
+          </div>
+        ))}
+      </div>
+
+      {/* 自定义即时 tooltip */}
+      {hoveredCell && (() => {
+        const dl = dayLevels.find(d => d.date === hoveredCell.date)
+        if (!dl) return null
+        const pct = dl.percent[hoveredCell.hour]
+        const text = `${dl.dateLabel} ${dl.weekdayShort} ${fmtHour(hoveredCell.hour)}–${fmtHour(hoveredCell.hour + 1)}`
+        return (
+          <div
+            className="absolute z-50 pointer-events-none px-2.5 py-1.5 rounded-md text-white text-[11px] leading-snug shadow-lg"
+            style={{
+              backgroundColor: 'rgba(31,41,55,0.92)',
+              left: tooltipPos.x,
+              top: tooltipPos.y - 40,
+              transform: 'translateX(-50%)',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            <div className="text-gray-300 text-[10px]">{text}</div>
+            <div className="font-bold text-[12px]">活跃度：{pct}%</div>
+          </div>
+        )
+      })()}
+
+      {/* 图例（底部） */}
+      <div className="flex items-center gap-3 mt-1 text-2xs text-gray-400">
+        <span>每小时电脑活跃度：</span>
+        {LEVEL_BG.map((c, i) => (
+          <div key={i} className="flex items-center gap-1">
+            <div className={`w-3 h-3 rounded-sm ${c}`} />
+            <span>{LEVEL_LABELS[i]}</span>
           </div>
         ))}
       </div>

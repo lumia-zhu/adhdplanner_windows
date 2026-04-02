@@ -30,7 +30,7 @@ interface Props {
 
 const W = 400
 const H = 110
-const PAD_L = 28
+const PAD_L = 40
 const PAD_R = 4
 const PAD_T = 14
 const PAD_B = 16
@@ -58,11 +58,11 @@ export default function ActivityRhythmChart({ data, events, rangeStart: rs, rang
       buckets[h].totalRatio += getActiveRatio(r)
       buckets[h].count++
     }
-    return buckets.map(b => Math.min((b.totalRatio / EXPECTED_RECORDS_PER_HOUR) * 100, 100))
+    return buckets.map(b => Math.min((b.totalRatio / EXPECTED_RECORDS_PER_HOUR) * 60, 60))
   }, [data])
 
-  const maxVal = 100
-  const yTicks = [0, 25, 50, 75, 100]
+  const maxVal = 60
+  const yTicks = [0, 15, 30, 45, 60]
 
   const points = useMemo(() => {
     const pts: { x: number; y: number; hour: number; val: number }[] = []
@@ -194,7 +194,7 @@ export default function ActivityRhythmChart({ data, events, rangeStart: rs, rang
         <p className="text-xxs text-gray-500 mb-1.5 flex items-center gap-1">
           <span className="inline-block w-2 h-2 rounded-full bg-emerald-500 flex-shrink-0" />
           今日使用高峰：<span className="font-semibold text-emerald-600">{peakHour.hour}:00~{peakHour.hour + 1}:00</span>
-          <span className="text-gray-400 ml-1">（{Math.round(peakHour.val)}% 活跃度）</span>
+          <span className="text-gray-400 ml-1">（活跃 {Math.round(peakHour.val)} 分钟）</span>
         </p>
       )}
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ aspectRatio: `${W}/${H}`, maxHeight: 160 }}>
@@ -209,7 +209,7 @@ export default function ActivityRhythmChart({ data, events, rangeStart: rs, rang
                 strokeDasharray={tickVal === 0 ? undefined : '2,2'}
               />
               <text x={PAD_L - 3} y={y + 3} textAnchor="end" fontSize={9} fill="#6b7280" fontWeight="500">
-                {tickVal}%
+                {tickVal === 0 ? '0' : `${tickVal}分钟`}
               </text>
             </g>
           )
@@ -250,22 +250,26 @@ export default function ActivityRhythmChart({ data, events, rangeStart: rs, rang
                   />
                   {(() => {
                     const nextHour = (p.hour + 1) % 24
-                    const label = `${p.hour}:00~${nextHour}:00 · ${Math.round(p.val)}%`
-                    const rectW = Math.min(label.length * 5 + 12, 240)
-                    const boxH = 18
+                    const headerText = `${p.hour}:00~${nextHour}:00`
+                    const valText = `${Math.round(p.val)} 分钟`
+                    const lineH = 14
+                    const boxH = lineH * 2 + 8
+                    const measureW = (s: string) => [...s].reduce((w, c) => w + (/[\u4e00-\u9fff]/.test(c) ? 6 : 4), 0)
+                    const rectW = Math.max(measureW(headerText), measureW(valText)) + 20
                     const tipX = Math.max(0, Math.min(colX + colW / 2 - rectW / 2, W - rectW))
-                    const showBelow = p.y - PAD_T < 22
+                    const showBelow = p.y - PAD_T < boxH + 4
                     const tipY = showBelow ? p.y + 8 : p.y - boxH - 4
-                    const textY = tipY + 12.5
                     return (
                       <g>
                         <rect x={tipX} y={tipY} width={rectW} height={boxH}
-                          rx={4} fill="#1f2937" opacity={0.88} />
-                        <text
-                          x={tipX + rectW / 2} y={textY}
-                          textAnchor="middle" fontSize={9} fill="white" fontWeight="500"
-                        >
-                          {label}
+                          rx={4} fill="#1f2937" opacity={0.92} />
+                        <text x={tipX + 8} y={tipY + 12}
+                          fontSize={8.5} fill="white" fontWeight="500" opacity={0.85}>
+                          {headerText}
+                        </text>
+                        <text x={tipX + 8} y={tipY + 12 + lineH}
+                          fontSize={9.5} fill="white" fontWeight="700">
+                          {valText}
                         </text>
                       </g>
                     )

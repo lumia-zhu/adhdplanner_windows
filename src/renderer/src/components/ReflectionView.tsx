@@ -1022,11 +1022,7 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, onClose }: 
             <WeekView weekEndDate={weekEndDate} onDataReady={handleWeekDataReady} chatOpen={chatOpen} />
           ) : (
             /* ---- 日视图 ---- */
-            <div className={`p-6 space-y-6 transition-all duration-400 ${
-              chatOpen
-                ? 'w-full'
-                : 'max-w-xl mx-auto'
-            }`}>
+            <div className="p-6 space-y-6 transition-all duration-400 max-w-xl mx-auto">
               {/* 圆环图 + 核心指标并排（chatOpen 时节省纵向空间） */}
               {isToday && (
                 <div id="chart-completion-rate" className={`${
@@ -1116,8 +1112,8 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, onClose }: 
                   🔍 电脑活动分布
                   <span className="relative group">
                     <span className="inline-flex items-center justify-center w-4 h-4 rounded-full border border-gray-300 text-gray-400 text-[10px] leading-none cursor-help group-hover:text-gray-600 group-hover:border-gray-400 transition-colors">?</span>
-                    <span className="pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-150 absolute left-1/2 -translate-x-1/2 top-full mt-1.5 z-50 w-[240px] bg-gray-800 text-white text-[11px] leading-relaxed rounded-lg px-3 py-2.5 shadow-lg normal-case tracking-normal font-normal">
-                      <b>每小时电脑活跃度</b> = 该小时内检测到的电脑使用时间 ÷ 1小时。颜色越深表示这个时段电脑使用越多。<br/><span className="text-gray-300 mt-1 inline-block">注：连续 1 分钟没有鼠标或键盘操作即视为不活跃。</span>
+                    <span className="pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-150 absolute left-1/2 -translate-x-1/2 top-full mt-1.5 z-50 w-[280px] bg-gray-800 text-white text-[11px] leading-relaxed rounded-lg px-3 py-2.5 shadow-lg normal-case tracking-normal font-normal">
+                      <b>每小时电脑活跃时长</b>（曲线）= 该小时内电脑被实际使用的分钟数（0~60分钟）。曲线越高，表示该时段使用电脑的时间越长。<br/><br/><b>每小时电脑活跃度</b>（色块）= 该小时内检测到的电脑使用时间 ÷ 1小时。颜色越深表示这个时段电脑使用越多。<br/><span className="text-gray-300 mt-1 inline-block">注：连续 1 分钟没有鼠标或键盘操作即视为不活跃。</span>
                     </span>
                   </span>
                 </h3>

@@ -15,20 +15,17 @@ import type { TrackEvent } from '../services/tracker/types'
 // ===================== 常量 =====================
 
 const W = 400
-const H = 120
-const PAD_L = 28
+const H = 104
+const PAD_L = 40
 const PAD_R = 4
-const PAD_T = 18
-const PAD_B = 20
+const PAD_T = 14
+const PAD_B = 12
 const CHART_W = W - PAD_L - PAD_R
 const CHART_H = H - PAD_T - PAD_B
 
 /** 周热力图需要加的左右 padding 百分比，保证和折线图绘图区对齐 */
 export const WEEK_PAD_LEFT_PCT = `${(PAD_L / W) * 100}%`
 export const WEEK_PAD_RIGHT_PCT = `${(PAD_R / W) * 100}%`
-
-const MAX_VAL = 100
-const Y_TICKS = [0, 25, 50, 75, 100]
 
 const EXPECTED_RECORDS_PER_HOUR = 120
 const MAX_COMPARE = 3
@@ -53,28 +50,72 @@ function toHourlyUsage(data: ActivityRecord[]): number[] {
     const h = new Date(r.ts).getHours()
     buckets[h] += getActiveRatio(r)
   }
-  return buckets.map(total => Math.min((total / EXPECTED_RECORDS_PER_HOUR) * 100, 100))
+  return buckets.map(total => Math.min((total / EXPECTED_RECORDS_PER_HOUR) * 60, 60))
 }
 
-/** 可见范围内的折线 path d（点在每个小时区间的中点） */
-function toLinePath(hourly: number[], start: number, count: number): string {
-  const pts: string[] = []
+/** 将小时数据转为坐标点数组（支持动态 maxVal） */
+function toPoints(hourly: number[], start: number, count: number, maxVal: number): { x: number; y: number }[] {
+  const pts: { x: number; y: number }[] = []
   for (let i = 0; i < count; i++) {
     const h = start + i
     const x = PAD_L + ((i + 0.5) / count) * CHART_W
-    const y = PAD_T + CHART_H - (hourly[h] / MAX_VAL) * CHART_H
-    pts.push(`${i === 0 ? 'M' : 'L'} ${x} ${y}`)
+    const y = PAD_T + CHART_H - ((hourly[h] ?? 0) / maxVal) * CHART_H
+    pts.push({ x, y })
   }
-  return pts.join(' ')
+  return pts
 }
 
-/** 折线 path → 闭合面积 path */
-function toAreaPath(linePath: string, start: number, count: number): string {
-  if (count === 0) return ''
-  const firstX = PAD_L + (0.5 / count) * CHART_W
-  const lastX = PAD_L + ((count - 0.5) / count) * CHART_W
+/** Catmull-Rom → cubic bezier 平滑曲线（控制点 clamp 防过冲） */
+function toSmoothLinePath(pts: { x: number; y: number }[]): string {
+  if (pts.length === 0) return ''
+  if (pts.length === 1) return `M ${pts[0].x} ${pts[0].y}`
+  const tension = 0.3
+  const yMin = PAD_T
+  const yMax = PAD_T + CHART_H
+  const clampY = (y: number) => Math.max(yMin, Math.min(yMax, y))
+  let d = `M ${pts[0].x} ${pts[0].y}`
+  for (let i = 0; i < pts.length - 1; i++) {
+    const p0 = pts[Math.max(i - 1, 0)]
+    const p1 = pts[i]
+    const p2 = pts[i + 1]
+    const p3 = pts[Math.min(i + 2, pts.length - 1)]
+    const cp1x = p1.x + (p2.x - p0.x) * tension
+    const cp1y = clampY(p1.y + (p2.y - p0.y) * tension)
+    const cp2x = p2.x - (p3.x - p1.x) * tension
+    const cp2y = clampY(p2.y - (p3.y - p1.y) * tension)
+    d += ` C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${p2.x} ${p2.y}`
+  }
+  return d
+}
+
+/** 两条边界线之间的闭合堆叠面积 path */
+function toStackedAreaPath(
+  upperPts: { x: number; y: number }[],
+  lowerPts: { x: number; y: number }[],
+): string {
+  if (upperPts.length < 2) return ''
+  const upper = toSmoothLinePath(upperPts)
+  const lowerReversed = [...lowerPts].reverse()
+  const lower = toSmoothLinePath(lowerReversed)
+  return `${upper} L${lower.substring(1)} Z`
+}
+
+/** 平滑曲线 → 闭合到基线的面积 path（无选中时用） */
+function toBaseAreaPath(linePath: string, pts: { x: number; y: number }[]): string {
+  if (pts.length < 2) return ''
   const bottom = PAD_T + CHART_H
-  return `${linePath} L ${lastX} ${bottom} L ${firstX} ${bottom} Z`
+  return `${linePath} L ${pts[pts.length - 1].x} ${bottom} L ${pts[0].x} ${bottom} Z`
+}
+
+/** 根据最大值计算合适的 y 轴刻度 */
+function computeYAxis(maxTotal: number): { maxVal: number; yTicks: number[] } {
+  if (maxTotal <= 0) return { maxVal: 60, yTicks: [0, 15, 30, 45, 60] }
+  const candidates = [30, 60, 90, 120, 150, 180, 240, 300, 360, 420]
+  const maxVal = candidates.find(c => c >= maxTotal * 1.1) ?? Math.ceil(maxTotal / 60) * 60
+  const step = maxVal <= 60 ? 15 : maxVal <= 120 ? 30 : 60
+  const ticks: number[] = []
+  for (let v = 0; v <= maxVal; v += step) ticks.push(v)
+  return { maxVal, yTicks: ticks }
 }
 
 // ===================== 卡顿点 =====================
@@ -196,52 +237,90 @@ export default function WeekRhythmChart({ days, rangeStart: rs, rangeEnd: re }: 
     }))
   }, [days])
 
-  // ---- 周平均 ----
-  const avgHourly = useMemo(() => {
-    const sums = Array(24).fill(0)
-    const counts = Array(24).fill(0)
-    for (const d of dayHourly) {
-      if (!d.hasData) continue
-      d.hourly.forEach((v, h) => {
-        sums[h] += v
-        counts[h]++
-      })
-    }
-    return sums.map((s, h) => (counts[h] > 0 ? s / counts[h] : 0))
-  }, [dayHourly])
-
-  // ---- 是否有对比线 ----
+  // ---- 是否有选中天 ----
   const hasCompare = selectedDates.length > 0
 
-  // ---- 周平均折线 path ----
-  const avgLinePath = toLinePath(avgHourly, rangeStart, visibleHours)
-  const avgAreaPath = toAreaPath(avgLinePath, rangeStart, visibleHours)
+  // ---- 堆叠数据计算 ----
+  interface StackLayer {
+    label: string
+    color: string
+    hourly: number[]       // 该层自身的值（0~60）
+    cumulativeTop: number[] // 该层累计顶部（用于绘图）
+    isRemaining: boolean
+    date?: string
+  }
 
-  // ---- 对比线 paths ----
-  const compareLines = useMemo(() => {
-    return selectedDates.map((date, idx) => {
-      const dh = dayHourly.find(d => d.date === date)
-      if (!dh) return null
-      return {
-        date,
-        label: `${dh.dateLabel} ${dh.weekdayShort}`,
-        color: LINE_COLORS[idx % LINE_COLORS.length],
-        hourly: dh.hourly,
-        path: toLinePath(dh.hourly, rangeStart, visibleHours),
+  const stackedData = useMemo(() => {
+    const withData = dayHourly.filter(d => d.hasData)
+    const selected = selectedDates
+      .map(date => withData.find(d => d.date === date))
+      .filter(Boolean) as typeof dayHourly
+    const remaining = withData.filter(d => !selectedDates.includes(d.date))
+
+    const layers: StackLayer[] = []
+    const cumulative = Array(24).fill(0)
+
+    // 选中天在底部，每天一层
+    for (const day of selected) {
+      const bottom = [...cumulative]
+      for (let h = 0; h < 24; h++) cumulative[h] += day.hourly[h]
+      layers.push({
+        label: `${day.dateLabel} ${day.weekdayShort}`,
+        color: LINE_COLORS[selectedDates.indexOf(day.date) % LINE_COLORS.length],
+        hourly: day.hourly,
+        cumulativeTop: [...cumulative],
+        isRemaining: false,
+        date: day.date,
+      })
+    }
+
+    // 剩余天合并为一层，放在最上面
+    const remainingHourly = Array(24).fill(0) as number[]
+    for (const day of remaining) {
+      for (let h = 0; h < 24; h++) remainingHourly[h] += day.hourly[h]
+    }
+    if (remaining.length > 0) {
+      for (let h = 0; h < 24; h++) cumulative[h] += remainingHourly[h]
+      layers.push({
+        label: hasCompare ? `其他 ${remaining.length} 天` : '周合计',
+        color: hasCompare ? '#d1d5db' : '#10b981',
+        hourly: remainingHourly,
+        cumulativeTop: [...cumulative],
+        isRemaining: true,
+      })
+    }
+
+    return { layers, totalHourly: cumulative as number[] }
+  }, [dayHourly, selectedDates, hasCompare])
+
+  // ---- 动态 y 轴 ----
+  const { maxVal, yTicks } = useMemo(() => {
+    const maxTotal = Math.max(...stackedData.totalHourly.slice(rangeStart, rangeEnd))
+    return computeYAxis(maxTotal)
+  }, [stackedData, rangeStart, rangeEnd])
+
+  // ---- 堆叠面积 paths ----
+  const layerPaths = useMemo(() => {
+    return stackedData.layers.map((layer, idx) => {
+      const topPts = toPoints(layer.cumulativeTop, rangeStart, visibleHours, maxVal)
+      if (idx === 0) {
+        const linePath = toSmoothLinePath(topPts)
+        return { ...layer, path: toBaseAreaPath(linePath, topPts), topPts }
       }
-    }).filter(Boolean) as { date: string; label: string; color: string; hourly: number[]; path: string }[]
-  }, [selectedDates, dayHourly, rangeStart, visibleHours])
+      const prevTop = stackedData.layers[idx - 1].cumulativeTop
+      const bottomPts = toPoints(prevTop, rangeStart, visibleHours, maxVal)
+      return { ...layer, path: toStackedAreaPath(topPts, bottomPts), topPts }
+    })
+  }, [stackedData, rangeStart, visibleHours, maxVal])
 
-  // ---- 对比线上的卡顿点 ----
+  // ---- 卡顿点（选中天上） ----
   const compareStuckPoints = useMemo(() => {
     if (selectedDates.length === 0) return []
-
     const result: CompareStuckPoint[] = []
     for (let idx = 0; idx < selectedDates.length; idx++) {
       const date = selectedDates[idx]
       const dayData = days.find(d => d.date === date)
       if (!dayData || !dayData.events || dayData.events.length === 0) continue
-
       const color = LINE_COLORS[idx % LINE_COLORS.length]
       const rawPts = extractStuckPoints(dayData.events, rangeStart, rangeEnd)
       for (const pt of rawPts) {
@@ -254,14 +333,17 @@ export default function WeekRhythmChart({ days, rangeStart: rs, rangeEnd: re }: 
     return result
   }, [selectedDates, days, rangeStart, rangeEnd, visibleHours])
 
-  // ---- 高峰时段（限定在可见范围内） ----
+  // ---- 周合计高峰（总和最高的小时段） ----
   const peakHour = useMemo(() => {
     let peak = rangeStart, peakVal = 0
     for (let h = rangeStart; h < rangeEnd; h++) {
-      if (avgHourly[h] > peakVal) { peakVal = avgHourly[h]; peak = h }
+      if (stackedData.totalHourly[h] > peakVal) {
+        peakVal = stackedData.totalHourly[h]
+        peak = h
+      }
     }
     return { hour: peak, val: peakVal }
-  }, [avgHourly, rangeStart, rangeEnd])
+  }, [stackedData, rangeStart, rangeEnd])
 
   // ---- 切换选中日期 ----
   const toggleDate = (date: string) => {
@@ -272,17 +354,18 @@ export default function WeekRhythmChart({ days, rangeStart: rs, rangeEnd: re }: 
     })
   }
 
-  // ---- 可见范围内的点坐标（点在每个小时区间的中点） ----
-  const avgPoints = useMemo(() => {
-    const pts: { x: number; y: number; hour: number; val: number }[] = []
+  // ---- 每小时段信息（hover 用） ----
+  const hourSlots = useMemo(() => {
+    const slots: { hour: number; x: number; colX: number; colW: number }[] = []
+    const colW = CHART_W / visibleHours
     for (let i = 0; i < visibleHours; i++) {
       const h = rangeStart + i
-      const x = PAD_L + ((i + 0.5) / visibleHours) * CHART_W
-      const y = PAD_T + CHART_H - (avgHourly[h] / MAX_VAL) * CHART_H
-      pts.push({ x, y, hour: h, val: avgHourly[h] })
+      const colX = PAD_L + (i / visibleHours) * CHART_W
+      const x = colX + colW / 2
+      slots.push({ hour: h, x, colX, colW })
     }
-    return pts
-  }, [avgHourly, rangeStart, visibleHours])
+    return slots
+  }, [rangeStart, visibleHours])
 
   const daysWithData = dayHourly.filter(d => d.hasData)
   if (daysWithData.length === 0) {
@@ -295,22 +378,100 @@ export default function WeekRhythmChart({ days, rangeStart: rs, rangeEnd: re }: 
 
   return (
     <div>
-      {/* SVG 图表（左侧占位与热力图日期标签对齐） */}
-      <div className="flex items-center gap-1">
-        <span className="w-[38px] flex-shrink-0" />
-        <div className="flex-1">
-      <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ maxHeight: 140 }}>
+      {/* 对比按钮（左） + 层图例（右） — 折线图上方 */}
+      <div className="flex items-center justify-between mb-1.5">
+        <div className="relative" ref={dropdownRef}>
+          <button
+            onClick={() => setDropdownOpen(v => !v)}
+            className={`text-2xs px-2 py-1 rounded-md border transition-colors
+              ${selectedDates.length > 0
+                ? 'border-indigo-300 bg-indigo-50 text-indigo-600'
+                : 'border-gray-200 text-gray-500 hover:bg-gray-50'
+              }`}
+          >
+            {selectedDates.length > 0 ? `对比 ${selectedDates.length} 天` : '选择对比日'}
+            <svg className={`inline-block w-2.5 h-2.5 ml-0.5 transition-transform ${dropdownOpen ? 'rotate-180' : ''}`}
+              fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+
+          {dropdownOpen && (
+            <div className="absolute left-0 top-full mt-1 z-50 bg-white rounded-lg shadow-lg border border-gray-200 py-1 min-w-[140px]">
+              {dayHourly.map((d) => {
+                const isSelected = selectedDates.includes(d.date)
+                const isDisabled = !d.hasData || (!isSelected && selectedDates.length >= MAX_COMPARE)
+                return (
+                  <button
+                    key={d.date}
+                    onClick={() => !isDisabled && toggleDate(d.date)}
+                    disabled={isDisabled}
+                    className={`w-full flex items-center gap-2 px-3 py-1.5 text-xxs text-left transition-colors
+                      ${isDisabled ? 'text-gray-300 cursor-not-allowed' : 'hover:bg-gray-50'}
+                      ${isSelected ? 'bg-indigo-50' : ''}`}
+                  >
+                    <span
+                      className="w-2.5 h-2.5 rounded-full flex-shrink-0 border"
+                      style={{
+                        backgroundColor: isSelected
+                          ? LINE_COLORS[selectedDates.indexOf(d.date) % LINE_COLORS.length]
+                          : 'transparent',
+                        borderColor: isSelected
+                          ? LINE_COLORS[selectedDates.indexOf(d.date) % LINE_COLORS.length]
+                          : '#d1d5db',
+                      }}
+                    />
+                    <span className={isSelected ? 'text-gray-700 font-medium' : 'text-gray-600'}>
+                      {d.dateLabel} {d.weekdayShort}
+                    </span>
+                    {!d.hasData && <span className="text-3xs text-gray-300 ml-auto">无数据</span>}
+                  </button>
+                )
+              })}
+              {selectedDates.length >= MAX_COMPARE && (
+                <p className="text-3xs text-amber-500 px-3 py-1 border-t border-gray-100">
+                  最多同时对比 {MAX_COMPARE} 天
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+        <div className="flex items-center gap-3 flex-wrap">
+          {layerPaths.map(lp => (
+            <span key={lp.label} className="flex items-center gap-1 text-2xs text-gray-500">
+              <span className="inline-block w-3 h-2 rounded-sm" style={{ backgroundColor: lp.color, opacity: lp.isRemaining ? 0.5 : 0.7 }} />
+              {lp.label}
+            </span>
+          ))}
+        </div>
+      </div>
+
+      {/* 高峰信息 — 折线图上方 */}
+      <div className="flex items-center justify-between mb-1.5 flex-wrap">
+        {peakHour.val > 0 && (
+          <span className="flex items-center gap-1 text-xxs text-gray-500">
+            <span className="inline-block w-2 h-2 rounded-full bg-emerald-500 flex-shrink-0" />
+            周使用高峰：<span className="font-semibold text-emerald-600">{peakHour.hour}:00~{peakHour.hour + 1}:00</span>
+            <span className="text-gray-400 ml-1">（周合计活跃 {Math.round(peakHour.val)} 分钟）</span>
+          </span>
+        )}
+      </div>
+
+      {/* SVG 图表 */}
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ aspectRatio: `${W}/${H}` }}>
         {/* 渐变定义 */}
         <defs>
-          <linearGradient id="weekAvgGradient" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#10b981" stopOpacity={0.6} />
-            <stop offset="100%" stopColor="#10b981" stopOpacity={0.05} />
-          </linearGradient>
+          {layerPaths.map((lp, idx) => (
+            <linearGradient key={idx} id={`weekStackGrad${idx}`} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={lp.color} stopOpacity={lp.isRemaining ? 0.35 : 0.65} />
+              <stop offset="100%" stopColor={lp.color} stopOpacity={lp.isRemaining ? 0.08 : 0.15} />
+            </linearGradient>
+          ))}
         </defs>
 
-        {/* 背景网格线 */}
-        {Y_TICKS.map((tickVal, i) => {
-          const ratio = tickVal / MAX_VAL
+        {/* 背景网格线 + y 轴标签 */}
+        {yTicks.map((tickVal, i) => {
+          const ratio = tickVal / maxVal
           const y = PAD_T + CHART_H * (1 - ratio)
           return (
             <g key={i}>
@@ -319,133 +480,98 @@ export default function WeekRhythmChart({ days, rangeStart: rs, rangeEnd: re }: 
                 stroke="#e5e7eb" strokeWidth={0.5} strokeDasharray={i === 0 ? undefined : '2,2'}
               />
               <text x={PAD_L - 3} y={y + 3} textAnchor="end" fontSize={9} fill="#6b7280" fontWeight="500">
-                {tickVal}%
+                {tickVal === 0 ? '0' : `${tickVal}分钟`}
               </text>
             </g>
           )
         })}
 
-        {/* x 轴标签（每小时边界处） */}
-        {Array.from({ length: visibleHours + 1 }, (_, i) => {
-          const h = rangeStart + i
-          const x = PAD_L + (i / visibleHours) * CHART_W
-          return (
-            <text key={h} x={x} y={H - 4} textAnchor="middle" fontSize={9} fill="#6b7280">
-              {h % 24}
-            </text>
-          )
-        })}
-
-        {/* 周平均面积填充（只在没有对比线时显示，有对比线时隐藏，保持清晰） */}
-        {!hasCompare && (
-          <path d={avgAreaPath} fill="url(#weekAvgGradient)" opacity={0.3} />
-        )}
-
-        {/* 周平均折线 */}
-        <path
-          d={avgLinePath}
-          fill="none"
-          stroke={hasCompare ? '#9ca3af' : '#10b981'}
-          strokeWidth={hasCompare ? 1.2 : 1.8}
-          strokeLinejoin="round"
-          strokeDasharray={hasCompare ? '4,3' : undefined}
-        />
-
-        {/* 对比线 */}
-        {compareLines.map(cl => (
+        {/* 堆叠面积层（从底层到顶层渲染） */}
+        {layerPaths.map((lp, idx) => (
           <path
-            key={cl.date}
-            d={cl.path}
-            fill="none"
-            stroke={cl.color}
-            strokeWidth={1.8}
+            key={idx}
+            d={lp.path}
+            fill={`url(#weekStackGrad${idx})`}
+            stroke={lp.color}
+            strokeWidth={idx === layerPaths.length - 1 ? 1.5 : 0.8}
+            strokeOpacity={0.6}
             strokeLinejoin="round"
           />
         ))}
 
-        {/* 数据点 + 悬停区域（只给周平均线，避免太杂） */}
-        {avgPoints.map(p => {
-          const isHovered = hovered === p.hour
+        {/* 每小时段 hover 交互（垂直高亮带 + tooltip） */}
+        {hourSlots.map(slot => {
+          const isHovered = hovered === slot.hour
           return (
-            <g key={p.hour}>
-              {/* 周平均点 */}
-              <circle
-                cx={p.x} cy={p.y}
-                r={isHovered ? 4.5 : p.val > 0 ? 3 : 2.5}
-                fill={hasCompare ? '#9ca3af' : (p.val > 0 ? '#10b981' : '#d1d5db')}
-                stroke="white" strokeWidth={isHovered ? 1.8 : 1}
-              />
-              {/* 悬停热区 */}
-              <circle
-                cx={p.x} cy={p.y} r={8} fill="transparent" style={{ cursor: 'pointer' }}
-                onMouseEnter={() => setHovered(p.hour)}
+            <g key={slot.hour}>
+              <rect
+                x={slot.colX} y={PAD_T} width={slot.colW} height={CHART_H}
+                fill="transparent" style={{ cursor: 'pointer' }}
+                onMouseEnter={() => setHovered(slot.hour)}
                 onMouseLeave={() => setHovered(null)}
               />
-              {/* tooltip */}
-              {isHovered && (() => {
-                const showBelow = p.y - PAD_T < 20
-                const nextHour = (p.hour + 1) % 24
-                const lines: string[] = [`${Math.round(p.val)}%`]
-                for (const cl of compareLines) {
-                  lines.push(`${cl.label} ${Math.round(cl.hourly[p.hour])}%`)
-                }
-                const text = `${p.hour}:00~${nextHour}:00 · ${lines.join(' | ')}`
-                const textWidth = Math.min(text.length * 4.5, 240)
-                const boxH = 18
-                const ty = showBelow ? p.y + 10 : p.y - 24
-                const textY = showBelow ? p.y + 21.5 : p.y - 12.5
-
-                return (
-                  <g>
-                    <rect
-                      x={Math.max(PAD_L, Math.min(p.x - textWidth / 2, W - PAD_R - textWidth))}
-                      y={ty}
-                      width={textWidth}
-                      height={boxH}
-                      rx={4} fill="#1f2937" opacity={0.88}
-                    />
-                    <text
-                      x={p.x} y={textY}
-                      textAnchor="middle" fontSize={8} fill="white" fontWeight="500"
-                    >
-                      {text}
-                    </text>
-                  </g>
-                )
-              })()}
+              {isHovered && (
+                <g pointerEvents="none">
+                  <rect
+                    x={slot.colX} y={PAD_T} width={slot.colW} height={CHART_H}
+                    fill="#6b7280" opacity={0.06} rx={1}
+                  />
+                  {(() => {
+                    const nextHour = (slot.hour + 1) % 24
+                    const header = `${slot.hour}:00~${nextHour}:00`
+                    const nonZeroLayers = layerPaths.filter(lp => lp.hourly[slot.hour] > 0)
+                    const details = nonZeroLayers
+                      .filter(lp => !lp.isRemaining || hasCompare)
+                      .map(lp => `${lp.label}: ${Math.round(lp.hourly[slot.hour])}分钟`)
+                    const total = Math.round(stackedData.totalHourly[slot.hour])
+                    const allLines = hasCompare
+                      ? [header, ...details, `合计: ${total}分钟`]
+                      : [header, `合计: ${total}分钟`]
+                    const measureTextW = (s: string) => [...s].reduce((w, c) => w + (/[\u4e00-\u9fff\u3000-\u303f\uff00-\uffef]/.test(c) ? 5.5 : 3.5), 0)
+                    const boxW = Math.max(...allLines.map(l => measureTextW(l) + 16), 80)
+                    const lineH = 13
+                    const boxH = allLines.length * lineH + 8
+                    const tipX = Math.max(PAD_L, Math.min(slot.x - boxW / 2, W - PAD_R - boxW))
+                    const tipY = Math.max(0, PAD_T - boxH - 2)
+                    return (
+                      <g>
+                        <rect x={tipX} y={tipY} width={boxW} height={boxH}
+                          rx={4} fill="#1f2937" opacity={0.92} />
+                        {allLines.map((line, li) => {
+                          const isHeader = li === 0
+                          const isTotal = li === allLines.length - 1
+                          return (
+                            <text key={li}
+                              x={tipX + 8} y={tipY + 12 + li * lineH}
+                              fontSize={isHeader ? 8.5 : isTotal ? 9.5 : 7.5} fill="white"
+                              fontWeight={isHeader || isTotal ? '700' : '400'}
+                              opacity={1}
+                            >
+                              {line}
+                            </text>
+                          )
+                        })}
+                      </g>
+                    )
+                  })()}
+                </g>
+              )}
             </g>
           )
         })}
 
-        {/* 对比线的数据点（悬停时显示） */}
-        {hovered !== null && compareLines.map(cl => {
-          const val = cl.hourly[hovered]
-          const idx = hovered - rangeStart
-          const x = PAD_L + ((idx + 0.5) / visibleHours) * CHART_W
-          const y = PAD_T + CHART_H - (val / MAX_VAL) * CHART_H
-          return (
-            <circle
-              key={cl.date}
-              cx={x} cy={y} r={4}
-              fill={cl.color} stroke="white" strokeWidth={1.8}
-            />
-          )
-        })}
-
-        {/* 对比线上的卡顿红色圆点标记 */}
+        {/* 选中天上的卡顿红色圆点标记 */}
         {compareStuckPoints.map((sp, idx) => {
           const isHov = hoveredStuck === idx
-          const cl = compareLines.find(c => c.date === sp.date)
-          if (!cl) return null
+          const layerIdx = selectedDates.indexOf(sp.date)
+          if (layerIdx < 0) return null
+          const layer = stackedData.layers[layerIdx]
+          if (!layer) return null
 
-          // 在对比线的相邻两点间线性插值得到精确 y
+          const layerTopPts = toPoints(layer.cumulativeTop, rangeStart, visibleHours, maxVal)
           let lineY = PAD_T + CHART_H
-          const linePoints = cl.hourly.slice(rangeStart, rangeStart + visibleHours).map((val, i) => ({
-            x: PAD_L + ((i + 0.5) / visibleHours) * CHART_W,
-            y: PAD_T + CHART_H - (val / MAX_VAL) * CHART_H,
-          }))
-          const leftPt = linePoints.filter(p => p.x <= sp.x).at(-1)
-          const rightPt = linePoints.find(p => p.x > sp.x)
+          const leftPt = layerTopPts.filter(p => p.x <= sp.x).at(-1)
+          const rightPt = layerTopPts.find(p => p.x > sp.x)
           if (leftPt && rightPt) {
             const t = (sp.x - leftPt.x) / (rightPt.x - leftPt.x)
             lineY = leftPt.y + t * (rightPt.y - leftPt.y)
@@ -456,12 +582,10 @@ export default function WeekRhythmChart({ days, rangeStart: rs, rangeEnd: re }: 
           }
 
           const dotR = isHov ? 5 : 3.5
-
           return (
             <g key={`cstuck-${idx}`}>
               <circle
-                cx={sp.x} cy={lineY}
-                r={dotR}
+                cx={sp.x} cy={lineY} r={dotR}
                 fill="white" stroke="#ef4444" strokeWidth={1.5}
                 opacity={isHov ? 1 : 0.85}
                 style={{ transition: 'all 0.15s', cursor: 'pointer' }}
@@ -502,89 +626,26 @@ export default function WeekRhythmChart({ days, rangeStart: rs, rangeEnd: re }: 
             </g>
           )
         })}
+        {/* x 轴标签 */}
+        {Array.from({ length: visibleHours + 1 }, (_, i) => {
+          const h = (rangeStart + i) % 24
+          const x = PAD_L + (i / visibleHours) * CHART_W
+          return (
+            <text
+              key={i}
+              x={x}
+              y={PAD_T + CHART_H + 12}
+              textAnchor="middle"
+              fontSize={8}
+              fill="#9ca3af"
+              fontWeight="500"
+            >
+              {h}
+            </text>
+          )
+        })}
       </svg>
-        </div>
-      </div>
 
-      {/* 对比按钮（左） + 图例（右） */}
-      <div className="flex items-center justify-between mt-1">
-        <div className="relative" ref={dropdownRef}>
-          <button
-            onClick={() => setDropdownOpen(v => !v)}
-            className={`text-2xs px-2 py-1 rounded-md border transition-colors
-              ${selectedDates.length > 0
-                ? 'border-indigo-300 bg-indigo-50 text-indigo-600'
-                : 'border-gray-200 text-gray-500 hover:bg-gray-50'
-              }`}
-          >
-            {selectedDates.length > 0 ? `对比 ${selectedDates.length} 天` : '选择对比日'}
-            <svg className={`inline-block w-2.5 h-2.5 ml-0.5 transition-transform ${dropdownOpen ? 'rotate-180' : ''}`}
-              fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
-            </svg>
-          </button>
-
-          {dropdownOpen && (
-            <div className="absolute left-0 bottom-full mb-1 z-50 bg-white rounded-lg shadow-lg border border-gray-200 py-1 min-w-[140px]">
-              {dayHourly.map((d) => {
-                const isSelected = selectedDates.includes(d.date)
-                const isDisabled = !d.hasData || (!isSelected && selectedDates.length >= MAX_COMPARE)
-                return (
-                  <button
-                    key={d.date}
-                    onClick={() => !isDisabled && toggleDate(d.date)}
-                    disabled={isDisabled}
-                    className={`w-full flex items-center gap-2 px-3 py-1.5 text-xxs text-left transition-colors
-                      ${isDisabled ? 'text-gray-300 cursor-not-allowed' : 'hover:bg-gray-50'}
-                      ${isSelected ? 'bg-indigo-50' : ''}`}
-                  >
-                    <span
-                      className="w-2.5 h-2.5 rounded-full flex-shrink-0 border"
-                      style={{
-                        backgroundColor: isSelected
-                          ? LINE_COLORS[selectedDates.indexOf(d.date) % LINE_COLORS.length]
-                          : 'transparent',
-                        borderColor: isSelected
-                          ? LINE_COLORS[selectedDates.indexOf(d.date) % LINE_COLORS.length]
-                          : '#d1d5db',
-                      }}
-                    />
-                    <span className={isSelected ? 'text-gray-700 font-medium' : 'text-gray-600'}>
-                      {d.dateLabel} {d.weekdayShort}
-                    </span>
-                    {!d.hasData && <span className="text-3xs text-gray-300 ml-auto">无数据</span>}
-                  </button>
-                )
-              })}
-              {selectedDates.length >= MAX_COMPARE && (
-                <p className="text-3xs text-amber-500 px-3 py-1 border-t border-gray-100">
-                  最多同时对比 {MAX_COMPARE} 天
-                </p>
-              )}
-            </div>
-          )}
-        </div>
-        <div className="flex items-center gap-3 flex-wrap">
-          <span className="flex items-center gap-1 text-2xs text-gray-400">
-            <span className={`inline-block w-4 h-[2px] ${hasCompare ? 'border-t border-dashed border-gray-400' : 'bg-emerald-500 rounded'}`} />
-            周平均
-          </span>
-          {compareLines.map(cl => (
-            <span key={cl.date} className="flex items-center gap-1 text-2xs text-gray-500">
-              <span className="inline-block w-4 h-[2px] rounded" style={{ backgroundColor: cl.color }} />
-              {cl.label}
-            </span>
-          ))}
-        </div>
-      </div>
-
-      {/* 高峰信息 */}
-      {peakHour.val > 0 && (
-        <p className="text-xxs text-gray-500 mt-1">
-          🌟 周平均使用高峰：<span className="font-semibold text-emerald-600">{peakHour.hour}:00</span>
-          <span className="text-gray-400 ml-1">（{Math.round(peakHour.val)}% 活跃度）</span>
-        </p>
-      )}
     </div>
   )
 }

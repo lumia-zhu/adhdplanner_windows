@@ -293,9 +293,7 @@ export default function WeekView({ weekEndDate, onDataReady, chatOpen }: WeekVie
   }
 
   return (
-    <div className={`p-6 space-y-6 transition-all duration-400 ${
-      chatOpen ? 'w-full' : 'max-w-xl mx-auto'
-    }`}>
+    <div className="p-6 space-y-6 transition-all duration-400 max-w-xl mx-auto">
       {/* 每日完成率条形图 */}
       <div id="chart-week-completion">
         <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-1.5">
@@ -329,23 +327,23 @@ export default function WeekView({ weekEndDate, onDataReady, chatOpen }: WeekVie
       {/* 分隔线 */}
       <div className="border-t border-gray-100" />
 
-      {/* 7×24 活动分布热力网格 */}
+      {/* 电脑活动分布（折线图 + 热力网格，共享 x 轴） */}
       <div id="chart-week-heatmap">
         <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-1.5">
           🔍 电脑活动分布
           <span className="relative group">
             <span className="inline-flex items-center justify-center w-4 h-4 rounded-full border border-gray-300 text-gray-400 text-[10px] leading-none cursor-help group-hover:text-gray-600 group-hover:border-gray-400 transition-colors">?</span>
-            <span className="pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-150 absolute left-1/2 -translate-x-1/2 top-full mt-1.5 z-50 w-[240px] bg-gray-800 text-white text-[11px] leading-relaxed rounded-lg px-3 py-2.5 shadow-lg normal-case tracking-normal font-normal">
-              <b>每小时电脑活跃度</b> = 该小时内检测到的电脑使用时间 ÷ 1小时。颜色越深表示这个时段电脑使用越多。<br/><span className="text-gray-300 mt-1 inline-block">注：连续 1 分钟没有鼠标或键盘操作即视为不活跃。</span>
+            <span className="pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-150 absolute left-1/2 -translate-x-1/2 top-full mt-1.5 z-50 w-[280px] bg-gray-800 text-white text-[11px] leading-relaxed rounded-lg px-3 py-2.5 shadow-lg normal-case tracking-normal font-normal">
+              <b>每小时电脑活跃时长</b>（曲线）= 该小时内电脑被实际使用的分钟数（0~60分钟）。曲线越高，表示该时段使用电脑的时间越长。周视图中，面积为多天的活跃时长叠加。<br/><br/><b>每小时电脑活跃度</b>（色块）= 该小时内检测到的电脑使用时间 ÷ 1小时。颜色越深表示这个时段电脑使用越多。<br/><span className="text-gray-300 mt-1 inline-block">注：连续 1 分钟没有鼠标或键盘操作即视为不活跃。</span>
             </span>
           </span>
         </h3>
-        <WeekHeatmapGrid days={weekData} rangeStart={weekRangeStart} rangeEnd={weekRangeEnd} />
-      </div>
-
-      {/* 周平均节奏曲线 */}
-      <div id="chart-week-rhythm" className="-mt-6">
-        <WeekRhythmChart days={weekData} rangeStart={weekRangeStart} rangeEnd={weekRangeEnd} />
+        <div id="chart-week-rhythm">
+          <WeekRhythmChart days={weekData} rangeStart={weekRangeStart} rangeEnd={weekRangeEnd} />
+        </div>
+        <div className="mt-0">
+          <WeekHeatmapGrid days={weekData} rangeStart={weekRangeStart} rangeEnd={weekRangeEnd} />
+        </div>
       </div>
     </div>
   )
