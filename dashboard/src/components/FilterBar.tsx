@@ -102,6 +102,13 @@ export default function FilterBar({
             导出 CSV
           </button>
         )}
+
+        <a
+          href="/research"
+          className="ml-auto px-3 py-1.5 text-sm bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors"
+        >
+          研究分析 →
+        </a>
       </div>
     </header>
   )

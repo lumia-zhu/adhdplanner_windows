@@ -368,6 +368,14 @@ export function useFocusSession({
   const handleWidgetSubtaskToggle = useCallback((subtaskId: string) => {
     if (!session) return
 
+    const parentTask = tasks.find(t => t.id === session.taskId)
+    const sub = (parentTask?.subtasks ?? []).find(s => s.id === subtaskId)
+    if (parentTask && sub) {
+      tracker.track('task.subtask_toggled', {
+        taskId: parentTask.id, subtaskId: sub.id, subtaskTitle: sub.title, completed: !sub.completed,
+      })
+    }
+
     let allDone = false
     setTasks(prev => prev.map(t => {
       if (t.id !== session.taskId) return t
@@ -528,6 +536,7 @@ export function useFocusSession({
     tracker.track('session.ended', {
       sessionId: sessionIdRef.current, taskId: newTask.id,
       taskTitle, totalDurationSeconds: quickFocusEnd.durationSeconds,
+      completedMicroSteps: 0,
       endReason: 'task_done', isQuickFocus: true,
     })
     setQuickFocusEnd(null)

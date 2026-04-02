@@ -285,6 +285,14 @@ export interface ReflectEndedPayload {
   durationMs: number
 }
 
+export interface ReflectClosedPayload {
+  date: string
+  mode: string
+  durationMs: number
+  hadChat: boolean
+  hadEndedProperly: boolean
+}
+
 export interface ReflectModeSwitchedPayload {
   from: string
   to: string
@@ -333,6 +341,19 @@ export interface TaskSubtaskCreatedPayload {
   subtaskTitle: string
 }
 
+export interface TaskSubtaskToggledPayload {
+  taskId: string
+  subtaskId: string
+  subtaskTitle: string
+  completed: boolean
+}
+
+export interface TaskSubtaskDeletedPayload {
+  taskId: string
+  subtaskId: string
+  subtaskTitle: string
+}
+
 export interface TaskPriorityChangedPayload {
   taskId: string
   from: string
@@ -359,6 +380,8 @@ export interface SettingsSavedPayload {
 }
 
 export interface AuthLoginPayload {}
+
+export interface AppLaunchedPayload {}
 
 export interface AppQuitPayload {}
 
@@ -416,6 +439,8 @@ export interface TrackEventMap {
   'task.reordered':             TaskReorderedPayload
   'task.edited':                TaskEditedPayload
   'task.subtask_created':       TaskSubtaskCreatedPayload
+  'task.subtask_toggled':       TaskSubtaskToggledPayload
+  'task.subtask_deleted':       TaskSubtaskDeletedPayload
   'task.priority_changed':      TaskPriorityChangedPayload
   'task.cleared_completed':     TaskClearedCompletedPayload
 
@@ -423,6 +448,7 @@ export interface TrackEventMap {
   'reflect.opened':             ReflectOpenedPayload
   'reflect.message_sent':       ReflectMessageSentPayload
   'reflect.ended':              ReflectEndedPayload
+  'reflect.closed':             ReflectClosedPayload
   'reflect.mode_switched':      ReflectModeSwitchedPayload
   'reflect.chat_opened':        ReflectChatOpenedPayload
   'reflect.chart_referenced':   ReflectChartReferencedPayload
@@ -439,6 +465,7 @@ export interface TrackEventMap {
   // 设置与系统
   'settings.saved':             SettingsSavedPayload
   'auth.login':                 AuthLoginPayload
+  'app.launched':               AppLaunchedPayload
   'app.quit':                   AppQuitPayload
   'manual.time_added':          ManualTimeAddedPayload
 }

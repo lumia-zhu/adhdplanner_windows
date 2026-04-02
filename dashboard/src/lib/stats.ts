@@ -86,3 +86,92 @@ export function calcQuickStats(
     focusToComputerRatio,
   }
 }
+
+// ===================== 事件配对完整性校验 =====================
+
+export interface PairCheckItem {
+  label: string
+  started: number
+  ended: number
+  orphanCount: number
+  rate: number | null
+}
+
+export interface PairCheckResult {
+  checks: PairCheckItem[]
+  totalEvents: number
+}
+
+export function calcPairChecks(events: TrackerEvent[]): PairCheckResult {
+  // 1. session.started ↔ session.ended（按 sessionId 配对）
+  const sessionStarted = events.filter(e => e.event_type === 'session.started')
+  const sessionEndedIds = new Set(
+    events.filter(e => e.event_type === 'session.ended')
+      .map(e => e.payload?.sessionId as string)
+  )
+  const sessionOrphans = sessionStarted.filter(e => !sessionEndedIds.has(e.payload?.sessionId as string))
+
+  // 2. stuck.triggered → stuck.reason / stuck.pivot_chosen（按 sessionId 配对）
+  const stuckTriggered = events.filter(e => e.event_type === 'stuck.triggered')
+  const stuckFollowUpIds = new Set(
+    events.filter(e =>
+      e.event_type === 'stuck.reason' ||
+      e.event_type === 'stuck.pivot_chosen'
+    ).map(e => e.payload?.sessionId as string)
+  )
+  const stuckOrphans = stuckTriggered.filter(e => !stuckFollowUpIds.has(e.payload?.sessionId as string))
+
+  // 3. exec.micro_started → exec.micro_completed / stuck.triggered（按 sessionId 配对）
+  const microStarted = events.filter(e => e.event_type === 'exec.micro_started')
+  const microResolvedIds = new Set(
+    events.filter(e =>
+      e.event_type === 'exec.micro_completed' ||
+      e.event_type === 'stuck.triggered'
+    ).map(e => e.payload?.sessionId as string)
+  )
+  const microOrphans = microStarted.filter(e => !microResolvedIds.has(e.payload?.sessionId as string))
+
+  // 4. reflect.opened → reflect.closed（整体计数配对）
+  const reflectOpened = events.filter(e => e.event_type === 'reflect.opened').length
+  const reflectClosed = events.filter(e => e.event_type === 'reflect.closed').length
+  const reflectOrphans = Math.max(0, reflectOpened - reflectClosed)
+
+  const checks: PairCheckItem[] = [
+    {
+      label: '会话 (started→ended)',
+      started: sessionStarted.length,
+      ended: sessionStarted.length - sessionOrphans.length,
+      orphanCount: sessionOrphans.length,
+      rate: sessionStarted.length > 0
+        ? (sessionStarted.length - sessionOrphans.length) / sessionStarted.length
+        : null,
+    },
+    {
+      label: '卡顿 (triggered→reason)',
+      started: stuckTriggered.length,
+      ended: stuckTriggered.length - stuckOrphans.length,
+      orphanCount: stuckOrphans.length,
+      rate: stuckTriggered.length > 0
+        ? (stuckTriggered.length - stuckOrphans.length) / stuckTriggered.length
+        : null,
+    },
+    {
+      label: '微步 (started→completed)',
+      started: microStarted.length,
+      ended: microStarted.length - microOrphans.length,
+      orphanCount: microOrphans.length,
+      rate: microStarted.length > 0
+        ? (microStarted.length - microOrphans.length) / microStarted.length
+        : null,
+    },
+    {
+      label: '反思 (opened→closed)',
+      started: reflectOpened,
+      ended: reflectClosed,
+      orphanCount: reflectOrphans,
+      rate: reflectOpened > 0 ? reflectClosed / reflectOpened : null,
+    },
+  ]
+
+  return { checks, totalEvents: events.length }
+}

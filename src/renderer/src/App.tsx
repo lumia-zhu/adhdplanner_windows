@@ -100,6 +100,7 @@ export default function App() {
   // -------- 初始化追踪器 --------
   useEffect(() => {
     tracker.init()
+    tracker.track('app.launched', {})
     return () => tracker.destroy()
   }, [])
 

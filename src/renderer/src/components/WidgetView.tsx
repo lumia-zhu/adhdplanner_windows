@@ -446,6 +446,15 @@ function FocusDynamicBar({
             difficulty: reason.trim(),
             reflection: JSON.stringify(result.reflection),
           })
+          // 📊 埋点：AI 提供了绕路建议（hints 即为 pivot suggestions）
+          if (result.reflection.hints.length > 0) {
+            tracker.track('stuck.pivot_offered', {
+              sessionId: session.sessionId,
+              taskId: session.taskId,
+              empathy: result.reflection.interpret,
+              pivotSuggestions: result.reflection.hints,
+            })
+          }
         } else {
           // AI 返回失败时用 fallback
           setReflectionData({

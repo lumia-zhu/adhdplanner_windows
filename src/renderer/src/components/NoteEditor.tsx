@@ -197,6 +197,12 @@ export default function NoteEditor({
         return { ...t, completed: nowDone }
       }
       // 子任务勾选
+      const sub = (t.subtasks ?? [])[line.subtaskIndex ?? 0]
+      if (sub) {
+        tracker.track('task.subtask_toggled', {
+          taskId: t.id, subtaskId: sub.id, subtaskTitle: sub.title, completed: !sub.completed,
+        })
+      }
       const subs = (t.subtasks ?? []).map((s, si) =>
         si === line.subtaskIndex ? { ...s, completed: !s.completed } : s
       )
@@ -239,6 +245,13 @@ export default function NoteEditor({
       if (task) tracker.track('task.deleted', { taskId: task.id })
       setTasks(prev => prev.filter((_, i) => i !== line.taskIndex))
     } else {
+      const task = tasks[line.taskIndex]
+      const sub = (task?.subtasks ?? [])[line.subtaskIndex ?? 0]
+      if (task && sub) {
+        tracker.track('task.subtask_deleted', {
+          taskId: task.id, subtaskId: sub.id, subtaskTitle: sub.title,
+        })
+      }
       setTasks(prev => {
         const next = [...prev]
         const t = { ...next[line.taskIndex] }
@@ -249,10 +262,17 @@ export default function NoteEditor({
       })
     }
     return prevLineId
-  }, [lines, setTasks])
+  }, [lines, setTasks, tasks])
 
   /** 删除一个空子任务（用于 Enter 空子任务 → 升级为新任务） */
   const deleteSubtaskRaw = useCallback((taskIndex: number, subtaskIndex: number) => {
+    const task = tasks[taskIndex]
+    const sub = (task?.subtasks ?? [])[subtaskIndex]
+    if (task && sub) {
+      tracker.track('task.subtask_deleted', {
+        taskId: task.id, subtaskId: sub.id, subtaskTitle: sub.title,
+      })
+    }
     setTasks(prev => {
       const next = [...prev]
       const t = { ...next[taskIndex] }

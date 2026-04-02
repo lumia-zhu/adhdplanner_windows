@@ -5,7 +5,7 @@ export const dynamic = 'force-dynamic'
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { format, subDays } from 'date-fns'
 import { supabase } from '@/lib/supabase'
-import { calcQuickStats } from '@/lib/stats'
+import { calcQuickStats, calcPairChecks } from '@/lib/stats'
 import { mergeTimeline } from '@/lib/merge-timeline'
 import FilterBar from '@/components/FilterBar'
 import UserCardGrid from '@/components/UserCardGrid'
@@ -72,11 +72,28 @@ export default function DashboardPage() {
         return query
       }
 
-      const [evtRes, sessRes, taskRes, actRes] = await Promise.all([
-        baseFilter(supabase.from('tracker_events').select('*'))
-          .gte('date', dateFrom).lte('date', dateTo)
-          .order('timestamp', { ascending: true })
-          .limit(5000),
+      // 分页加载所有 tracker_events（Supabase 单次请求上限 1000 条）
+      const PAGE_SIZE = 1000
+      const fetchAllEvents = async () => {
+        const all: typeof events = []
+        let from = 0
+        while (true) {
+          const { data, error } = await baseFilter(
+            supabase.from('tracker_events').select('*')
+          )
+            .gte('date', dateFrom).lte('date', dateTo)
+            .order('timestamp', { ascending: true })
+            .range(from, from + PAGE_SIZE - 1)
+          if (error || !data) break
+          all.push(...data)
+          if (data.length < PAGE_SIZE) break
+          from += PAGE_SIZE
+        }
+        return all
+      }
+
+      const [allEvents, sessRes, taskRes, actRes] = await Promise.all([
+        fetchAllEvents(),
         baseFilter(supabase.from('reflection_sessions').select('*'))
           .gte('date', dateFrom).lte('date', dateTo)
           .order('started_at', { ascending: false }),
@@ -88,14 +105,14 @@ export default function DashboardPage() {
       ])
 
       console.log('[Dashboard] 数据加载结果:', {
-        events: evtRes.data?.length ?? 0, evtError: evtRes.error,
+        events: allEvents.length,
         sessions: sessRes.data?.length ?? 0, sessError: sessRes.error,
         tasks: taskRes.data?.length ?? 0, taskError: taskRes.error,
         activities: actRes.data?.length ?? 0, actError: actRes.error,
         dateRange: `${dateFrom} ~ ${dateTo}`,
       })
 
-      setEvents(evtRes.data ?? [])
+      setEvents(allEvents)
       setSessions(sessRes.data ?? [])
       setTasks(taskRes.data ?? [])
       setActivities(actRes.data ?? [])
@@ -169,6 +186,12 @@ export default function DashboardPage() {
     return calcQuickStats(typedEvents, typedTasks, typedActivities)
   }, [events, tasks, activities])
 
+  // ------ 事件配对完整性校验 ------
+  const pairChecks = useMemo(() => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return calcPairChecks(events as any[])
+  }, [events])
+
   // ------ 时间线 ------
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const timelineItems = useMemo(() => mergeTimeline(events as any[], sessions as any[]), [events, sessions])
@@ -213,6 +236,48 @@ export default function DashboardPage() {
         /* 状态 B：统计条 + Tab */
         <div>
           <QuickStats stats={quickStats} onStatClick={handleStatClick} />
+
+          {/* 事件配对完整性校验 */}
+          <div className="px-6 pb-2">
+            <details className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+              <summary className="px-4 py-3 text-sm font-medium text-gray-700 cursor-pointer hover:bg-gray-50 select-none flex items-center gap-2">
+                <span>🔍 数据配对完整性</span>
+                <span className="text-xs text-gray-400 font-normal">
+                  （共 {pairChecks.totalEvents} 条事件）
+                </span>
+                {pairChecks.checks.some(c => c.orphanCount > 0) && (
+                  <span className="ml-auto text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">
+                    有未配对事件
+                  </span>
+                )}
+              </summary>
+              <div className="px-4 pb-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
+                {pairChecks.checks.map(c => (
+                  <div
+                    key={c.label}
+                    className={`rounded-lg border p-3 ${
+                      c.orphanCount > 0
+                        ? 'border-amber-200 bg-amber-50'
+                        : 'border-green-200 bg-green-50'
+                    }`}
+                  >
+                    <p className="text-xs text-gray-600 mb-1">{c.label}</p>
+                    <p className="text-lg font-bold">
+                      {c.rate !== null ? `${Math.round(c.rate * 100)}%` : '-'}
+                    </p>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      {c.ended}/{c.started} 已配对
+                      {c.orphanCount > 0 && (
+                        <span className="text-amber-600 font-medium ml-1">
+                          ({c.orphanCount} 未闭合)
+                        </span>
+                      )}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </details>
+          </div>
 
           {/* Tab 导航 */}
           <div className="px-6 pt-2 pb-4">

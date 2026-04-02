@@ -227,9 +227,27 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, onClose }: 
   const isDragging = useRef(false)
   const containerRef = useRef<HTMLDivElement>(null)
 
+  // ---- 反思页面生命周期追踪 ----
+  const reflectOpenedAt = useRef(Date.now())
+  const hadChatRef = useRef(false)
+  const hadEndedProperlyRef = useRef(false)
+
   // 追踪反思页面打开
   useEffect(() => {
     tracker.track('reflect.opened', { date: selectedDate, mode: viewMode })
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 追踪反思页面关闭（组件卸载时，覆盖所有退出路径）
+  useEffect(() => {
+    return () => {
+      tracker.track('reflect.closed', {
+        date: selectedDate,
+        mode: viewMode,
+        durationMs: Date.now() - reflectOpenedAt.current,
+        hadChat: hadChatRef.current,
+        hadEndedProperly: hadEndedProperlyRef.current,
+      })
+    }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // 加载选中日期的事件数据 + 活跃度数据 + 任务
@@ -764,6 +782,7 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, onClose }: 
       }
     }
     tracker.track('reflect.chat_opened', { date: selectedDate, mode: viewMode })
+    hadChatRef.current = true
     setChatOpen(true)
     window.electronAPI.resizeMainWindow(EXPANDED_WIDTH, MAIN_HEIGHT)
   }, [screenshotBase64])
@@ -772,6 +791,11 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, onClose }: 
     setChatOpen(false)
     window.electronAPI.resizeMainWindow(MAIN_WIDTH, MAIN_HEIGHT)
   }, [])
+
+  const handleChatEndedProperly = useCallback(() => {
+    hadEndedProperlyRef.current = true
+    closeChat()
+  }, [closeChat])
 
   // 关闭反思页面时也要恢复窗口大小
   const handleClose = useCallback(() => {
@@ -1205,7 +1229,7 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, onClose }: 
                   storageKey={viewMode === 'week' ? `week-${weekEndDate}` : selectedDate}
                   onChartRef={handleChartRef}
                   onComplete={handleReflectionComplete}
-                  onEndChat={closeChat}
+                  onEndChat={handleChatEndedProperly}
                 />
               ) : (
                 <div className="flex-1 flex items-center justify-center h-full">
