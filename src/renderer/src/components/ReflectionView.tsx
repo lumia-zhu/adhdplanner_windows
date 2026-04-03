@@ -311,10 +311,23 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, onClose }: 
           }
         }
 
-        // 承诺分两层：近期可自然引用，稍早仅作背景
+        // 超 7 天的 active 承诺自动标记为 expired
         const commitments = Array.isArray(store.commitments) ? store.commitments : []
-        const threeDaysAgo = Date.now() - 3 * 24 * 60 * 60 * 1000
         const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000
+        let expiredAny = false
+        for (const c of commitments) {
+          if (c.status === 'active' && c.createdAt < sevenDaysAgo) {
+            c.status = 'expired'
+            expiredAny = true
+          }
+        }
+        if (expiredAny) {
+          store.commitments = commitments
+          window.electronAPI.saveMemoryStore(store).catch(() => {})
+        }
+
+        // 承诺分两层：近期可自然引用，稍早仅作背景
+        const threeDaysAgo = Date.now() - 3 * 24 * 60 * 60 * 1000
         const recentCommitments = commitments
           .filter(c => c.status === 'active' && c.createdAt >= threeDaysAgo)
           .slice(-3)

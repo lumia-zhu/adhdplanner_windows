@@ -14,6 +14,7 @@
 import { useState, useEffect, useRef, useMemo, useCallback, forwardRef } from 'react'
 import type { Task } from '../types'
 import type { AIConfig, MicroActionChip } from '../services/ai'
+import { buildStartupHint } from '../services/ai'
 import { aiCache } from '../services/ai-cache'
 import AILoadingTips from './AILoadingTips'
 
@@ -118,7 +119,13 @@ export default function StandbyWidget({
     if (hasAI) {
       setLoadingChips(true)
       const subtaskTitle = (task.subtasks ?? []).find(s => !s.completed)?.title
-      aiCache.get(task.id, task.title, aiConfig, subtaskTitle)
+      // 加载行为记忆 → 构建 memoryHint → 传入 AI 缓存
+      window.electronAPI.loadMemoryStore()
+        .then(raw => buildStartupHint((raw as any).firstSteps ?? []))
+        .catch(() => '')
+        .then(hint =>
+          aiCache.get(task.id, task.title, aiConfig, subtaskTitle, undefined, hint || undefined)
+        )
         .then(({ chips: newChips, error }) => {
           setChips(newChips.length > 0 ? newChips : FALLBACK_CHIPS)
           if (error) setChipError(error)

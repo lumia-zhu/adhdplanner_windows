@@ -568,18 +568,57 @@ export interface MemoryCommitment {
   createdAt: number
 }
 
+/** 用户选择的第一步记录（用于个性化启动建议） */
+export interface FirstStepRecord {
+  taskTitle: string
+  microAction: string
+  source: 'self' | 'ai_chip' | 'skip'
+  subtaskTitle?: string
+  date: string
+}
+
+/** 用户提交的卡住原因记录（用于精准预测卡点） */
+export interface StuckReasonRecord {
+  taskTitle: string
+  microAction: string
+  reason: string
+  date: string
+}
+
+/** 用户对建议的反馈记录（用于避免不喜欢的建议类型） */
+export interface HintFeedbackRecord {
+  taskTitle: string
+  hintText: string
+  feedback: 'up' | 'down'
+  date: string
+}
+
 export interface MemoryStore {
   sessions: MemorySessionSummary[]
   commitments: MemoryCommitment[]
+  firstSteps: FirstStepRecord[]
+  stuckReasons: StuckReasonRecord[]
+  hintFeedback: HintFeedbackRecord[]
   lastUpdated: number
 }
 
 export function loadMemoryStore(): MemoryStore {
   try {
     const p = getMemoryStorePath()
-    if (fs.existsSync(p)) return JSON.parse(fs.readFileSync(p, 'utf-8'))
+    if (fs.existsSync(p)) {
+      const raw = JSON.parse(fs.readFileSync(p, 'utf-8'))
+      // 兼容旧版 memory.json（没有行为记录字段）
+      return {
+        sessions: raw.sessions ?? [],
+        commitments: raw.commitments ?? [],
+        firstSteps: raw.firstSteps ?? [],
+        stuckReasons: raw.stuckReasons ?? [],
+        hintFeedback: raw.hintFeedback ?? [],
+        lastUpdated: raw.lastUpdated ?? 0,
+      }
+    }
   } catch (e) { console.error('[loadMemoryStore]', e) }
-  return { sessions: [], commitments: [], lastUpdated: 0 }
+  return { sessions: [], commitments: [], firstSteps: [], stuckReasons: [], hintFeedback: [], lastUpdated: 0 }
 }
 
 export function saveMemoryStore(store: MemoryStore): boolean {

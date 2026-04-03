@@ -99,25 +99,21 @@ function prefetch(
   config: AIConfig,
   subtaskTitle?: string,
   lastStep?: string,
+  memoryHint?: string,
 ): void {
-  // AI 没配置就不预加载
   if (!config.apiKey || !config.modelId) return
 
   const key = buildKey(taskId, subtaskTitle, lastStep)
 
-  // 已有有效缓存 → 不重复请求
   const existing = cache.get(key)
   if (existing && !isExpired(existing)) return
 
-  // 已有在途请求 → 不重复请求
   if (inflight.has(key)) return
 
   console.log('[AI Cache] 预加载:', taskTitle, subtaskTitle ?? '', lastStep ? `(lastStep: ${lastStep})` : '')
 
-  // 发起请求并存入 inflight
-  const promise = generateMicroActions(taskTitle, lastStep, config, subtaskTitle)
+  const promise = generateMicroActions(taskTitle, lastStep, config, subtaskTitle, undefined, memoryHint)
     .then(result => {
-      // 写入缓存
       cache.set(key, {
         chips: result.chips,
         error: result.error,
@@ -158,17 +154,16 @@ async function get(
   config: AIConfig,
   subtaskTitle?: string,
   lastStep?: string,
+  memoryHint?: string,
 ): Promise<{ chips: MicroActionChip[]; error?: string; fromCache: boolean }> {
   const key = buildKey(taskId, subtaskTitle, lastStep)
 
-  // 1. 有效缓存 → 直接返回
   const existing = cache.get(key)
   if (existing && !isExpired(existing)) {
     console.log('[AI Cache] 命中缓存:', key)
     return { chips: existing.chips, error: existing.error, fromCache: true }
   }
 
-  // 2. 有在途请求 → 等待它完成
   const pending = inflight.get(key)
   if (pending) {
     console.log('[AI Cache] 等待在途请求:', key)
@@ -176,9 +171,8 @@ async function get(
     return { ...result, fromCache: true }
   }
 
-  // 3. 都没有 → 发新请求
   console.log('[AI Cache] 发起新请求:', key)
-  const promise = generateMicroActions(taskTitle, lastStep, config, subtaskTitle)
+  const promise = generateMicroActions(taskTitle, lastStep, config, subtaskTitle, undefined, memoryHint)
     .then(result => {
       cache.set(key, {
         chips: result.chips,

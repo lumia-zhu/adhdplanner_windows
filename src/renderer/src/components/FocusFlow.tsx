@@ -16,7 +16,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import type { Task } from '../types'
 import type { AIConfig, MicroActionChip } from '../services/ai'
-import { generateReflectionQuestion, generateFollowUpQuestion, getRandomFallbackQuestion } from '../services/ai'
+import { generateReflectionQuestion, generateFollowUpQuestion, getRandomFallbackQuestion, buildStartupHint } from '../services/ai'
 import { tracker } from '../services/tracker'
 import { aiCache } from '../services/ai-cache'
 import AILoadingTips from './AILoadingTips'
@@ -231,19 +231,24 @@ export default function FocusFlow({ task, aiConfig, onStart, onCancel }: FocusFl
     const focusTimer = setTimeout(() => microInputRef.current?.focus(), 350)
     if (!aiConfig.apiKey || !aiConfig.modelId) return () => clearTimeout(focusTimer)
 
-    // ★ 先清空旧建议 + 显示加载态，等 AI 真正返回后再展示
     setChips([])
     setLoadingChips(true)
     setChipError(null)
     let cancelled = false
 
-    aiCache.get(task.id, task.title, aiConfig, activeSubtask?.title)
-      .then(({ chips: newChips, error, fromCache }) => {
+    // 加载行为记忆 → 构建 memoryHint → 传入 AI 缓存
+    window.electronAPI.loadMemoryStore()
+      .then(raw => buildStartupHint((raw as any).firstSteps ?? []))
+      .catch(() => '')
+      .then(hint => {
         if (cancelled) return
-        // AI 返回为空 → 使用通用回退建议
-        setChips(newChips.length > 0 ? newChips : FALLBACK_CHIPS)
-        if (error) setChipError(error)
-        if (fromCache) console.log('[FocusFlow] AI 建议来自缓存，秒出 ✓')
+        return aiCache.get(task.id, task.title, aiConfig, activeSubtask?.title, undefined, hint || undefined)
+      })
+      .then(result => {
+        if (cancelled || !result) return
+        setChips(result.chips.length > 0 ? result.chips : FALLBACK_CHIPS)
+        if (result.error) setChipError(result.error)
+        if (result.fromCache) console.log('[FocusFlow] AI 建议来自缓存，秒出 ✓')
       })
       .catch(() => {
         if (!cancelled) setChips(FALLBACK_CHIPS)

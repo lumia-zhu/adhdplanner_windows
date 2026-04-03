@@ -383,6 +383,8 @@ export interface AuthLoginPayload {
   email?: string
 }
 
+export interface AuthLogoutPayload {}
+
 export interface AppLaunchedPayload {}
 
 export interface AppQuitPayload {}
@@ -467,6 +469,7 @@ export interface TrackEventMap {
   // 设置与系统
   'settings.saved':             SettingsSavedPayload
   'auth.login':                 AuthLoginPayload
+  'auth.logout':                AuthLogoutPayload
   'app.launched':               AppLaunchedPayload
   'app.quit':                   AppQuitPayload
   'manual.time_added':          ManualTimeAddedPayload

@@ -5,6 +5,7 @@ import { ENABLE_STEP_BY_STEP } from '../components/WidgetView'
 import type { AIConfig } from '../services/ai'
 import { tracker } from '../services/tracker'
 import { aiCache } from '../services/ai-cache'
+import { getToday } from './useDateNavigation'
 
 interface UseFocusSessionParams {
   tasks: Task[]
@@ -80,6 +81,18 @@ export function useFocusSession({
     tracker.track('plan.first_micro', { taskId: task.id, taskTitle: task.title, microAction: microTask, source })
     tracker.track('session.started', { sessionId: sid, taskId: task.id, taskTitle: task.title })
     tracker.track('exec.micro_started', { sessionId: sid, taskId: task.id, taskTitle: task.title, microAction: microTask })
+
+    // 行为学习：记录第一步选择到 MemoryStore
+    window.electronAPI.loadMemoryStore().then(raw => {
+      const store = raw as any
+      if (!store.firstSteps) store.firstSteps = []
+      store.firstSteps.push({
+        taskTitle: task.title, microAction: microTask,
+        source, subtaskTitle: activeSubtask?.title, date: getToday(),
+      })
+      store.firstSteps = store.firstSteps.slice(-30)
+      window.electronAPI.saveMemoryStore(store)
+    }).catch(() => {})
   }, [tasks, setIsStandbyMode, setTasks]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleStandbyResume = useCallback((taskId: string) => {
@@ -196,6 +209,18 @@ export function useFocusSession({
     tracker.track('plan.first_micro', { taskId: task.id, taskTitle: task.title, microAction: microTask, source })
     tracker.track('session.started', { sessionId: sid, taskId: task.id, taskTitle: task.title })
     tracker.track('exec.micro_started', { sessionId: sid, taskId: task.id, taskTitle: task.title, microAction: microTask })
+
+    // 行为学习：记录第一步选择到 MemoryStore
+    window.electronAPI.loadMemoryStore().then(raw => {
+      const store = raw as any
+      if (!store.firstSteps) store.firstSteps = []
+      store.firstSteps.push({
+        taskTitle: task.title, microAction: microTask,
+        source, subtaskTitle: activeSubtask?.title, date: getToday(),
+      })
+      store.firstSteps = store.firstSteps.slice(-30)
+      window.electronAPI.saveMemoryStore(store)
+    }).catch(() => {})
 
     window.electronAPI.enterWidget()
     setIsWidgetMode(true)

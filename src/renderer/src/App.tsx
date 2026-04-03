@@ -79,24 +79,6 @@ export default function App() {
   // 防止切换日期时用旧 tasks 写入新日期
   const tasksLoadedForDate = useRef<string | null>(null)
 
-  // -------- 检查登录状态 --------
-  useEffect(() => {
-    const checkAuth = async () => {
-      try {
-        const { user } = await window.electronAPI.authGetUser()
-        if (user && typeof user === 'object') {
-          const u = user as AuthUser
-          setCurrentUser({ id: u.id, email: u.email })
-        }
-      } catch (e) {
-        console.error('[Auth] 检查登录状态失败:', e)
-      } finally {
-        setAuthChecking(false)
-      }
-    }
-    checkAuth()
-  }, [])
-
   // -------- 初始化追踪器 --------
   const trackerInited = useRef(false)
   useEffect(() => {
@@ -107,16 +89,22 @@ export default function App() {
     return () => tracker.destroy()
   }, [])
 
-  // -------- 初始化数据加载 --------
+  // -------- 启动初始化：认证 + 配置/资料/记忆 并行加载 --------
   useEffect(() => {
-    const initApp = async () => {
+    const bootstrap = async () => {
       try {
-        const [savedConfig, savedProfile, windowMode, memoryStore] = await Promise.all([
-          window.electronAPI.loadAIConfig(),
-          window.electronAPI.loadProfile(),
-          window.electronAPI.getWindowMode(),
+        const [authResult, savedConfig, savedProfile, windowMode, memoryStore] = await Promise.all([
+          window.electronAPI.authGetUser().catch(() => ({ user: null })),
+          window.electronAPI.loadAIConfig().catch(() => null),
+          window.electronAPI.loadProfile().catch(() => null),
+          window.electronAPI.getWindowMode().catch(() => null),
           window.electronAPI.loadMemoryStore().catch(() => null),
         ])
+
+        if (authResult.user && typeof authResult.user === 'object') {
+          const u = authResult.user as AuthUser
+          setCurrentUser({ id: u.id, email: u.email })
+        }
         if (savedConfig && savedConfig.apiKey) {
           setAIConfig({
             apiUrl: savedConfig.apiUrl || DEFAULT_AI_CONFIG.apiUrl,
@@ -145,20 +133,40 @@ export default function App() {
           setHasMemory((ms.sessions?.length || 0) > 0 || (ms.commitments?.length || 0) > 0)
         }
       } catch (e) {
-        console.error('初始化数据加载失败:', e)
+        console.error('启动初始化失败:', e)
+      } finally {
+        setAuthChecking(false)
       }
     }
-    initApp()
+    bootstrap()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // -------- 按日期加载任务 + 搬迁检测 --------
   useEffect(() => {
     tasksLoadedForDate.current = null
+
+    // 先用 localStorage 缓存立即渲染，减少白屏等待
+    const cacheKey = `tasksCache-${currentDate}`
+    try {
+      const cached = localStorage.getItem(cacheKey)
+      if (cached) {
+        const cachedTasks = JSON.parse(cached) as Task[]
+        if (cachedTasks.length > 0) {
+          setTasks(cachedTasks)
+          tasksLoadedForDate.current = currentDate
+          setLoading(false)
+        }
+      }
+    } catch { /* 缓存解析失败忽略 */ }
+
     const loadDailyTasks = async () => {
       try {
         const savedTasks = await window.electronAPI.loadTasks(currentDate)
         setTasks(savedTasks as Task[])
         tasksLoadedForDate.current = currentDate
+
+        // 更新缓存
+        try { localStorage.setItem(cacheKey, JSON.stringify(savedTasks)) } catch { /* quota */ }
 
         // Widget 模式恢复（仅首次加载）
         if (loading) {
@@ -238,6 +246,7 @@ export default function App() {
   const saveTasks = useCallback(async (date: string, newTasks: Task[]) => {
     try {
       await window.electronAPI.saveTasks(date, newTasks)
+      try { localStorage.setItem(`tasksCache-${date}`, JSON.stringify(newTasks)) } catch { /* quota */ }
     } catch (e) {
       console.error('保存任务失败:', e)
     }
@@ -326,6 +335,16 @@ export default function App() {
   const completedTasks = tasks.filter(t => t.completed)
   const scaffoldTask = focusSession.scaffoldTaskId
     ? tasks.find(t => t.id === focusSession.scaffoldTaskId) : null
+
+  // -------- 退出登录（必须在条件 return 之前，满足 hooks 顺序规则） --------
+  const handleLogout = useCallback(async () => {
+    tracker.track('auth.logout', {})
+    await window.electronAPI.authSignOut()
+    setCurrentUser(null)
+    setTasks([])
+    setAuthChecking(false)
+    try { localStorage.removeItem(`tasksCache-${currentDate}`) } catch { /* ignore */ }
+  }, [currentDate])
 
   // -------- 检查认证中 --------
   if (authChecking) {
@@ -428,6 +447,7 @@ export default function App() {
         onOpenMemory={() => { tracker.track('memory.opened', {}); setShowMemory(true) }}
         onOpenReflection={() => widgetMode.setShowReflection(true)}
         onEnterStandby={widgetMode.handleEnterStandby}
+        onLogout={handleLogout}
         hasProfile={hasProfile}
         hasMemory={hasMemory}
       />

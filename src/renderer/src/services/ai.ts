@@ -238,6 +238,90 @@ export function getRandomFallbackQuestion(): string {
   ]
 }
 
+// ===================== 行为记忆 → Prompt 构建 =====================
+
+/** 行为记录类型（与 storage.ts 中定义对齐） */
+interface FirstStepRecord { taskTitle: string; microAction: string; source: string; subtaskTitle?: string; date: string }
+interface StuckReasonRecord { taskTitle: string; microAction: string; reason: string; date: string }
+interface HintFeedbackRecord { taskTitle: string; hintText: string; feedback: 'up' | 'down'; date: string }
+
+/** 去重+计数：对文本数组进行频率统计，按出现次数降序排列 */
+function dedupeCount(items: { text: string; taskTitle: string }[]): { text: string; taskTitle: string; count: number }[] {
+  const map = new Map<string, { text: string; taskTitle: string; count: number }>()
+  for (const item of items) {
+    const key = item.text
+    const existing = map.get(key)
+    if (existing) {
+      existing.count++
+    } else {
+      map.set(key, { text: item.text, taskTitle: item.taskTitle, count: 1 })
+    }
+  }
+  return [...map.values()].sort((a, b) => b.count - a.count)
+}
+
+/**
+ * 从 MemoryStore.firstSteps 构建"启动第一步"行为记忆 prompt 片段
+ * AI 将结合任务标题自行判断相关性
+ */
+export function buildStartupHint(firstSteps: FirstStepRecord[]): string {
+  if (!firstSteps || firstSteps.length === 0) return ''
+  const items = firstSteps.map(r => ({ text: r.microAction, taskTitle: r.taskTitle }))
+  const ranked = dedupeCount(items).slice(0, 8)
+  if (ranked.length === 0) return ''
+
+  const lines = ranked.map(r =>
+    r.count > 1
+      ? `- 「${r.taskTitle}」→ "${r.text}" (选过${r.count}次)`
+      : `- 「${r.taskTitle}」→ "${r.text}"`
+  )
+  return `\n用户历史上选过的第一步（按频率排序，请参考相似任务的偏好来生成建议）：\n${lines.join('\n')}`
+}
+
+/**
+ * 从 MemoryStore.stuckReasons + hintFeedback 构建"卡住求助"行为记忆 prompt 片段
+ *
+ * 两部分：
+ * 1. stuck_a（卡点预测）：用户历史卡点原因 → 让 AI 更准确地预测
+ * 2. stuck_b（反思建议）：用户踩过 thumbs-down 的建议 → 让 AI 规避
+ */
+export function buildStuckHint(
+  stuckReasons: StuckReasonRecord[],
+  hintFeedback: HintFeedbackRecord[],
+): { forChips: string; forReflection: string } {
+  let forChips = ''
+  let forReflection = ''
+
+  // stuck_a: 历史卡点原因
+  if (stuckReasons && stuckReasons.length > 0) {
+    const items = stuckReasons.map(r => ({ text: r.reason, taskTitle: r.taskTitle }))
+    const ranked = dedupeCount(items).slice(0, 6)
+    if (ranked.length > 0) {
+      const lines = ranked.map(r =>
+        r.count > 1
+          ? `- 「${r.taskTitle}」→ "${r.text}" (${r.count}次)`
+          : `- 「${r.taskTitle}」→ "${r.text}"`
+      )
+      forChips = `\n用户历史上遇到过的卡点（按频率排序，请参考相似任务的卡点来预测）：\n${lines.join('\n')}`
+    }
+  }
+
+  // stuck_b: 不喜欢的建议
+  if (hintFeedback && hintFeedback.length > 0) {
+    const disliked = hintFeedback.filter(r => r.feedback === 'down')
+    if (disliked.length > 0) {
+      const items = disliked.map(r => ({ text: r.hintText, taskTitle: r.taskTitle }))
+      const ranked = dedupeCount(items).slice(0, 4)
+      if (ranked.length > 0) {
+        const lines = ranked.map(r => `- "${r.text}"`)
+        forReflection = `\n用户不喜欢的建议类型（请避免类似表述）：\n${lines.join('\n')}`
+      }
+    }
+  }
+
+  return { forChips, forReflection }
+}
+
 // ===================== 核心函数 =====================
 
 /** 微动作建议芯片（含安抚说明） */
@@ -289,23 +373,22 @@ export async function generateMicroActions(
   config?: AIConfig,
   subtaskTitle?: string,
   understandingContext?: string,
+  memoryHint?: string,
 ): Promise<{ chips: MicroActionChip[]; error?: string }> {
   const base = config ?? DEFAULT_AI_CONFIG
   if (!base.apiKey || !base.modelId) return { chips: [] }
-  // ★ 第一步建议用轻量模型，响应更快
   const cfg: AIConfig = { ...base, modelId: 'doubao-seed-2-0-mini-260215' }
 
-  // ★ 精简 prompt：减少输入 token 以降低首 token 延迟
   const systemPrompt =
     '你是ADHD启动教练。生成2个极小的具体物理动作，5-30秒可完成，不要抽象思考。' +
     '每个动作≤15字，附≤15字的鼓励。温和语气。' +
-    '返回JSON数组：[{"action":"打开空白文档","note":"先准备好工具就够了"}]。只返回JSON。'
+    '返回JSON数组：[{"action":"打开空白文档","note":"先准备好工具就够了"}]。只返回JSON。' +
+    (memoryHint || '')
 
   const taskContext = subtaskTitle
     ? `大任务：${taskTitle}\n当前子任务：${subtaskTitle}`
     : `任务：${taskTitle}`
 
-  // ★ 截断 understandingContext，只保留最近 100 字以控制输入 token
   const trimmedCtx = understandingContext
     ? understandingContext.length > 100
       ? understandingContext.slice(-100)
@@ -317,7 +400,6 @@ export async function generateMicroActions(
     ? `${taskContext}${contextBlock}\n上一步完成了：${lastStep}\n请给出紧接着的2个微动作建议。`
     : `${taskContext}${contextBlock}\n请给出开始这个${subtaskTitle ? '子任务' : '任务'}时最先要做的2个微动作建议。`
 
-  // ★ max_tokens 100 足够 2 个 JSON 对象；temperature 0.3 加速收敛
   const { content, error } = await callLLM(systemPrompt, userPrompt, cfg, 100, 0.3)
   if (error) return { chips: [], error }
 
@@ -334,6 +416,7 @@ export async function generateStuckChips(
   taskTitle: string,
   microTask: string,
   config: AIConfig,
+  memoryHint?: string,
 ): Promise<{ chips: string[]; error?: string }> {
   if (!config.apiKey || !config.modelId) return { chips: [] }
 
@@ -341,7 +424,8 @@ export async function generateStuckChips(
     '你是一个 ADHD 专注力急救助手。用户在执行一个微任务时卡住了。' +
     '请根据任务上下文，猜测用户最可能遇到的2个具体物理卡点（具体的困难场景，不要抽象）。' +
     '每个卡点用一个短问句描述（10-20字），用JSON数组格式返回，如 ["群消息太多翻不到？","忘了是谁发的了？"]。' +
-    '只返回JSON数组，不要其他任何内容。'
+    '只返回JSON数组，不要其他任何内容。' +
+    (memoryHint || '')
 
   const userPrompt = `大任务：${taskTitle}\n当前微任务：${microTask}\n请预测2个具体卡点。`
 
@@ -421,6 +505,7 @@ export async function generateStuckReflection(
   microTask: string,
   userDifficulty: string,
   config: AIConfig,
+  memoryHint?: string,
 ): Promise<{ reflection: StuckReflectionResult | null; error?: string }> {
   if (!config.apiKey || !config.modelId) {
     return { reflection: null }
@@ -447,7 +532,8 @@ export async function generateStuckReflection(
     '  hints: ["先只清理桌面？其他的之后再说","拿个袋子，先把明显的垃圾扔掉？"]\n\n' +
     '- cheer：简短有力，和任务相关\n' +
     '- 总字数 ≤ 90\n' +
-    '- 只返回 JSON'
+    '- 只返回 JSON' +
+    (memoryHint || '')
 
   const userPrompt =
     `任务：${taskTitle}\n当前步骤：${microTask}\n用户描述的困难：${userDifficulty}`

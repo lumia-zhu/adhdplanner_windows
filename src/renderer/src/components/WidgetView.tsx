@@ -17,12 +17,13 @@
 import { useState, useEffect, useRef } from 'react'
 import type { Task } from '../types'
 import type { AIConfig, MicroActionChip } from '../services/ai'
-import { generateStuckChips, generatePivotResponse, generateStuckReflection } from '../services/ai'
+import { generateStuckChips, generatePivotResponse, generateStuckReflection, buildStuckHint } from '../services/ai'
 import type { PivotResult, StuckReflectionResult } from '../services/ai'
 import { aiCache } from '../services/ai-cache'
 import { tracker } from '../services/tracker'
 import { triggerEffect } from '../effects'
 import AILoadingTips from './AILoadingTips'
+import { getToday } from '../hooks/useDateNavigation'
 
 // ===================== 常量 =====================
 
@@ -289,7 +290,11 @@ function FocusDynamicBar({
       setStuckInput('')
       if (aiConfig.apiKey && aiConfig.modelId) {
         setLoadingStuck(true)
-        generateStuckChips(taskTitle, currentMicroTask, aiConfig)
+        // 加载行为记忆 → 构建卡点预测 hint
+        window.electronAPI.loadMemoryStore()
+          .then(raw => buildStuckHint((raw as any).stuckReasons ?? [], (raw as any).hintFeedback ?? []).forChips)
+          .catch(() => '')
+          .then(hint => generateStuckChips(taskTitle, currentMicroTask, aiConfig, hint || undefined))
           .then(({ chips: c }) => setStuckChips(c))
           .finally(() => setLoadingStuck(false))
       }
@@ -382,6 +387,22 @@ function FocusDynamicBar({
         action,
       })
 
+      // 行为学习：记录反馈到 MemoryStore（仅 select/switch 时写入，clear 不写）
+      if (action !== 'clear') {
+        window.electronAPI.loadMemoryStore().then(raw => {
+          const store = raw as any
+          if (!store.hintFeedback) store.hintFeedback = []
+          store.hintFeedback.push({
+            taskTitle: session.taskTitle,
+            hintText,
+            feedback,
+            date: getToday(),
+          })
+          store.hintFeedback = store.hintFeedback.slice(-30)
+          window.electronAPI.saveMemoryStore(store)
+        }).catch(() => {})
+      }
+
       return next
     })
   }
@@ -428,14 +449,31 @@ function FocusDynamicBar({
       reasonSource,
     })
 
+    // 行为学习：记录卡住原因到 MemoryStore
+    window.electronAPI.loadMemoryStore().then(raw => {
+      const store = raw as any
+      if (!store.stuckReasons) store.stuckReasons = []
+      store.stuckReasons.push({
+        taskTitle: session.taskTitle,
+        microAction: currentMicroTask,
+        reason: reason.trim(),
+        date: getToday(),
+      })
+      store.stuckReasons = store.stuckReasons.slice(-30)
+      window.electronAPI.saveMemoryStore(store)
+    }).catch(() => {})
+
     // 切换到 stuck_b 阶段（显示反思提示）
     onStuckToB()
 
-    // 请求 AI 生成反思提示
+    // 请求 AI 生成反思提示（注入行为记忆中的不喜欢建议）
     setLoadingReflection(true)
     setReflectionData(null)
 
-    generateStuckReflection(taskTitle, currentMicroTask, reason.trim(), aiConfig)
+    window.electronAPI.loadMemoryStore()
+      .then(raw => buildStuckHint([], (raw as any).hintFeedback ?? []).forReflection)
+      .catch(() => '')
+      .then(hint => generateStuckReflection(taskTitle, currentMicroTask, reason.trim(), aiConfig, hint || undefined))
       .then(result => {
         if (result.reflection) {
           setReflectionData(result.reflection)

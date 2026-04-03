@@ -434,7 +434,8 @@ const ReflectionChat = forwardRef<ReflectionChatHandle, ReflectionChatProps>(fun
                 summary: result.summary,
                 createdAt: Date.now(),
               })
-              store.sessions = sessions
+              // 截断为最近 20 条，防止无限增长
+              store.sessions = sessions.slice(-20)
             }
 
             if (result.commitments.length > 0) {

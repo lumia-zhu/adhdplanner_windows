@@ -446,7 +446,7 @@ app.whenReady().then(async () => {
     validateWidgetBounds()
   })
 
-  // 系统唤醒 / 解锁后恢复窗口状态并强制重载页面（防止 GPU 上下文丢失导致白屏）
+  // 系统唤醒 / 解锁后恢复窗口状态；仅在检测到白屏时才 reload
   const handleWakeUp = (source: string) => {
     if (!S.mainWindow) return
     console.log(`[Power] ${source} detected, restoring window`)
@@ -459,13 +459,26 @@ app.whenReady().then(async () => {
         startWidgetHeartbeat()
       }
       win.webContents.setZoomFactor(S.uiScale)
-      // 延迟 reload 防止 GPU 上下文丢失后白屏
-      setTimeout(() => {
-        if (S.mainWindow && !S.mainWindow.isDestroyed()) {
-          console.log(`[Power] ${source}: reloading renderer to recover from potential blank screen`)
-          S.mainWindow.webContents.reload()
+
+      // 检测页面是否存活：查询 #root 子元素数量，为 0 则判定白屏
+      setTimeout(async () => {
+        if (!S.mainWindow || S.mainWindow.isDestroyed()) return
+        try {
+          const childCount = await S.mainWindow.webContents
+            .executeJavaScript('document.getElementById("root")?.childElementCount ?? 0')
+          if (childCount === 0) {
+            console.log(`[Power] ${source}: blank screen detected (root has 0 children), reloading`)
+            S.mainWindow.webContents.reload()
+          } else {
+            console.log(`[Power] ${source}: page alive (root has ${childCount} children), skip reload`)
+          }
+        } catch {
+          console.log(`[Power] ${source}: executeJavaScript failed, reloading as fallback`)
+          if (S.mainWindow && !S.mainWindow.isDestroyed()) {
+            S.mainWindow.webContents.reload()
+          }
         }
-      }, 500)
+      }, 800)
     })
     validateWidgetBounds()
   }

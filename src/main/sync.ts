@@ -87,32 +87,40 @@ async function pushToCloud(userId: string, entity: string, key: string): Promise
       const date = key
       const tasks = loadTasks(date) as Array<Record<string, unknown>>
 
-      const { error: delErr } = await sb
-        .from('tasks')
-        .delete()
-        .eq('user_id', userId)
-        .eq('date', date)
-      if (delErr) throw delErr
+      const rows = tasks.map(t => ({
+        id: String(t.id || ''),
+        user_id: userId,
+        date,
+        title: String(t.title || ''),
+        note: String(t.note || ''),
+        priority: String(t.priority || 'medium'),
+        completed: !!t.completed,
+        subtasks: t.subtasks ?? [],
+        paused_session: t.pausedSession ?? null,
+        carried_from: t.carriedFrom ? String(t.carriedFrom) : null,
+        focus_duration: typeof t.focusDuration === 'number' ? t.focusDuration : 0,
+        created_at: typeof t.createdAt === 'number' ? t.createdAt : null,
+      }))
 
-      if (tasks.length > 0) {
-        const rows = tasks.map(t => ({
-          id: String(t.id || ''),
-          user_id: userId,
-          date,
-          title: String(t.title || ''),
-          note: String(t.note || ''),
-          priority: String(t.priority || 'medium'),
-          completed: !!t.completed,
-          subtasks: t.subtasks ?? [],
-          paused_session: t.pausedSession ?? null,
-          carried_from: t.carriedFrom ? String(t.carriedFrom) : null,
-          focus_duration: typeof t.focusDuration === 'number' ? t.focusDuration : 0,
-          created_at: typeof t.createdAt === 'number' ? t.createdAt : null,
-        }))
-        const { error } = await sb.from('tasks').insert(rows)
+      // upsert 当前任务（新增 + 修改）
+      if (rows.length > 0) {
+        const { error } = await sb.from('tasks').upsert(rows, { onConflict: 'user_id,date,id' })
         if (error) throw error
       }
-      console.log(`[Sync] tasks/${date}: ${tasks.length} rows`)
+
+      // 删除本地已移除的任务
+      const localIds = new Set(rows.map(r => r.id))
+      const { data: remote } = await sb
+        .from('tasks').select('id')
+        .eq('user_id', userId).eq('date', date)
+      const toDelete = (remote ?? []).filter(r => !localIds.has(r.id)).map(r => r.id)
+      if (toDelete.length > 0) {
+        await sb.from('tasks').delete()
+          .eq('user_id', userId).eq('date', date)
+          .in('id', toDelete)
+      }
+
+      console.log(`[Sync] tasks/${date}: ${rows.length} upserted, ${toDelete.length} deleted`)
       break
     }
 
@@ -173,21 +181,27 @@ async function pushToCloud(userId: string, entity: string, key: string): Promise
       const records = loadActivityData(date)
       if (records.length === 0) break
 
-      const rows = records.map(r => ({
-        user_id: userId,
-        date,
-        ts: r.ts,
-        idle: r.idle,
-        active_samples: r.activeSamples,
-        total_samples: r.totalSamples,
-        active_ratio: r.activeRatio,
-      }))
+      // 查询已有的 ts，只插入新增的记录
+      const { data: existing } = await sb
+        .from('activity_records').select('ts')
+        .eq('user_id', userId).eq('date', date)
+      const existingTs = new Set((existing ?? []).map(r => r.ts))
 
-      // 先删旧的再插入，避免重复
-      await sb.from('activity_records').delete().eq('user_id', userId).eq('date', date)
-      const { error } = await sb.from('activity_records').insert(rows)
-      if (error) throw error
-      console.log(`[Sync] activity/${date}: ${rows.length} rows`)
+      const newRows = records
+        .filter(r => !existingTs.has(r.ts))
+        .map(r => ({
+          user_id: userId, date,
+          ts: r.ts, idle: r.idle,
+          active_samples: r.activeSamples,
+          total_samples: r.totalSamples,
+          active_ratio: r.activeRatio,
+        }))
+
+      if (newRows.length > 0) {
+        const { error } = await sb.from('activity_records').insert(newRows)
+        if (error) throw error
+      }
+      console.log(`[Sync] activity/${date}: ${newRows.length} new / ${records.length} total`)
       break
     }
 
@@ -196,19 +210,27 @@ async function pushToCloud(userId: string, entity: string, key: string): Promise
       const events = loadTrackerEvents(date) as Array<Record<string, unknown>>
       if (events.length === 0) break
 
-      const rows = events.map(ev => ({
-        user_id: userId,
-        date,
-        event_id: String(ev.id || ''),
-        event_type: String(ev.type || ''),
-        timestamp: typeof ev.timestamp === 'number' ? ev.timestamp : null,
-        payload: ev.payload ?? null,
-      }))
+      // 查询已有的 event_id，只插入新增的事件
+      const { data: existing } = await sb
+        .from('tracker_events').select('event_id')
+        .eq('user_id', userId).eq('date', date)
+      const existingIds = new Set((existing ?? []).map(r => r.event_id))
 
-      await sb.from('tracker_events').delete().eq('user_id', userId).eq('date', date)
-      const { error } = await sb.from('tracker_events').insert(rows)
-      if (error) throw error
-      console.log(`[Sync] tracker/${date}: ${rows.length} rows`)
+      const newRows = events
+        .filter(ev => !existingIds.has(String(ev.id || '')))
+        .map(ev => ({
+          user_id: userId, date,
+          event_id: String(ev.id || ''),
+          event_type: String(ev.type || ''),
+          timestamp: typeof ev.timestamp === 'number' ? ev.timestamp : null,
+          payload: ev.payload ?? null,
+        }))
+
+      if (newRows.length > 0) {
+        const { error } = await sb.from('tracker_events').insert(newRows)
+        if (error) throw error
+      }
+      console.log(`[Sync] tracker/${date}: ${newRows.length} new / ${events.length} total`)
       break
     }
 
