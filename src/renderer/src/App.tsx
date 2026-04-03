@@ -98,7 +98,10 @@ export default function App() {
   }, [])
 
   // -------- 初始化追踪器 --------
+  const trackerInited = useRef(false)
   useEffect(() => {
+    if (trackerInited.current) return
+    trackerInited.current = true
     tracker.init()
     tracker.track('app.launched', {})
     return () => tracker.destroy()

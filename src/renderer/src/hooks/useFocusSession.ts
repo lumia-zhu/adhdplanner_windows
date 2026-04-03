@@ -102,11 +102,12 @@ export function useFocusSession({
       })
     }
     if (session) {
+      const segDur = Math.floor((Date.now() - session.sessionStartTime) / 1000)
       tracker.track('session.ended', {
         sessionId: sessionIdRef.current,
         taskId: session.taskId,
         taskTitle: session.taskTitle,
-        totalDurationSeconds: Math.floor((Date.now() - session.sessionStartTime) / 1000),
+        totalDurationSeconds: segDur + (session.elapsedOffset || 0),
         completedMicroSteps: session.microHistory.length,
         endReason: 'exit',
       })
@@ -204,13 +205,14 @@ export function useFocusSession({
 
   const handleMicroComplete = useCallback(() => {
     if (!session) return
-    const elapsed = Math.floor((Date.now() - session.startTime) / 1000)
+    const segmentElapsed = Math.floor((Date.now() - session.startTime) / 1000)
+    const totalElapsed = segmentElapsed + (session.elapsedOffset || 0)
     tracker.track('exec.micro_completed', {
       sessionId: sessionIdRef.current,
       taskId: session.taskId,
       taskTitle: session.taskTitle,
       microAction: session.currentMicroTask,
-      actualSeconds: elapsed,
+      actualSeconds: totalElapsed,
     })
 
     if (!ENABLE_STEP_BY_STEP) {
@@ -340,7 +342,8 @@ export function useFocusSession({
     }
 
     const flowDuration = Math.floor((Date.now() - session.startTime) / 1000)
-    const sessionDuration = Math.floor((Date.now() - session.sessionStartTime) / 1000)
+    const segmentDuration = Math.floor((Date.now() - session.sessionStartTime) / 1000)
+    const totalDuration = segmentDuration + (session.elapsedOffset || 0)
     tracker.track('exec.flow_ended', {
       sessionId: sessionIdRef.current, taskId: session.taskId,
       taskTitle: session.taskTitle, flowDurationSeconds: flowDuration, endReason: 'task_done',
@@ -350,7 +353,7 @@ export function useFocusSession({
     })
     tracker.track('session.ended', {
       sessionId: sessionIdRef.current, taskId: session.taskId,
-      taskTitle: session.taskTitle, totalDurationSeconds: sessionDuration,
+      taskTitle: session.taskTitle, totalDurationSeconds: totalDuration,
       completedMicroSteps: session.microHistory.length, endReason: 'task_done',
     })
 
@@ -388,13 +391,14 @@ export function useFocusSession({
 
     if (allDone) {
       setTimeout(() => {
-        const elapsed = Math.floor((Date.now() - session.sessionStartTime) / 1000)
+        const segDur = Math.floor((Date.now() - session.sessionStartTime) / 1000)
+        const totalDur = segDur + (session.elapsedOffset || 0)
         tracker.track('session.macro_completed', {
           taskId: session.taskId, taskTitle: session.taskTitle, completedVia: 'subtasks_all_done',
         })
         tracker.track('session.ended', {
           sessionId: sessionIdRef.current, taskId: session.taskId,
-          taskTitle: session.taskTitle, totalDurationSeconds: elapsed,
+          taskTitle: session.taskTitle, totalDurationSeconds: totalDur,
           completedMicroSteps: session.microHistory.length, endReason: 'task_done',
         })
         setTasks(prev => prev.map(t =>
@@ -430,12 +434,7 @@ export function useFocusSession({
     tracker.track('session.paused', {
       sessionId: sessionIdRef.current, taskId: session.taskId,
       taskTitle: session.taskTitle, microAction: session.currentMicroTask,
-      elapsedSeconds: segmentDuration, completedMicroSteps: session.microHistory.length,
-    })
-    tracker.track('session.ended', {
-      sessionId: sessionIdRef.current, taskId: session.taskId,
-      taskTitle: session.taskTitle, totalDurationSeconds: segmentDuration,
-      completedMicroSteps: session.microHistory.length, endReason: 'pause',
+      elapsedSeconds: totalDisplayed, completedMicroSteps: session.microHistory.length,
     })
 
     setTasks(prev => prev.map(t =>
@@ -454,7 +453,7 @@ export function useFocusSession({
     if (!task || !task.pausedSession) return
 
     const snap = task.pausedSession
-    const sid = `${snap.sessionId}-r${Date.now().toString(36).slice(-4)}`
+    const sid = snap.sessionId
     sessionIdRef.current = sid
 
     const now = Date.now()
@@ -478,9 +477,9 @@ export function useFocusSession({
       sessionId: sid, originalSessionId: snap.sessionId,
       taskId: task.id, taskTitle: task.title, microAction: snap.currentMicroTask,
       pausedDurationSeconds: Math.floor((Date.now() - snap.pausedAt) / 1000),
+      elapsedBeforePause: snap.elapsedBeforePause,
       completedMicroSteps: snap.microHistory.length,
     })
-    tracker.track('session.started', { sessionId: sid, taskId: task.id, taskTitle: task.title })
 
     setTasks(prev => prev.map(t =>
       t.id === taskId ? { ...t, pausedSession: null } : t,

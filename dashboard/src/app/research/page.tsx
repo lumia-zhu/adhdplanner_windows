@@ -41,16 +41,26 @@ export default function ResearchPage() {
   useEffect(() => {
     async function load() {
       const idSet = new Set<string>()
-      const [pRes, eRes, tRes] = await Promise.all([
+      const [pRes, eRes, tRes, emailRes] = await Promise.all([
         supabase.from('profiles').select('user_id'),
         supabase.from('tracker_events').select('user_id'),
         supabase.from('tasks').select('user_id'),
+        supabase.from('user_emails').select('user_id, email'),
       ])
       for (const r of pRes.data ?? []) idSet.add(r.user_id)
       for (const r of eRes.data ?? []) idSet.add(r.user_id)
       for (const r of tRes.data ?? []) idSet.add(r.user_id)
 
-      setUsers(Array.from(idSet).map(uid => ({ user_id: uid, email: uid.slice(0, 12) + '...' })))
+      const emailMap = new Map<string, string>()
+      for (const r of emailRes.data ?? []) {
+        const name = (r.email as string)?.replace(/@app\.local$/, '') ?? ''
+        if (name) emailMap.set(r.user_id, name)
+      }
+
+      setUsers(Array.from(idSet).map(uid => ({
+        user_id: uid,
+        email: emailMap.get(uid) ?? uid.slice(0, 12) + '...',
+      })))
     }
     load()
   }, [])
@@ -189,16 +199,16 @@ export default function ResearchPage() {
               <ParticipantsTab events={filteredEvents} tasks={filteredTasks} users={users} />
             )}
             {activeTab === 'sessions' && (
-              <SessionsTab events={filteredEvents} />
+              <SessionsTab events={filteredEvents} users={users} />
             )}
             {activeTab === 'stuck' && (
-              <StuckTab events={filteredEvents} />
+              <StuckTab events={filteredEvents} users={users} />
             )}
             {activeTab === 'reflections' && (
-              <ReflectionsTab events={filteredEvents} sessions={filteredSessions} />
+              <ReflectionsTab events={filteredEvents} sessions={filteredSessions} users={users} />
             )}
             {activeTab === 'daily' && (
-              <DailyTab events={filteredEvents} tasks={filteredTasks} />
+              <DailyTab events={filteredEvents} tasks={filteredTasks} users={users} />
             )}
             {activeTab === 'timeline' && (
               <UserTimelineTab

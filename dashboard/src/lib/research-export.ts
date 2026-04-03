@@ -59,6 +59,21 @@ function fmtMin(sec: number): number {
   return Math.round(sec / 60)
 }
 
+/** 将 rows 中的 userId 字段替换为可读用户名 */
+export function resolveUserNames(
+  rows: Row[],
+  users: Array<{ user_id: string; email: string }>
+): Row[] {
+  const map = new Map<string, string>()
+  for (const u of users) map.set(u.user_id, u.email)
+  return rows.map(r => {
+    if (typeof r.userId === 'string' && map.has(r.userId)) {
+      return { ...r, userId: map.get(r.userId)! }
+    }
+    return r
+  })
+}
+
 function pStr(e: RawEvent, k: string): string {
   return String(e.payload?.[k] ?? '')
 }
@@ -121,12 +136,16 @@ export function buildParticipantsSummary(
     if (t.completed) u.taskDone++
   }
 
+  const emailMap = new Map<string, string>()
+  for (const u of users) emailMap.set(u.user_id, u.email)
+
   const rows: Row[] = []
   let idx = 0
   for (const [uid, u] of userMap) {
     idx++
     rows.push({
       pNum: `P${idx}`, userId: uid,
+      userName: emailMap.get(uid) ?? uid.slice(0, 12) + '...',
       activeDays: u.activeDays.size,
       sessions: u.sessionCount,
       focusMin: fmtMin(u.focusSec),
@@ -156,6 +175,7 @@ export function buildParticipantsSummary(
     table: {
       columns: [
         { key: 'pNum', label: 'P#' },
+        { key: 'userName', label: '用户名' },
         { key: 'activeDays', label: '活跃天数' },
         { key: 'sessions', label: '会话数' },
         { key: 'focusMin', label: '专注(分钟)' },

@@ -37,27 +37,31 @@ export default function DashboardPage() {
   // ------ 加载用户列表 ------
   useEffect(() => {
     async function loadUsers() {
-      // 从多个表收集所有出现过的 user_id
       const userIdSet = new Set<string>()
 
-      const [profileRes, evtRes, taskRes] = await Promise.all([
+      const [profileRes, evtRes, taskRes, emailRes] = await Promise.all([
         supabase.from('profiles').select('user_id'),
         supabase.from('tracker_events').select('user_id'),
         supabase.from('tasks').select('user_id'),
+        supabase.from('user_emails').select('user_id, email'),
       ])
 
       for (const row of profileRes.data ?? []) userIdSet.add(row.user_id)
       for (const row of evtRes.data ?? []) userIdSet.add(row.user_id)
       for (const row of taskRes.data ?? []) userIdSet.add(row.user_id)
 
-      console.log('[Dashboard] 发现用户数:', userIdSet.size, Array.from(userIdSet))
+      const emailMap = new Map<string, string>()
+      for (const r of emailRes.data ?? []) {
+        const name = (r.email as string)?.replace(/@app\.local$/, '') ?? ''
+        if (name) emailMap.set(r.user_id, name)
+      }
 
-      const userList = Array.from(userIdSet).map(uid => ({
+      console.log('[Dashboard] 发现用户数:', userIdSet.size)
+
+      setUsers(Array.from(userIdSet).map(uid => ({
         user_id: uid,
-        email: uid.slice(0, 12) + '...',
-      }))
-
-      setUsers(userList)
+        email: emailMap.get(uid) ?? uid.slice(0, 12) + '...',
+      })))
     }
     loadUsers()
   }, [])

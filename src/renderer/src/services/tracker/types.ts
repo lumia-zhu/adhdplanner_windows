@@ -379,7 +379,9 @@ export interface SettingsSavedPayload {
   settingType: 'profile' | 'ai_config'
 }
 
-export interface AuthLoginPayload {}
+export interface AuthLoginPayload {
+  email?: string
+}
 
 export interface AppLaunchedPayload {}
 
