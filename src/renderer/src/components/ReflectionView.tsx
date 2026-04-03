@@ -24,6 +24,7 @@ import { getActiveRatio } from './ActivityHeatmap'
 import ActivityRhythmChart from './ActivityRhythmChart'
 import InteractiveActivityHeatmap, { computeActiveTimeRange } from './InteractiveActivityHeatmap'
 import ReflectionChat from './ReflectionChat'
+import type { ReflectionChatHandle } from './ReflectionChat'
 import ManualTimeEntry from './ManualTimeEntry'
 import MiniCalendar from './MiniCalendar'
 import WeekView from './WeekView'
@@ -162,10 +163,12 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, onClose }: 
 
   // ---- 侧边栏状态 ----
   const [chatOpen, setChatOpen] = useState(false)
-  const [chatWidth, setChatWidth] = useState(400) // 侧边栏初始宽度
-  const [screenshotBase64, setScreenshotBase64] = useState<string | null>(null) // 仪表板截图
-  const dataPanelRef = useRef<HTMLDivElement>(null) // 数据面板引用（用于截图）
+  const [chatWidth, setChatWidth] = useState(400)
+  const [screenshotBase64, setScreenshotBase64] = useState<string | null>(null)
+  const dataPanelRef = useRef<HTMLDivElement>(null)
   const [manualEntryExpanded, setManualEntryExpanded] = useState(false)
+  const chatRef = useRef<ReflectionChatHandle>(null)
+  const [closingAfterSave, setClosingAfterSave] = useState(false)
 
   // ---- 任务 hover 联动热力图 ----
   const [hoveredTask, setHoveredTask] = useState<string | null>(null)
@@ -797,8 +800,13 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, onClose }: 
     closeChat()
   }, [closeChat])
 
-  // 关闭反思页面时也要恢复窗口大小
-  const handleClose = useCallback(() => {
+  // 关闭反思页面：有对话时先保存记忆再关闭
+  const handleClose = useCallback(async () => {
+    if (hadChatRef.current && chatRef.current) {
+      setClosingAfterSave(true)
+      await chatRef.current.triggerEnd()
+      hadEndedProperlyRef.current = true
+    }
     if (chatOpen) {
       window.electronAPI.resizeMainWindow(MAIN_WIDTH, MAIN_HEIGHT)
     }
@@ -1220,6 +1228,7 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, onClose }: 
                 </div>
               ) : activeSystemPrompt ? (
                 <ReflectionChat
+                  ref={chatRef}
                   key={viewMode === 'week' ? `week-${weekEndDate}` : `day-${selectedDate}`}
                   systemPrompt={activeSystemPrompt}
                   aiConfig={aiConfig}

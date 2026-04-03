@@ -5,7 +5,7 @@
  * 对话历史在组件内管理
  */
 
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useImperativeHandle, forwardRef } from 'react'
 import { tracker } from '../services/tracker'
 import type { AIConfig, ReflectionMessage, MessageContentPart } from '../services/ai'
 import { chatReflectionStream, extractMemoryFromChat } from '../services/ai'
@@ -120,6 +120,11 @@ interface SavedReflectionChat {
   savedAt: number
 }
 
+export interface ReflectionChatHandle {
+  /** 外部触发结束反思收尾流程（保存记忆等），完成后 resolve */
+  triggerEnd: () => Promise<void>
+}
+
 interface ReflectionChatProps {
   /** 由 buildReflectionSystemPrompt 构建的系统提示词 */
   systemPrompt: string
@@ -141,7 +146,7 @@ interface ReflectionChatProps {
   onEndChat?: () => void
 }
 
-export default function ReflectionChat({
+const ReflectionChat = forwardRef<ReflectionChatHandle, ReflectionChatProps>(function ReflectionChat({
   systemPrompt,
   aiConfig,
   mode = 'daily',
@@ -151,7 +156,7 @@ export default function ReflectionChat({
   onChartRef,
   onComplete,
   onEndChat,
-}: ReflectionChatProps) {
+}, ref) {
   const [bubbles, setBubbles] = useState<ChatBubble[]>([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
@@ -386,8 +391,8 @@ export default function ReflectionChat({
     setRestartKey(k => k + 1)
   }, [storageKey])
 
-  // ---- 结束反思（带收尾流程） ----
-  const handleEndChat = useCallback(async () => {
+  // ---- 核心收尾逻辑（保存记忆、标记 session） ----
+  const doEndChat = useCallback(async () => {
     if (endingState !== 'idle') return
     setEndingState('saving')
 
@@ -405,9 +410,8 @@ export default function ReflectionChat({
         onComplete(lastAssistant.content)
       }
 
-      // 从对话中提取记忆（带 3 秒超时保护）
-      const session = rawSessionRef.current
-      const chatMsgs = session.messages.filter(m => m.content.length > 0)
+      const sess = rawSessionRef.current
+      const chatMsgs = sess.messages.filter(m => m.content.length > 0)
 
       if (chatMsgs.length >= 2) {
         const extractPromise = extractMemoryFromChat(chatMsgs, aiConfig)
@@ -456,18 +460,26 @@ export default function ReflectionChat({
         }
       }
 
-      // 标记 raw session 为已处理
-      session.status = 'processed'
-      const key = storageKey || session.date
-      window.electronAPI.saveRawSession(key, session).catch(() => {})
+      sess.status = 'processed'
+      const key = storageKey || sess.date
+      window.electronAPI.saveRawSession(key, sess).catch(() => {})
 
       setEndingState('saved')
-      setTimeout(() => { onEndChat?.() }, 600)
     } catch (e) {
       console.error('[ReflectionChat] 结束反思收尾失败:', e)
-      onEndChat?.()
     }
-  }, [endingState, bubbles, onComplete, onEndChat, aiConfig, mode, selectedDate, storageKey])
+  }, [endingState, bubbles, onComplete, aiConfig, mode, selectedDate, storageKey])
+
+  // ---- 按钮点击：收尾 + 延迟关闭侧边栏 ----
+  const handleEndChat = useCallback(async () => {
+    await doEndChat()
+    setTimeout(() => { onEndChat?.() }, 600)
+  }, [doEndChat, onEndChat])
+
+  // ---- 暴露给父组件的 ref 方法 ----
+  useImperativeHandle(ref, () => ({
+    triggerEnd: doEndChat,
+  }), [doEndChat])
 
   // 初始化：发送第一条 AI 消息
   useEffect(() => {
@@ -702,4 +714,6 @@ export default function ReflectionChat({
       </div>
     </div>
   )
-}
+})
+
+export default ReflectionChat
