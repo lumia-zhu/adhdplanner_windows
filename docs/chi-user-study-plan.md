@@ -317,6 +317,14 @@
   - 设计原则
   - GenAI-based metacognitive scaffolding 的设计边界
 
+## 相关文档
+
+- [行为数据在论文中的呈现框架](./behavioral-data-presentation.md)：行为日志的定位、用法和呈现建议
+- [RQ 与数据分析方向对照](./rq-data-analysis-mapping.md)：RQ 对应的数据收集与分析方向详表
+- [Related Work 结构框架](./related-work-structure.md)：三个小节的划分、内部逻辑和节奏设计
+
+---
+
 ## 下一步可继续展开的部分
 
 后续可以在这份文档基础上继续补充：
