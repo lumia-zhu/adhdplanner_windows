@@ -7,7 +7,6 @@
  */
 
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
-import html2canvas from 'html2canvas'
 import type { Task } from '../types'
 import type { AIConfig } from '../services/ai'
 import { buildReflectionSystemPrompt, buildWeeklyReflectionSystemPrompt, extractMemoryFromChat } from '../services/ai'
@@ -158,13 +157,14 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, onClose }: 
   const [summary, setSummary] = useState<DailySummary | null>(null)
   const [activityData, setActivityData] = useState<ActivityRecord[]>([])
   const [memoryContext, setMemoryContext] = useState('')
+  const [memoryLoaded, setMemoryLoaded] = useState(false)
   const [loadingData, setLoadingData] = useState(true)
   const [localTasks, setLocalTasks] = useState<Task[]>(propTasks)
 
   // ---- 侧边栏状态 ----
   const [chatOpen, setChatOpen] = useState(false)
   const [chatWidth, setChatWidth] = useState(400)
-  const [screenshotBase64, setScreenshotBase64] = useState<string | null>(null)
+  // 截图功能已移除：纯文本数据更精确、可控、可调试，避免视觉误读
   const dataPanelRef = useRef<HTMLDivElement>(null)
   const [manualEntryExpanded, setManualEntryExpanded] = useState(false)
   const chatRef = useRef<ReflectionChatHandle>(null)
@@ -201,9 +201,8 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, onClose }: 
     return hints[Math.floor(Math.random() * hints.length)]
   }, [viewMode, isToday])
 
-  // 切换日期时：关闭 AI 侧边栏 + 清除截图缓存（每天数据不同需重新截图）
+  // 切换日期时：关闭 AI 侧边栏
   const resetChatOnDateChange = useCallback(() => {
-    setScreenshotBase64(null)
     if (chatOpen) {
       setChatOpen(false)
       window.electronAPI.resizeMainWindow(MAIN_WIDTH, MAIN_HEIGHT)
@@ -258,6 +257,7 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, onClose }: 
     let cancelled = false
     async function loadEvents() {
       setLoadingData(true)
+      setSummary(null)  // 立即清空，防止 systemPrompt 用旧日期数据初始化 AI 对话
       try {
         // ★ 如果是今天，先刷新 tracker 缓冲区确保最新数据
         if (selectedDate === getToday()) {
@@ -289,21 +289,34 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, onClose }: 
     return () => { cancelled = true }
   }, [selectedDate])
 
-  // 加载记忆上下文（开场 prompt 注入用）
+  // 加载记忆上下文（开场 prompt 注入用）；切换日期时重新读取，确保包含最新保存的记忆
   useEffect(() => {
-    (async () => {
+    setMemoryLoaded(false)
+    ;(async () => {
       try {
         const store = (await window.electronAPI.loadMemoryStore()) as {
           sessions?: { date: string; mode: string; summary: string; createdAt: number }[]
           commitments?: { text: string; sourceDate: string; status: string; createdAt: number }[]
         } | null
-        if (!store) return
+        console.log('[Memory Debug] loadMemoryStore 返回:', store ? `sessions=${(store.sessions ?? []).length}, commitments=${(store.commitments ?? []).length}` : 'null')
+        if (store?.sessions) {
+          for (const s of store.sessions) console.log(`  session: [${s.date}] ${s.mode} — ${s.summary?.slice(0, 40)}...`)
+        }
+        if (!store) { setMemoryContext(''); return }
 
         const parts: string[] = []
 
-        // 最近 3 次对话摘要
-        const sessions = Array.isArray(store.sessions) ? store.sessions : []
+        // 按 id 去重，同日期+模式只保留最新一条
+        const rawSessions = Array.isArray(store.sessions) ? store.sessions : []
+        const sessionMap = new Map<string, typeof rawSessions[0]>()
+        for (const s of rawSessions) {
+          const key = s.date + '-' + s.mode
+          const existing = sessionMap.get(key)
+          if (!existing || s.createdAt > existing.createdAt) sessionMap.set(key, s)
+        }
+        const sessions = [...sessionMap.values()].sort((a, b) => a.createdAt - b.createdAt)
         const recentSessions = sessions.slice(-3)
+        console.log('[Memory Debug] 去重后 sessions:', sessions.length, ', 取最后3条:', recentSessions.map(s => s.date))
         if (recentSessions.length > 0) {
           parts.push('## 近期反思摘要')
           for (const s of recentSessions) {
@@ -348,40 +361,19 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, onClose }: 
           }
         }
 
-        if (parts.length > 0) {
-          setMemoryContext(parts.join('\n'))
-        }
+        const ctx = parts.length > 0 ? parts.join('\n') : ''
+        console.log('[Memory Debug] 最终 memoryContext 长度:', ctx.length, ctx ? `\n${ctx}` : '(空)')
+        setMemoryContext(ctx)
       } catch (e) {
         console.warn('[Memory] 加载记忆上下文失败:', e)
+      } finally {
+        setMemoryLoaded(true)
+        console.log('[Memory Debug] memoryLoaded = true')
       }
     })()
-  }, [])
+  }, [selectedDate])
 
-  // 数据加载完后，后台预截图（避免点浮标时阻塞）
-  useEffect(() => {
-    if (loadingData || screenshotBase64 || chatOpen) return
-    if (!dataPanelRef.current) return
-
-    const timer = setTimeout(async () => {
-      if (!dataPanelRef.current) return
-      try {
-        const canvas = await html2canvas(dataPanelRef.current, {
-          scale: 1,
-          useCORS: true,
-          backgroundColor: '#ffffff',
-          height: dataPanelRef.current.scrollHeight,
-          windowHeight: dataPanelRef.current.scrollHeight,
-        })
-        const base64 = canvas.toDataURL('image/jpeg', 0.75)
-        setScreenshotBase64(base64)
-        console.log('[Reflection] 预截图完成，大小:', Math.round(base64.length / 1024), 'KB')
-      } catch (e) {
-        console.warn('[Reflection] 预截图失败:', e)
-      }
-    }, 500)
-
-    return () => clearTimeout(timer)
-  }, [loadingData, screenshotBase64, chatOpen])
+  
 
   // 气泡提示：打开 1.2 秒后显示，5 秒后自动隐藏
   useEffect(() => {
@@ -600,20 +592,19 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, onClose }: 
    */
   const activityTimeDistribution = useMemo(() => {
     if (activityData.length === 0) return ''
-    const hourBuckets: Record<number, { active: number; total: number }> = {}
+    const EXPECTED_PER_HOUR = 120 // 每小时应有 120 条 30 秒采样，和图表保持一致
+    const hourBuckets: Record<number, number> = {}
     for (const r of activityData) {
       const h = new Date(r.ts).getHours()
-      if (!hourBuckets[h]) hourBuckets[h] = { active: 0, total: 0 }
-      hourBuckets[h].total++
-      hourBuckets[h].active += getActiveRatio(r)
+      if (!hourBuckets[h]) hourBuckets[h] = 0
+      hourBuckets[h] += getActiveRatio(r)
     }
     const hours = Object.keys(hourBuckets).map(Number).sort((a, b) => a - b)
     if (hours.length === 0) return ''
 
     const segments: string[] = []
     for (const h of hours) {
-      const b = hourBuckets[h]
-      const ratio = Math.round((b.active / b.total) * 100)
+      const ratio = Math.min(Math.round((hourBuckets[h] / EXPECTED_PER_HOUR) * 100), 100)
       const label = ratio >= 70 ? '活跃' : ratio >= 30 ? '一般' : '基本空闲'
       segments.push(`${h}:00 ${label}(${ratio}%)`)
     }
@@ -622,15 +613,32 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, onClose }: 
 
   // 构建 AI system prompt
   const systemPrompt = useMemo(() => {
-    if (!summary) return ''
+    if (!summary || !memoryLoaded) return ''
     const context = summaryToLLMContext(summary, events)
     const taskInfo = `\n\n额外信息：\n- 当前任务总数：${localTasks.length}\n- 已完成任务：${localTasks.filter(t => t.completed).length}\n- 完成率：${completionRate}%\n- 待办任务：${localTasks.filter(t => !t.completed).map(t => t.title).join('、') || '无'}`
     const productivityInfo = `\n\n生产力指标：\n- 电脑使用时长：${totalUsageMinutes}分钟\n- 专注时长：${summary.stats.totalFocusMinutes}分钟\n- 生产力比率：${productivityRatio}%（专注/使用）\n- 心流占比：${flowRatio}%（心流/专注）`
     const activityInfo = activityTimeDistribution
       ? `\n\n精力时间分布（每小时电脑活跃度）：\n${activityTimeDistribution}`
       : ''
-    return buildReflectionSystemPrompt(context + taskInfo + productivityInfo + activityInfo, !!screenshotBase64, isToday, memoryContext)
-  }, [summary, events, localTasks, completionRate, totalUsageMinutes, productivityRatio, flowRatio, activityTimeDistribution, screenshotBase64, isToday, memoryContext])
+
+    // 任务用时排行（对齐条形图数据）
+    let taskDurationInfo = ''
+    if (taskDurations.length > 0) {
+      const lines = taskDurations.map(d => {
+        const timeStr = d.durationSec >= 60 ? `${d.durationMin}分钟` : `${d.durationSec}秒`
+        const status = d.completed ? '已完成 ✅' : '未完成 ⚠️'
+        const stuckStr = d.stuckMarks && d.stuckMarks.length > 0
+          ? `（卡顿${d.stuckMarks.length}次：${d.stuckMarks.map(m => m.reason || m.microAction).join('、')}）`
+          : ''
+        return `- ${d.title}：${timeStr}（${status}）${stuckStr}`
+      })
+      taskDurationInfo = `\n\n任务实际用时排行（按时长降序，对应【chart:task-duration】条形图）：\n${lines.join('\n')}`
+    }
+
+    const prompt = buildReflectionSystemPrompt(context + taskInfo + productivityInfo + activityInfo + taskDurationInfo, false, isToday, memoryContext)
+    console.log('[Memory Debug] systemPrompt 构建完成, 包含记忆:', prompt.includes('对话记忆'), ', memoryContext长度:', memoryContext.length)
+    return prompt
+  }, [summary, events, localTasks, completionRate, totalUsageMinutes, productivityRatio, flowRatio, activityTimeDistribution, taskDurations, isToday, memoryContext, memoryLoaded])
 
   // ---- 周视图数据回调 ----
   const handleWeekDataReady = useCallback((data: WeekDayData[]) => {
@@ -643,8 +651,8 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, onClose }: 
     const context = buildWeeklyLLMContext(weekDayData)
     const dates = getWeekDates(weekEndDate)
     const weekLabel = `${formatDateFriendly(dates[0]).replace(/ .+/, '')} – ${formatDateFriendly(dates[6]).replace(/ .+/, '')}`
-    return buildWeeklyReflectionSystemPrompt(context, !!screenshotBase64, weekLabel, memoryContext)
-  }, [weekDayData, weekEndDate, screenshotBase64, memoryContext])
+    return buildWeeklyReflectionSystemPrompt(context, false, weekLabel, memoryContext)
+  }, [weekDayData, weekEndDate, memoryContext])
 
   // 根据当前视图模式选择对应的 system prompt
   const activeSystemPrompt = viewMode === 'week' ? weekSystemPrompt : systemPrompt
@@ -676,14 +684,15 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, onClose }: 
 
             if (result.summary) {
               const sessions = Array.isArray(store.sessions) ? store.sessions : []
-              sessions.push({
-                id: `${raw.date}-${raw.mode}`,
-                date: raw.date,
-                mode: raw.mode,
-                summary: result.summary,
-                createdAt: Date.now(),
-              })
-              store.sessions = sessions
+              const sessionId = `${raw.date}-${raw.mode}`
+              const existIdx = sessions.findIndex((s: { id?: string }) => s.id === sessionId)
+              const entry = { id: sessionId, date: raw.date, mode: raw.mode, summary: result.summary, createdAt: Date.now() }
+              if (existIdx >= 0) {
+                sessions[existIdx] = entry
+              } else {
+                sessions.push(entry)
+              }
+              store.sessions = sessions.slice(-20)
             }
             if (result.commitments.length > 0) {
               const commitments = Array.isArray(store.commitments) ? store.commitments : []
@@ -780,28 +789,11 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, onClose }: 
 
   // ---- 打开/关闭侧边栏时调整窗口大小 ----
   const openChat = useCallback(async () => {
-    // 如果预截图还没完成（用户手快），当场补截
-    if (dataPanelRef.current && !screenshotBase64) {
-      try {
-        const canvas = await html2canvas(dataPanelRef.current, {
-          scale: 1,
-          useCORS: true,
-          backgroundColor: '#ffffff',
-          height: dataPanelRef.current.scrollHeight,
-          windowHeight: dataPanelRef.current.scrollHeight,
-        })
-        const base64 = canvas.toDataURL('image/jpeg', 0.75)
-        setScreenshotBase64(base64)
-        console.log('[Reflection] 补截图完成，大小:', Math.round(base64.length / 1024), 'KB')
-      } catch (e) {
-        console.warn('[Reflection] 补截图失败:', e)
-      }
-    }
     tracker.track('reflect.chat_opened', { date: selectedDate, mode: viewMode })
     hadChatRef.current = true
     setChatOpen(true)
     window.electronAPI.resizeMainWindow(EXPANDED_WIDTH, MAIN_HEIGHT)
-  }, [screenshotBase64])
+  }, [])
 
   const closeChat = useCallback(() => {
     setChatOpen(false)
@@ -1246,7 +1238,7 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, onClose }: 
                   systemPrompt={activeSystemPrompt}
                   aiConfig={aiConfig}
                   mode={viewMode === 'week' ? 'weekly' : 'daily'}
-                  screenshotBase64={screenshotBase64}
+                  screenshotBase64={null}
                   selectedDate={viewMode === 'week' ? weekEndDate : selectedDate}
                   storageKey={viewMode === 'week' ? `week-${weekEndDate}` : selectedDate}
                   onChartRef={handleChartRef}

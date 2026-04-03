@@ -527,6 +527,8 @@ export interface DailySummary {
 
   /** 卡顿急救记录 */
   stuckEvents: {
+    taskTitle: string                 // 所属任务名
+    triggeredAt: string               // 卡顿发生时间（HH:MM 格式）
     microAction: string               // 卡在哪
     reason: string                    // 为什么卡
     reasonSource: 'ai_chip' | 'self'

@@ -607,9 +607,21 @@ export function loadMemoryStore(): MemoryStore {
     const p = getMemoryStorePath()
     if (fs.existsSync(p)) {
       const raw = JSON.parse(fs.readFileSync(p, 'utf-8'))
-      // 兼容旧版 memory.json（没有行为记录字段）
+      // 按 id 去重 sessions：同日期+模式只保留 createdAt 最大的那条
+      let sessions: unknown[] = raw.sessions ?? []
+      if (sessions.length > 0) {
+        const map = new Map<string, Record<string, unknown>>()
+        for (const s of sessions as Record<string, unknown>[]) {
+          const id = String(s.id ?? `${s.date}-${s.mode}`)
+          const existing = map.get(id)
+          if (!existing || (Number(s.createdAt) || 0) > (Number(existing.createdAt) || 0)) {
+            map.set(id, s)
+          }
+        }
+        sessions = [...map.values()]
+      }
       return {
-        sessions: raw.sessions ?? [],
+        sessions,
         commitments: raw.commitments ?? [],
         firstSteps: raw.firstSteps ?? [],
         stuckReasons: raw.stuckReasons ?? [],

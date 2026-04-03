@@ -129,14 +129,18 @@ export function buildDailySummary(date: string, events: TrackEvent[]): DailySumm
   const stuckReasons = filterByType(events, 'stuck.reason')
   const stuckPivots = filterByType(events, 'stuck.pivot_chosen')
 
+  // sessionId → taskTitle 映射（从 session.started 事件构建）
+  const sessionTitleMap = new Map<string, string>()
+  for (const e of filterByType(events, 'session.started')) {
+    sessionTitleMap.set(e.payload.sessionId, e.payload.taskTitle)
+  }
+
   const stuckEvents: DailySummary['stuckEvents'] = stuckReasons.map(reason => {
-    // 找对应的 pivot_chosen
     const pivot = stuckPivots.find(
       p => p.payload.sessionId === reason.payload.sessionId &&
            p.timestamp > reason.timestamp
     )
 
-    // 判断绕路后是否完成：检查 pivot 之后同 session 是否有 micro_completed
     let rescueSucceeded: boolean | null = null
     if (pivot) {
       const afterPivotComplete = microCompleted.find(
@@ -146,7 +150,17 @@ export function buildDailySummary(date: string, events: TrackEvent[]): DailySumm
       rescueSucceeded = !!afterPivotComplete
     }
 
+    // 优先用 stuck.triggered 的时间（用户点 🆘 的时刻），比 stuck.reason 更精确
+    const trigger = stuckTriggered.find(
+      t => t.payload.sessionId === reason.payload.sessionId &&
+           t.timestamp <= reason.timestamp
+    )
+    const ts = trigger?.timestamp ?? reason.timestamp
+    const timeStr = new Date(ts).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+
     return {
+      taskTitle: sessionTitleMap.get(reason.payload.sessionId) ?? '',
+      triggeredAt: timeStr,
       microAction: reason.payload.microAction,
       reason: reason.payload.reason,
       reasonSource: reason.payload.reasonSource,
@@ -292,7 +306,12 @@ export function summaryToLLMContext(summary: DailySummary, events?: TrackEvent[]
   if (summary.stuckEvents.length > 0) {
     lines.push(`\n### 卡顿与急救`)
     for (const s of summary.stuckEvents) {
-      lines.push(`- 卡在"${s.microAction}"：原因「${s.reason}」→ 绕路「${s.pivotChosen}」→ ${s.rescueSucceeded ? '成功恢复 ✅' : s.rescueSucceeded === false ? '未恢复 ❌' : '结果未知'}`)
+      const timePart = s.triggeredAt ? `[${s.triggeredAt}] ` : ''
+      const taskPart = s.taskTitle ? `做"${s.taskTitle}"时` : ''
+      const rescueStr = s.pivotChosen
+        ? `绕路「${s.pivotChosen}」→ ${s.rescueSucceeded ? '成功恢复 ✅' : s.rescueSucceeded === false ? '未恢复 ❌' : '结果未知'}`
+        : s.rescueSucceeded ? '后续恢复 ✅' : '未选择绕路'
+      lines.push(`- ${timePart}${taskPart}卡在"${s.microAction}"：原因「${s.reason}」→ ${rescueStr}`)
     }
   }
 
@@ -493,7 +512,12 @@ export function buildWeeklyLLMContext(days: WeekDayDataLite[]): string {
     // 卡顿详情
     if (day.summary.stuckEvents.length > 0) {
       for (const stuck of day.summary.stuckEvents) {
-        lines.push(`  - 卡在「${stuck.microAction}」：原因「${stuck.reason}」→ 绕路「${stuck.pivotChosen}」→ ${stuck.rescueSucceeded ? '解决 ✅' : stuck.rescueSucceeded === false ? '未解决 ❌' : '未知'}`)
+        const timePart = stuck.triggeredAt ? `[${stuck.triggeredAt}] ` : ''
+        const taskPart = stuck.taskTitle ? `做「${stuck.taskTitle}」时` : ''
+        const rescueStr = stuck.pivotChosen
+          ? `绕路「${stuck.pivotChosen}」→ ${stuck.rescueSucceeded ? '解决 ✅' : stuck.rescueSucceeded === false ? '未解决 ❌' : '未知'}`
+          : stuck.rescueSucceeded ? '后续恢复 ✅' : '未选择绕路'
+        lines.push(`  - ${timePart}${taskPart}卡在「${stuck.microAction}」：原因「${stuck.reason}」→ ${rescueStr}`)
       }
     }
 

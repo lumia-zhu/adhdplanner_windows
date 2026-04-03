@@ -411,10 +411,25 @@ const ReflectionChat = forwardRef<ReflectionChatHandle, ReflectionChatProps>(fun
       }
 
       const sess = rawSessionRef.current
-      const chatMsgs = sess.messages.filter(m => m.content.length > 0)
+      // 优先使用 messagesRef（还原对话时它会被正确赋值），rawSessionRef 仅在本次会话中累积
+      const chatMsgs = (messagesRef.current.length > sess.messages.length
+        ? messagesRef.current
+        : sess.messages
+      ).filter(m => {
+        if (typeof m.content === 'string') return m.content.length > 0
+        return Array.isArray(m.content) && m.content.length > 0
+      }).filter(m => (m as { role: string }).role !== 'system')
 
       if (chatMsgs.length >= 2) {
-        const extractPromise = extractMemoryFromChat(chatMsgs, aiConfig)
+        const extractPromise = extractMemoryFromChat(
+          chatMsgs.map(m => ({
+            role: (m as { role: 'user' | 'assistant' }).role,
+            content: typeof m.content === 'string'
+              ? m.content
+              : (m.content as { type: string; text?: string }[]).filter(p => p.type === 'text').map(p => p.text ?? '').join(''),
+          })),
+          aiConfig,
+        )
         const timeoutPromise = new Promise<null>(r => setTimeout(() => r(null), 3000))
         const result = await Promise.race([extractPromise, timeoutPromise])
 
@@ -427,14 +442,14 @@ const ReflectionChat = forwardRef<ReflectionChatHandle, ReflectionChatProps>(fun
 
             if (result.summary) {
               const sessions = Array.isArray(store.sessions) ? store.sessions : []
-              sessions.push({
-                id: `${dateStr}-${mode}`,
-                date: dateStr,
-                mode,
-                summary: result.summary,
-                createdAt: Date.now(),
-              })
-              // 截断为最近 20 条，防止无限增长
+              const sessionId = `${dateStr}-${mode}`
+              const existIdx = sessions.findIndex((s: { id?: string }) => s.id === sessionId)
+              const entry = { id: sessionId, date: dateStr, mode, summary: result.summary, createdAt: Date.now() }
+              if (existIdx >= 0) {
+                sessions[existIdx] = entry
+              } else {
+                sessions.push(entry)
+              }
               store.sessions = sessions.slice(-20)
             }
 
@@ -488,6 +503,7 @@ const ReflectionChat = forwardRef<ReflectionChatHandle, ReflectionChatProps>(fun
     if (initCalledRef.current || chatActive || bubbles.length > 0) return
     if (!systemPrompt) return
     initCalledRef.current = true
+    console.log('[ReflectionChat Init] 启动对话, systemPrompt包含记忆:', systemPrompt.includes('对话记忆'), ', prompt长度:', systemPrompt.length)
 
     const initMessages: ReflectionMessage[] = [
       { role: 'system', content: systemPrompt },
