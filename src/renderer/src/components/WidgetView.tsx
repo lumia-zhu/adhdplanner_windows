@@ -926,7 +926,7 @@ function FocusDynamicBar({
                          disabled:opacity-40 disabled:cursor-not-allowed disabled:shadow-none
                          transition-all"
             >
-              Reflect
+              获取建议
             </button>
           </div>
 

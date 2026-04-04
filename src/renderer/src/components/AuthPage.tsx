@@ -74,7 +74,7 @@ export default function AuthPage({ onLoginSuccess }: AuthPageProps) {
         {/* 标题 */}
         <div className="text-center mb-8">
           <div className="text-3xl mb-2">📋</div>
-          <h1 className="text-xl font-bold text-gray-800">任务管理器</h1>
+          <h1 className="text-xl font-bold text-gray-800">MetaPlan</h1>
           <p className="text-xs text-gray-400 mt-1">
             {isSignUp ? '创建账号，开始使用' : '登录你的账号'}
           </p>
