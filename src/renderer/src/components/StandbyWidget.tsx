@@ -37,6 +37,8 @@ interface StandbyWidgetProps {
   onExpand: () => void
   onQuickAddTask?: (title: string, id: string) => void
   onDeleteTask?: (taskId: string) => void
+  pendingTaskId?: string | null
+  onClearPendingTask?: () => void
 }
 
 function pickDefaultTask(tasks: Task[]): Task | null {
@@ -47,6 +49,7 @@ function pickDefaultTask(tasks: Task[]): Task | null {
 
 export default function StandbyWidget({
   tasks, aiConfig, onStartMicro, onResumePaused, onExpand, onQuickAddTask, onDeleteTask,
+  pendingTaskId, onClearPendingTask,
 }: StandbyWidgetProps) {
   // ---- 待命条状态 ----
   const [dropdownOpen, setDropdownOpen] = useState(false)
@@ -160,6 +163,21 @@ export default function StandbyWidget({
   useEffect(() => {
     if (firstStepTaskId && !firstStepTask) closeFirstStep()
   }, [firstStepTaskId, firstStepTask, closeFirstStep])
+
+  // 从主窗口点击"开始"传入的预选任务：自动选中并打开第一步面板
+  useEffect(() => {
+    if (!pendingTaskId) return
+    const task = tasks.find(t => t.id === pendingTaskId && !t.completed)
+    if (task) {
+      setSelectedId(task.id)
+      if (task.pausedSession) {
+        onResumePaused(task.id)
+      } else {
+        openFirstStep(task)
+      }
+    }
+    onClearPendingTask?.()
+  }, [pendingTaskId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ---- 面板操作 ----
   const handleConfirm = () => {

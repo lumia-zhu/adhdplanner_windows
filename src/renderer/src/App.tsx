@@ -11,7 +11,6 @@ import TitleBar from './components/TitleBar'
 import NoteEditor from './components/NoteEditor'
 import WidgetView from './components/WidgetView'
 import StandbyWidget from './components/StandbyWidget'
-import FocusFlow from './components/FocusFlow'
 import AISettings from './components/AISettings'
 import ProfileSettings from './components/ProfileSettings'
 import ReflectionView from './components/ReflectionView'
@@ -53,6 +52,9 @@ export default function App() {
   // -------- AI 记忆面板 --------
   const [showMemory, setShowMemory] = useState(false)
   const [hasMemory, setHasMemory] = useState(false)
+
+  // -------- 主窗口 → 小组件的任务传递 --------
+  const [pendingStandbyTaskId, setPendingStandbyTaskId] = useState<string | null>(null)
 
   // -------- 专注会话 --------
   const focusSession = useFocusSession({
@@ -108,9 +110,11 @@ export default function App() {
         if (savedConfig && savedConfig.apiKey) {
           setAIConfig({
             apiUrl: savedConfig.apiUrl || DEFAULT_AI_CONFIG.apiUrl,
-            apiKey: savedConfig.apiKey || '',
-            modelId: savedConfig.modelId || '',
+            apiKey: savedConfig.apiKey || DEFAULT_AI_CONFIG.apiKey,
+            modelId: savedConfig.modelId || DEFAULT_AI_CONFIG.modelId,
           })
+        } else if (DEFAULT_AI_CONFIG.apiKey) {
+          setAIConfig({ ...DEFAULT_AI_CONFIG })
         }
         if (savedProfile && typeof savedProfile === 'object') {
           setUserProfile({
@@ -333,8 +337,6 @@ export default function App() {
   // -------- 数据分组 --------
   const pendingTasks = tasks.filter(t => !t.completed)
   const completedTasks = tasks.filter(t => t.completed)
-  const scaffoldTask = focusSession.scaffoldTaskId
-    ? tasks.find(t => t.id === focusSession.scaffoldTaskId) : null
 
   // -------- 退出登录（必须在条件 return 之前，满足 hooks 顺序规则） --------
   const handleLogout = useCallback(async () => {
@@ -393,6 +395,8 @@ export default function App() {
           onExpand={widgetMode.handleExpandFromStandby}
           onQuickAddTask={handleQuickAddTask}
           onDeleteTask={handleDeleteTask}
+          pendingTaskId={pendingStandbyTaskId}
+          onClearPendingTask={() => setPendingStandbyTaskId(null)}
         />
       </div>
     )
@@ -454,7 +458,11 @@ export default function App() {
 
       <NoteEditor
         tasks={tasks} setTasks={setTasks}
-        onFocusTask={focusSession.handleFocusTask}
+        onFocusTask={(taskId: string) => {
+          focusSession.handleFocusTask(taskId)
+          setPendingStandbyTaskId(taskId)
+          widgetMode.handleEnterStandby()
+        }}
         onResumePaused={focusSession.handleResumePaused}
         onPrefetchTask={handlePrefetchTask}
         onCreateAndFocus={focusSession.handleCreateAndFocus}
@@ -527,15 +535,7 @@ export default function App() {
         )}
       </div>
 
-      {scaffoldTask && (
-        <FocusFlow
-          key={scaffoldTask.id}
-          task={scaffoldTask}
-          aiConfig={aiConfig}
-          onStart={focusSession.handleStartMicro}
-          onCancel={() => focusSession.setScaffoldTaskId(null)}
-        />
-      )}
+      {/* FocusFlow 覆盖层已废弃，专注启动统一走小组件入口 */}
 
       <AISettings
         visible={showAISettings}

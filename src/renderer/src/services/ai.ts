@@ -17,11 +17,11 @@ export interface AIConfig {
   modelId: string  // 模型 ID
 }
 
-// 默认值（用户通过设置面板填写）
+// 默认值：优先使用构建时注入的环境变量（用于用户研究预配置），否则为空（需用户手动填写）
 export const DEFAULT_AI_CONFIG: AIConfig = {
-  apiUrl: 'https://ark.cn-beijing.volces.com/api/v3/chat/completions',
-  apiKey: '',
-  modelId: '',
+  apiUrl: import.meta.env.VITE_AI_API_URL || 'https://ark.cn-beijing.volces.com/api/v3/chat/completions',
+  apiKey: import.meta.env.VITE_AI_API_KEY || '',
+  modelId: import.meta.env.VITE_AI_MODEL_ID || '',
 }
 
 // ===================== 内部工具 =====================

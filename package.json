@@ -6,8 +6,8 @@
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
-    "build:win": "electron-vite build && electron-builder --win --config.win.sign=false",
-    "build:portable": "electron-vite build && electron-builder --win portable --config.win.sign=false",
+    "build:win": "electron-vite build && electron-builder --win",
+    "build:portable": "electron-vite build && electron-builder --win portable",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "npx playwright test"
@@ -32,6 +32,7 @@
     "electron": "^31.6.0",
     "electron-builder": "^24.13.3",
     "electron-vite": "^2.3.0",
+    "png-to-ico": "^3.0.1",
     "postcss": "^8.4.38",
     "sharp": "^0.34.5",
     "tailwindcss": "^3.4.14",
@@ -40,7 +41,7 @@
   },
   "build": {
     "appId": "com.taskmanager.app",
-    "productName": "任务管理器",
+    "productName": "MetaPlan",
     "directories": {
       "output": "release"
     },
@@ -63,18 +64,16 @@
           ]
         }
       ],
-      "icon": "resources/icon.ico",
-      "sign": false,
-      "signingHashAlgorithms": null
+      "icon": "resources/icon.png"
     },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
-      "installerIcon": "resources/icon.ico",
-      "uninstallerIcon": "resources/icon.ico",
+      "installerIcon": "resources/icon.png",
+      "uninstallerIcon": "resources/icon.png",
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "任务管理器"
+      "shortcutName": "MetaPlan"
     }
   }
 }
