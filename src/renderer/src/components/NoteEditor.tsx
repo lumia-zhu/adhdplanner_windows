@@ -539,12 +539,10 @@ export default function NoteEditor({
                 {onNextDate && (
                   <button
                     onClick={onNextDate}
-                    disabled={isToday}
                     className="w-6 h-6 rounded-full flex items-center justify-center
                                text-gray-300 hover:text-indigo-500 hover:bg-indigo-50
-                               disabled:opacity-0 disabled:cursor-default
                                transition-all"
-                    title={isToday ? '' : '后一天'}
+                    title="后一天"
                   >
                     <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" />

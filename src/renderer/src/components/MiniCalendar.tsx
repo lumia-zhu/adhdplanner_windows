@@ -41,6 +41,21 @@ const MiniCalendar = React.forwardRef<HTMLDivElement, MiniCalendarProps>(
     const [viewYear, setViewYear] = useState(selDate.getFullYear())
     const [viewMonth, setViewMonth] = useState(selDate.getMonth()) // 0-based
 
+    useEffect(() => {
+      const styleId = 'mini-calendar-anim'
+      if (!document.getElementById(styleId)) {
+        const style = document.createElement('style')
+        style.id = styleId
+        style.textContent = `
+          @keyframes calendarFadeIn {
+            from { opacity: 0; transform: translate(-50%, -4px); }
+            to   { opacity: 1; transform: translate(-50%, 0); }
+          }
+        `
+        document.head.appendChild(style)
+      }
+    }, [])
+
     // 点击外部关闭
     const containerRef = useRef<HTMLDivElement>(null)
     useEffect(() => {
@@ -63,12 +78,8 @@ const MiniCalendar = React.forwardRef<HTMLDivElement, MiniCalendarProps>(
       else setViewMonth(m => m - 1)
     }
 
-    // 下一月（不能超过当前月）
-    const todayDate = new Date()
-    const canGoNext = viewYear < todayDate.getFullYear() ||
-      (viewYear === todayDate.getFullYear() && viewMonth < todayDate.getMonth())
+    // 下一月
     const nextMonth = () => {
-      if (!canGoNext) return
       if (viewMonth === 11) { setViewYear(y => y + 1); setViewMonth(0) }
       else setViewMonth(m => m + 1)
     }
@@ -94,7 +105,7 @@ const MiniCalendar = React.forwardRef<HTMLDivElement, MiniCalendarProps>(
     // 当月日期
     for (let d = 1; d <= daysInMonth; d++) {
       const ds = toDateStr(viewYear, viewMonth, d)
-      cells.push({ day: d, inMonth: true, dateStr: ds, isFuture: ds > today })
+      cells.push({ day: d, inMonth: true, dateStr: ds, isFuture: false })
     }
     // 下月头部填充（补满到当前行结束）
     const remaining = 7 - (cells.length % 7)
@@ -102,7 +113,7 @@ const MiniCalendar = React.forwardRef<HTMLDivElement, MiniCalendarProps>(
       for (let d = 1; d <= remaining; d++) {
         const m = viewMonth === 11 ? 0 : viewMonth + 1
         const y = viewMonth === 11 ? viewYear + 1 : viewYear
-        cells.push({ day: d, inMonth: false, dateStr: toDateStr(y, m, d), isFuture: toDateStr(y, m, d) > today })
+        cells.push({ day: d, inMonth: false, dateStr: toDateStr(y, m, d), isFuture: false })
       }
     }
 
@@ -132,9 +143,8 @@ const MiniCalendar = React.forwardRef<HTMLDivElement, MiniCalendarProps>(
           <span className="text-sm font-semibold text-gray-700">{monthLabel}</span>
           <button
             onClick={nextMonth}
-            disabled={!canGoNext}
             className="w-7 h-7 rounded-lg hover:bg-gray-100 flex items-center justify-center
-                       text-gray-400 hover:text-gray-600 disabled:opacity-20 disabled:cursor-not-allowed transition-colors"
+                       text-gray-400 hover:text-gray-600 transition-colors"
           >
             <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" />
@@ -196,18 +206,3 @@ const MiniCalendar = React.forwardRef<HTMLDivElement, MiniCalendarProps>(
 
 export default MiniCalendar
 
-// 注入日历弹窗动画样式（仅在浏览器环境中执行一次）
-if (typeof document !== 'undefined') {
-  const styleId = 'mini-calendar-anim'
-  if (!document.getElementById(styleId)) {
-    const style = document.createElement('style')
-    style.id = styleId
-    style.textContent = `
-      @keyframes calendarFadeIn {
-        from { opacity: 0; transform: translate(-50%, -4px); }
-        to   { opacity: 1; transform: translate(-50%, 0); }
-      }
-    `
-    document.head.appendChild(style)
-  }
-}

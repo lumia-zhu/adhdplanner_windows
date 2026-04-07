@@ -307,7 +307,8 @@ export default function ActivityRhythmChart({ data, events, rangeStart: rs, rang
             else if (rightPt) lineY = rightPt.y
           }
 
-          const dotR = isHov ? 5 : 3.5
+          // 日视图卡顿点缩小一档，和周视图保持一致
+          const dotR = isHov ? 4 : 2.8
           return (
             <g key={`stuck-${idx}`}>
               <circle

@@ -41,6 +41,21 @@ const EMPTY_STORE: MemoryStore = { sessions: [], commitments: [], lastUpdated: 0
 export default function MemoryPanel({ visible, onClose }: MemoryPanelProps) {
   const [store, setStore] = useState<MemoryStore>(EMPTY_STORE)
   const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const styleId = 'memory-panel-anim'
+    if (!document.getElementById(styleId)) {
+      const style = document.createElement('style')
+      style.id = styleId
+      style.textContent = `
+        @keyframes memoryPanelFadeIn {
+          from { opacity: 0; transform: translateY(8px) scale(0.98); }
+          to   { opacity: 1; transform: translateY(0) scale(1); }
+        }
+      `
+      document.head.appendChild(style)
+    }
+  }, [])
   const [deletedId, setDeletedId] = useState<string | null>(null)
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
 
@@ -302,17 +317,3 @@ export default function MemoryPanel({ visible, onClose }: MemoryPanelProps) {
   )
 }
 
-if (typeof document !== 'undefined') {
-  const styleId = 'memory-panel-anim'
-  if (!document.getElementById(styleId)) {
-    const style = document.createElement('style')
-    style.id = styleId
-    style.textContent = `
-      @keyframes memoryPanelFadeIn {
-        from { opacity: 0; transform: translateY(8px) scale(0.98); }
-        to   { opacity: 1; transform: translateY(0) scale(1); }
-      }
-    `
-    document.head.appendChild(style)
-  }
-}

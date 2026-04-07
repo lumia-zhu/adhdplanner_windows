@@ -29,7 +29,6 @@ export function useDateNavigation() {
   const goNextDate = useCallback(() => {
     setCurrentDate(d => {
       const next = shiftDate(d, 1)
-      if (next > getToday()) return d
       tracker.track('nav.date_changed', { from: d, to: next, method: 'arrow' })
       return next
     })
@@ -44,11 +43,9 @@ export function useDateNavigation() {
   }, [])
 
   const jumpToDate = useCallback((date: string) => {
-    const today = getToday()
-    const to = date > today ? today : date
     setCurrentDate(d => {
-      if (d !== to) tracker.track('nav.date_changed', { from: d, to, method: 'calendar' })
-      return to
+      if (d !== date) tracker.track('nav.date_changed', { from: d, to: date, method: 'calendar' })
+      return date
     })
   }, [])
 

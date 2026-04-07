@@ -581,7 +581,8 @@ export default function WeekRhythmChart({ days, rangeStart: rs, rangeEnd: re }: 
             lineY = rightPt.y
           }
 
-          const dotR = isHov ? 5 : 3.5
+          // 红色卡顿点：视觉更轻一点（点击/悬停仍用透明大圆保持易点）
+          const dotR = isHov ? 4 : 2.8
           return (
             <g key={`cstuck-${idx}`}>
               <circle

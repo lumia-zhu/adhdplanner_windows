@@ -109,6 +109,29 @@ export default function StandbyWidget({
     window.electronAPI.resizeWidget(BAR_W, totalH)
   }, [totalH])
 
+  // ---- 加载 AI 建议（openFirstStep 和重试共用） ----
+  const loadAIChips = useCallback((task: Task) => {
+    const hasAI = !!(aiConfig.apiKey && aiConfig.modelId)
+    if (!hasAI) return
+
+    setChips([])
+    setChipError(null)
+    setLoadingChips(true)
+    const subtaskTitle = (task.subtasks ?? []).find(s => !s.completed)?.title
+    window.electronAPI.loadMemoryStore()
+      .then(raw => buildStartupHint((raw as any).firstSteps ?? []))
+      .catch(() => '')
+      .then(hint =>
+        aiCache.get(task.id, task.title, aiConfig, subtaskTitle, undefined, hint || undefined)
+      )
+      .then(({ chips: newChips, error }) => {
+        setChips(newChips.length > 0 ? newChips : FALLBACK_CHIPS)
+        if (error) setChipError(error)
+      })
+      .catch(() => setChips(FALLBACK_CHIPS))
+      .finally(() => setLoadingChips(false))
+  }, [aiConfig])
+
   // ---- 打开第一步面板 ----
   const openFirstStep = useCallback((task: Task) => {
     setFirstStepTaskId(task.id)
@@ -118,29 +141,10 @@ export default function StandbyWidget({
     setChipError(null)
     sourceRef.current = 'self'
 
-    const hasAI = !!(aiConfig.apiKey && aiConfig.modelId)
-    if (hasAI) {
-      setLoadingChips(true)
-      const subtaskTitle = (task.subtasks ?? []).find(s => !s.completed)?.title
-      // 加载行为记忆 → 构建 memoryHint → 传入 AI 缓存
-      window.electronAPI.loadMemoryStore()
-        .then(raw => buildStartupHint((raw as any).firstSteps ?? []))
-        .catch(() => '')
-        .then(hint =>
-          aiCache.get(task.id, task.title, aiConfig, subtaskTitle, undefined, hint || undefined)
-        )
-        .then(({ chips: newChips, error }) => {
-          setChips(newChips.length > 0 ? newChips : FALLBACK_CHIPS)
-          if (error) setChipError(error)
-        })
-        .catch(() => setChips(FALLBACK_CHIPS))
-        .finally(() => setLoadingChips(false))
-    } else {
-      setLoadingChips(false)
-    }
+    loadAIChips(task)
 
     setTimeout(() => microInputRef.current?.focus(), 350)
-  }, [aiConfig])
+  }, [loadAIChips])
 
   const closeFirstStep = useCallback(() => {
     setFirstStepTaskId(null)
@@ -345,7 +349,22 @@ export default function StandbyWidget({
             </button>
           ))}
           {!loadingChips && chipError && (
-            <span className="text-2xs text-red-400">⚠️ AI 暂不可用</span>
+            <div className="flex items-center gap-2">
+              <span className="text-2xs text-red-400">⚠️ AI 暂不可用</span>
+              <button
+                onClick={() => {
+                  const task = tasks.find(t => t.id === firstStepTaskId)
+                  if (task) {
+                    aiCache.invalidate(task.id)
+                    loadAIChips(task)
+                  }
+                }}
+                className="no-drag text-2xs text-emerald-500 hover:text-emerald-700
+                           underline underline-offset-2 transition-colors"
+              >
+                重试
+              </button>
+            </div>
           )}
         </div>
 

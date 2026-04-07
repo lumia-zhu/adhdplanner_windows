@@ -336,3 +336,12 @@
 - `pre/post interview 提纲`
 - `methods` 章节写法
 - `design implications` 框架
+
+---
+
+## 参考文档索引
+
+- [行为数据呈现框架](behavioral-data-presentation.md) — 行为数据在论文中的定位、用法和呈现建议
+- [Related Work 结构](related-work-structure.md) — 三部分结构及内在逻辑
+- [Findings 主题方向指南](findings-theme-guide.md) — **注意：仅为潜在的有意思的研究方向，不是已有数据得出的结论。** 实际主题需从访谈数据中涌现，此文档仅供分析时参考对照
+- [预实验量表方案](pilot-study-measures.md) — 5 天预实验的量表设计（MAI-19 + SESRL + 每日微问卷），正式实验方案可能基于预实验结果调整

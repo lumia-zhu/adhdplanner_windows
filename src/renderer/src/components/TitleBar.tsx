@@ -28,6 +28,21 @@ export default function TitleBar({
   const [settingsOpen, setSettingsOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
 
+  useEffect(() => {
+    const styleId = 'settings-menu-anim'
+    if (!document.getElementById(styleId)) {
+      const style = document.createElement('style')
+      style.id = styleId
+      style.textContent = `
+        @keyframes settingsMenuFadeIn {
+          from { opacity: 0; transform: translateY(-4px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+      `
+      document.head.appendChild(style)
+    }
+  }, [])
+
   // 点击外部关闭菜单
   useEffect(() => {
     if (!settingsOpen) return
@@ -112,8 +127,8 @@ export default function TitleBar({
                   </button>
                 )}
 
-                {/* AI 配置 */}
-                {onOpenAISettings && (
+                {/* AI 配置 —— 已预配置，暂时隐藏入口。恢复时取消下方注释即可 */}
+                {/* {onOpenAISettings && (
                   <button
                     onClick={() => { setSettingsOpen(false); onOpenAISettings() }}
                     className="w-full flex items-center gap-2.5 px-3 py-2 text-left
@@ -127,7 +142,7 @@ export default function TitleBar({
                     </svg>
                     <span>AI 配置</span>
                   </button>
-                )}
+                )} */}
 
                 {/* AI 记忆 */}
                 {onOpenMemory && (
@@ -217,18 +232,3 @@ export default function TitleBar({
   )
 }
 
-// 注入设置菜单动画样式（仅在浏览器环境中执行一次）
-if (typeof document !== 'undefined') {
-  const styleId = 'settings-menu-anim'
-  if (!document.getElementById(styleId)) {
-    const style = document.createElement('style')
-    style.id = styleId
-    style.textContent = `
-      @keyframes settingsMenuFadeIn {
-        from { opacity: 0; transform: translateY(-4px); }
-        to   { opacity: 1; transform: translateY(0); }
-      }
-    `
-    document.head.appendChild(style)
-  }
-}
