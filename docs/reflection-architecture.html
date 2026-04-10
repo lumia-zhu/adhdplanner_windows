@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Reflection System Architecture</title>
+<style>
+  body {
+    margin: 0; padding: 40px;
+    font-family: 'Helvetica Neue', Arial, sans-serif;
+    background: #fff;
+    display: flex; flex-direction: column; align-items: center;
+  }
+  svg { display: block; }
+  .caption {
+    max-width: 900px;
+    font-family: 'Times New Roman', serif;
+    font-size: 11px; color: #333;
+    line-height: 1.7; margin-top: 14px;
+    text-align: left;
+  }
+  .caption b { font-weight: 700; }
+</style>
+</head>
+<body>
+
+<svg width="920" height="430" viewBox="0 0 920 430" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="ah" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L8,3 L0,6" fill="none" stroke="#888" stroke-width="1.2"/>
+    </marker>
+    <marker id="ah-g" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L8,3 L0,6" fill="none" stroke="#6a9a6a" stroke-width="1.2"/>
+    </marker>
+    <marker id="ah-p" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L8,3 L0,6" fill="none" stroke="#9575cd" stroke-width="1.2"/>
+    </marker>
+  </defs>
+
+  <!-- ============ BACKGROUND REGIONS ============ -->
+
+  <!-- Data Sources -->
+  <rect x="20" y="30" width="145" height="230" rx="10" fill="#f4f6f9" stroke="#dde1e8" stroke-width="1"/>
+  <text x="92" y="52" text-anchor="middle" font-size="9.5" font-weight="700" fill="#7a8599" letter-spacing="0.6">DATA SOURCES</text>
+
+  <!-- System Prompt (main region) -->
+  <rect x="310" y="30" width="280" height="230" rx="10" fill="#f0f7f0" stroke="#c8dcc8" stroke-width="1"/>
+  <text x="450" y="52" text-anchor="middle" font-size="9.5" font-weight="700" fill="#6a9a6a" letter-spacing="0.6">SYSTEM PROMPT</text>
+
+  <!-- Dialogue -->
+  <rect x="650" y="30" width="250" height="230" rx="10" fill="#fef8f0" stroke="#e8dcc8" stroke-width="1"/>
+  <text x="775" y="52" text-anchor="middle" font-size="9.5" font-weight="700" fill="#b08a50" letter-spacing="0.6">REFLECTION DIALOGUE</text>
+
+  <!-- Memory Loop -->
+  <rect x="20" y="300" width="880" height="100" rx="10" fill="#f5f2fa" stroke="#d8cef0" stroke-width="1"/>
+  <text x="460" y="322" text-anchor="middle" font-size="9.5" font-weight="700" fill="#8a70b8" letter-spacing="0.6">MEMORY LOOP</text>
+
+  <!-- ============ DATA SOURCES ============ -->
+
+  <rect x="36" y="72" width="112" height="38" rx="6" fill="#fff" stroke="#b0c4de" stroke-width="1.2"/>
+  <text x="92" y="88" text-anchor="middle" font-size="10" font-weight="600" fill="#333">Task Events</text>
+  <text x="92" y="102" text-anchor="middle" font-size="8" fill="#888">start · complete · stuck</text>
+
+  <rect x="36" y="122" width="112" height="38" rx="6" fill="#fff" stroke="#b0c4de" stroke-width="1.2"/>
+  <text x="92" y="138" text-anchor="middle" font-size="10" font-weight="600" fill="#333">Computer Activity</text>
+  <text x="92" y="152" text-anchor="middle" font-size="8" fill="#888">hourly active duration</text>
+
+  <rect x="36" y="172" width="112" height="38" rx="6" fill="#fff" stroke="#b5a8d8" stroke-width="1.2"/>
+  <text x="92" y="188" text-anchor="middle" font-size="10" font-weight="600" fill="#333">Memory Store</text>
+  <text x="92" y="202" text-anchor="middle" font-size="8" fill="#888">past insights &amp; plans</text>
+
+  <!-- ============ SUMMARIZER (bridge between Data Sources and System Prompt) ============ -->
+
+  <rect x="192" y="82" width="92" height="70" rx="8" fill="#fff" stroke="#8ab88a" stroke-width="1.3"/>
+  <text x="238" y="112" text-anchor="middle" font-size="10" font-weight="600" fill="#333">Summarizer</text>
+  <text x="238" y="128" text-anchor="middle" font-size="7.5" fill="#888">aggregate daily</text>
+  <text x="238" y="139" text-anchor="middle" font-size="7.5" fill="#888">behavior data</text>
+
+  <!-- Data Sources → Summarizer -->
+  <line x1="148" y1="91" x2="190" y2="91" stroke="#888" stroke-width="1.1"/>
+  <line x1="148" y1="141" x2="175" y2="141" stroke="#888" stroke-width="1.1"/>
+  <line x1="175" y1="141" x2="175" y2="91" stroke="#888" stroke-width="1.1"/>
+  <!-- single arrow into Summarizer at combined point -->
+  <line x1="175" y1="91" x2="190" y2="91" stroke="#888" stroke-width="1.2"/>
+
+  <!-- Summarizer → System Prompt -->
+  <line x1="284" y1="117" x2="324" y2="117" stroke="#888" stroke-width="1.2" marker-end="url(#ah)"/>
+
+  <!-- Memory Store → Memory Context (dashed purple, routes below Summarizer to avoid overlap) -->
+  <line x1="148" y1="191" x2="215" y2="191" stroke="#9575cd" stroke-width="1.1" stroke-dasharray="4,3"/>
+  <line x1="215" y1="191" x2="215" y2="160" stroke="#9575cd" stroke-width="1.1" stroke-dasharray="4,3"/>
+  <line x1="215" y1="160" x2="456" y2="160" stroke="#9575cd" stroke-width="1.1" stroke-dasharray="4,3"/>
+  <line x1="518" y1="160" x2="518" y2="148" stroke="#9575cd" stroke-width="1.1" stroke-dasharray="4,3" marker-end="url(#ah-p)"/>
+  <line x1="456" y1="160" x2="518" y2="160" stroke="#9575cd" stroke-width="1.1" stroke-dasharray="4,3"/>
+
+  <!-- ============ SYSTEM PROMPT CONTENTS ============ -->
+
+  <!-- 4 component boxes in 2×2 grid -->
+  <!-- Row 1 -->
+  <rect x="328" y="68" width="120" height="36" rx="5" fill="#e8f5e9" stroke="#a5d6a7" stroke-width="0.8"/>
+  <text x="388" y="83" text-anchor="middle" font-size="9" font-weight="600" fill="#444">Role &amp; Tone</text>
+  <text x="388" y="97" text-anchor="middle" font-size="7.5" fill="#777">empathetic friend</text>
+
+  <rect x="458" y="68" width="120" height="36" rx="5" fill="#e8f5e9" stroke="#a5d6a7" stroke-width="0.8"/>
+  <text x="518" y="83" text-anchor="middle" font-size="9" font-weight="600" fill="#444">ADHD Constraints</text>
+  <text x="518" y="97" text-anchor="middle" font-size="7.5" fill="#777">affirm-first, no judgment</text>
+
+  <!-- Row 2 -->
+  <rect x="328" y="112" width="120" height="36" rx="5" fill="#e8f5e9" stroke="#a5d6a7" stroke-width="0.8"/>
+  <text x="388" y="127" text-anchor="middle" font-size="9" font-weight="600" fill="#444">Behavioral Data</text>
+  <text x="388" y="141" text-anchor="middle" font-size="7.5" fill="#777">from summarizer</text>
+
+  <rect x="458" y="112" width="120" height="36" rx="5" fill="#ede7f6" stroke="#b39ddb" stroke-width="0.8"/>
+  <text x="518" y="127" text-anchor="middle" font-size="9" font-weight="600" fill="#444">Memory Context</text>
+  <text x="518" y="141" text-anchor="middle" font-size="7.5" fill="#777">from memory store</text>
+
+  <!-- Metacognitive Reflection Instructions (below, feeds up) -->
+  <rect x="328" y="196" width="250" height="52" rx="8" fill="#dcedc8" stroke="#8ab88a" stroke-width="1"/>
+  <text x="453" y="213" text-anchor="middle" font-size="9.5" font-weight="700" fill="#4a7a4a">Metacognitive Reflection Instructions</text>
+  <text x="453" y="228" text-anchor="middle" font-size="8" fill="#5a7a5a">① Task Awareness   ② Self-Awareness</text>
+  <text x="453" y="242" text-anchor="middle" font-size="8" fill="#5a7a5a">③ Strategy Awareness   ④ Behavioral Pattern</text>
+
+  <!-- Arrow: Framework ↑ guides prompt design -->
+  <line x1="453" y1="196" x2="453" y2="160" stroke="#6a9a6a" stroke-width="1.1" stroke-dasharray="3,2" marker-end="url(#ah-g)"/>
+  <text x="473" y="182" font-size="7.5" fill="#6a9a6a" font-style="italic">guides</text>
+
+  <!-- ============ ARROW: System Prompt → Dialogue ============ -->
+
+  <line x1="590" y1="117" x2="664" y2="117" stroke="#888" stroke-width="1.2" marker-end="url(#ah)"/>
+
+  <!-- ============ REFLECTION DIALOGUE ============ -->
+
+  <!-- LLM -->
+  <rect x="668" y="84" width="100" height="50" rx="8" fill="#fff" stroke="#e0a850" stroke-width="1.3"/>
+  <text x="718" y="106" text-anchor="middle" font-size="11" font-weight="700" fill="#333">LLM</text>
+  <text x="718" y="122" text-anchor="middle" font-size="8" fill="#999">streaming response</text>
+
+  <!-- User -->
+  <rect x="790" y="84" width="90" height="50" rx="8" fill="#fff" stroke="#e0a850" stroke-width="1.3"/>
+  <text x="835" y="106" text-anchor="middle" font-size="11" font-weight="700" fill="#333">User</text>
+  <text x="835" y="122" text-anchor="middle" font-size="8" fill="#999">reflects</text>
+
+  <!-- Bidirectional arrows -->
+  <line x1="768" y1="100" x2="786" y2="100" stroke="#c88a30" stroke-width="1.3"/>
+  <polygon points="790,100 783,96.5 783,103.5" fill="#c88a30"/>
+  <line x1="790" y1="120" x2="772" y2="120" stroke="#c88a30" stroke-width="1.3"/>
+  <polygon points="768,120 775,116.5 775,123.5" fill="#c88a30"/>
+
+  <!-- Description -->
+  <text x="775" y="160" text-anchor="middle" font-size="8.5" fill="#888">AI presents data insights;</text>
+  <text x="775" y="173" text-anchor="middle" font-size="8.5" fill="#888">user reflects at own pace.</text>
+  <text x="775" y="192" text-anchor="middle" font-size="8.5" fill="#888">Exploration buttons guide</text>
+  <text x="775" y="205" text-anchor="middle" font-size="8.5" fill="#888">the conversation.</text>
+
+  <!-- ============ MEMORY LOOP ============ -->
+
+  <!-- Arrow down from Dialogue -->
+  <line x1="775" y1="260" x2="775" y2="340" stroke="#9575cd" stroke-width="1.2" stroke-dasharray="5,3" marker-end="url(#ah-p)"/>
+  <text x="792" y="298" font-size="8" fill="#9575cd" font-style="italic">on session end</text>
+
+  <!-- Memory Extraction box -->
+  <rect x="670" y="344" width="180" height="36" rx="6" fill="#fff" stroke="#9575cd" stroke-width="1.3"/>
+  <text x="760" y="367" text-anchor="middle" font-size="10" font-weight="600" fill="#333">Memory Extraction</text>
+
+  <!-- Arrow: Memory Extraction → back to Memory Store -->
+  <line x1="670" y1="362" x2="92" y2="362" stroke="#9575cd" stroke-width="1.2" stroke-dasharray="5,3"/>
+  <line x1="92" y1="362" x2="92" y2="210" stroke="#9575cd" stroke-width="1.2" stroke-dasharray="5,3"/>
+  <polygon points="92,210 88,218 96,218" fill="#9575cd"/>
+
+  <!-- Label -->
+  <text x="390" y="355" text-anchor="middle" font-size="8.5" fill="#9575cd" font-style="italic">extract insights &amp; commitments to enrich future sessions</text>
+
+</svg>
+
+<p class="caption">
+  <b>Figure X.</b> System architecture of the AI-powered reflection dialogue.
+  Behavioral data from task events and computer activity is aggregated by a summarizer into a daily behavioral summary.
+  This summary, along with historical reflection memory, is injected into a system prompt that also encodes
+  an empathetic conversational role, ADHD-sensitive dialogue constraints, and metacognitive reflection instructions targeting four awareness dimensions (task, self, strategy, and behavioral pattern).
+  During the multi-turn conversation, the LLM presents personalized data insights while the user reflects at their own pace,
+  guided by suggested exploration directions.
+  After each session, key insights and user commitments are automatically extracted
+  and fed back into the memory store, enriching future reflection conversations.
+</p>
+
+</body>
+</html>

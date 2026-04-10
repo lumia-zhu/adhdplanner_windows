@@ -161,8 +161,8 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, onClose }: 
   const [loadingData, setLoadingData] = useState(true)
   const [localTasks, setLocalTasks] = useState<Task[]>(propTasks)
 
-  // ---- 侧边栏状态 ----
-  const [chatOpen, setChatOpen] = useState(false)
+  // ---- 侧边栏状态（默认展开，用户无需手动点击机器人图标） ----
+  const [chatOpen, setChatOpen] = useState(true)
   const [chatWidth, setChatWidth] = useState(400)
   // 截图功能已移除：纯文本数据更精确、可控、可调试，避免视觉误读
   const dataPanelRef = useRef<HTMLDivElement>(null)
@@ -233,6 +233,12 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, onClose }: 
   const reflectOpenedAt = useRef(Date.now())
   const hadChatRef = useRef(false)
   const hadEndedProperlyRef = useRef(false)
+
+  // 挂载时立即扩展窗口（chatOpen 默认 true，需要匹配宽度）
+  useEffect(() => {
+    window.electronAPI.resizeMainWindow(EXPANDED_WIDTH, MAIN_HEIGHT)
+    hadChatRef.current = true
+  }, [])
 
   // 追踪反思页面打开
   useEffect(() => {

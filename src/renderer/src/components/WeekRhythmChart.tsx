@@ -1,9 +1,9 @@
 /**
- * WeekRhythmChart —— 周平均节奏曲线 + 多天对比
+ * WeekRhythmChart —— 周节奏阶梯图 + 多天对比
  *
- * 默认显示 7 天每小时取平均的曲线（绿色实线 + 面积填充）。
- * 右上角"选择对比日"下拉按钮，选中某天后用彩色线叠加，周平均线变灰色虚线。
- * 最多同时选 3 天。
+ * 每小时一个台阶，高度 = 该小时活跃分钟数。
+ * 默认显示 7 天合计的阶梯面积图（绿色）。
+ * 右上角"选择对比日"下拉按钮，选中某天后堆叠显示。最多同时选 3 天。
  */
 
 import { useMemo, useState, useRef, useEffect } from 'react'
@@ -32,13 +32,9 @@ const MAX_COMPARE = 3
 
 /** 7 种预设颜色（用于对比线） */
 const LINE_COLORS = [
-  '#3b82f6', // 蓝
-  '#f97316', // 橙
-  '#8b5cf6', // 紫
-  '#ef4444', // 红
-  '#06b6d4', // 青
-  '#ec4899', // 粉
-  '#84cc16', // 黄绿
+  '#a8ddb5',
+  '#9ebcda',
+  '#c994c7',
 ]
 
 // ===================== 工具函数 =====================
@@ -53,58 +49,59 @@ function toHourlyUsage(data: ActivityRecord[]): number[] {
   return buckets.map(total => Math.min((total / EXPECTED_RECORDS_PER_HOUR) * 60, 60))
 }
 
-/** 将小时数据转为坐标点数组（支持动态 maxVal） */
-function toPoints(hourly: number[], start: number, count: number, maxVal: number): { x: number; y: number }[] {
-  const pts: { x: number; y: number }[] = []
+interface StepPoint {
+  leftX: number
+  rightX: number
+  y: number
+}
+
+/** 将小时数据转为阶梯坐标（每小时一个台阶） */
+function toStepPoints(hourly: number[], start: number, count: number, maxVal: number): StepPoint[] {
+  const pts: StepPoint[] = []
   for (let i = 0; i < count; i++) {
     const h = start + i
-    const x = PAD_L + ((i + 0.5) / count) * CHART_W
+    const leftX = PAD_L + (i / count) * CHART_W
+    const rightX = PAD_L + ((i + 1) / count) * CHART_W
     const y = PAD_T + CHART_H - ((hourly[h] ?? 0) / maxVal) * CHART_H
-    pts.push({ x, y })
+    pts.push({ leftX, rightX, y })
   }
   return pts
 }
 
-/** Catmull-Rom → cubic bezier 平滑曲线（控制点 clamp 防过冲） */
-function toSmoothLinePath(pts: { x: number; y: number }[]): string {
+/** 阶梯轮廓线 path（从左到右，水平台阶 + 垂直跳变） */
+function toStepLinePath(pts: StepPoint[]): string {
   if (pts.length === 0) return ''
-  if (pts.length === 1) return `M ${pts[0].x} ${pts[0].y}`
-  const tension = 0.3
-  const yMin = PAD_T
-  const yMax = PAD_T + CHART_H
-  const clampY = (y: number) => Math.max(yMin, Math.min(yMax, y))
-  let d = `M ${pts[0].x} ${pts[0].y}`
-  for (let i = 0; i < pts.length - 1; i++) {
-    const p0 = pts[Math.max(i - 1, 0)]
-    const p1 = pts[i]
-    const p2 = pts[i + 1]
-    const p3 = pts[Math.min(i + 2, pts.length - 1)]
-    const cp1x = p1.x + (p2.x - p0.x) * tension
-    const cp1y = clampY(p1.y + (p2.y - p0.y) * tension)
-    const cp2x = p2.x - (p3.x - p1.x) * tension
-    const cp2y = clampY(p2.y - (p3.y - p1.y) * tension)
-    d += ` C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${p2.x} ${p2.y}`
+  let d = `M ${pts[0].leftX} ${pts[0].y}`
+  for (let i = 0; i < pts.length; i++) {
+    d += ` H ${pts[i].rightX}`
+    if (i < pts.length - 1) d += ` V ${pts[i + 1].y}`
   }
   return d
 }
 
-/** 两条边界线之间的闭合堆叠面积 path */
-function toStackedAreaPath(
-  upperPts: { x: number; y: number }[],
-  lowerPts: { x: number; y: number }[],
-): string {
-  if (upperPts.length < 2) return ''
-  const upper = toSmoothLinePath(upperPts)
-  const lowerReversed = [...lowerPts].reverse()
-  const lower = toSmoothLinePath(lowerReversed)
-  return `${upper} L${lower.substring(1)} Z`
+/** 阶梯面积 — 闭合到基线（底层或无对比时用） */
+function toStepBaseAreaPath(pts: StepPoint[]): string {
+  if (pts.length === 0) return ''
+  const bottom = PAD_T + CHART_H
+  return `${toStepLinePath(pts)} V ${bottom} H ${pts[0].leftX} Z`
 }
 
-/** 平滑曲线 → 闭合到基线的面积 path（无选中时用） */
-function toBaseAreaPath(linePath: string, pts: { x: number; y: number }[]): string {
-  if (pts.length < 2) return ''
-  const bottom = PAD_T + CHART_H
-  return `${linePath} L ${pts[pts.length - 1].x} ${bottom} L ${pts[0].x} ${bottom} Z`
+/** 阶梯堆叠面积 — 上下两条阶梯线之间的闭合区域 */
+function toStepStackedAreaPath(upperPts: StepPoint[], lowerPts: StepPoint[]): string {
+  if (upperPts.length === 0) return ''
+  let d = `M ${upperPts[0].leftX} ${upperPts[0].y}`
+  for (let i = 0; i < upperPts.length; i++) {
+    d += ` H ${upperPts[i].rightX}`
+    if (i < upperPts.length - 1) d += ` V ${upperPts[i + 1].y}`
+  }
+  const lastIdx = lowerPts.length - 1
+  d += ` V ${lowerPts[lastIdx].y}`
+  for (let i = lastIdx; i >= 0; i--) {
+    d += ` H ${lowerPts[i].leftX}`
+    if (i > 0) d += ` V ${lowerPts[i - 1].y}`
+  }
+  d += ' Z'
+  return d
 }
 
 /** 根据最大值计算合适的 y 轴刻度 */
@@ -164,31 +161,31 @@ function extractStuckPoints(
 
   const pts: Omit<CompareStuckPoint, 'date' | 'color' | 'x'>[] = []
   for (const e of events) {
-    if (e.type !== 'stuck.triggered') continue
-    const p = e.payload as { sessionId: string; microAction: string; elapsedSeconds: number }
+    if (e.type !== 'stuck.reason') continue
+    const p = e.payload as { sessionId: string; reason: string }
     const taskTitle = sessionTaskMap.get(p.sessionId) || '未知任务'
 
-    const d = new Date(e.timestamp)
+    // 找对应的 stuck.triggered 获取 microAction 和精确时间
+    const trigger = events.find(
+      t => t.type === 'stuck.triggered' &&
+        (t.payload as { sessionId: string }).sessionId === p.sessionId &&
+        t.timestamp <= e.timestamp
+    )
+    const ts = trigger?.timestamp ?? e.timestamp
+    const microAction = trigger
+      ? (trigger.payload as { microAction: string }).microAction
+      : ''
+
+    const d = new Date(ts)
     const hourFraction = d.getHours() + d.getMinutes() / 60 + d.getSeconds() / 3600
     if (hourFraction < rangeStart || hourFraction >= rangeEnd) continue
 
     const timeLabel = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 
-    let reason = ''
-    for (const re of events) {
-      if (re.type === 'stuck.reason') {
-        const rp = re.payload as { sessionId: string; reason: string }
-        if (rp.sessionId === p.sessionId && re.timestamp >= e.timestamp) {
-          reason = rp.reason
-          break
-        }
-      }
-    }
-
     const resolves = resolveEvents.get(p.sessionId) || []
-    const resolved = resolves.some(ts => ts > e.timestamp)
+    const resolved = resolves.some(rts => rts > ts)
 
-    pts.push({ timestamp: e.timestamp, timeLabel, taskTitle, microAction: p.microAction, reason, resolved })
+    pts.push({ timestamp: ts, timeLabel, taskTitle, microAction, reason: p.reason, resolved })
   }
 
   return pts.sort((a, b) => a.timestamp - b.timestamp)
@@ -302,14 +299,13 @@ export default function WeekRhythmChart({ days, rangeStart: rs, rangeEnd: re }: 
   // ---- 堆叠面积 paths ----
   const layerPaths = useMemo(() => {
     return stackedData.layers.map((layer, idx) => {
-      const topPts = toPoints(layer.cumulativeTop, rangeStart, visibleHours, maxVal)
+      const topPts = toStepPoints(layer.cumulativeTop, rangeStart, visibleHours, maxVal)
       if (idx === 0) {
-        const linePath = toSmoothLinePath(topPts)
-        return { ...layer, path: toBaseAreaPath(linePath, topPts), topPts }
+        return { ...layer, path: toStepBaseAreaPath(topPts), topPts }
       }
       const prevTop = stackedData.layers[idx - 1].cumulativeTop
-      const bottomPts = toPoints(prevTop, rangeStart, visibleHours, maxVal)
-      return { ...layer, path: toStackedAreaPath(topPts, bottomPts), topPts }
+      const bottomPts = toStepPoints(prevTop, rangeStart, visibleHours, maxVal)
+      return { ...layer, path: toStepStackedAreaPath(topPts, bottomPts), topPts }
     })
   }, [stackedData, rangeStart, visibleHours, maxVal])
 
@@ -463,8 +459,8 @@ export default function WeekRhythmChart({ days, rangeStart: rs, rangeEnd: re }: 
         <defs>
           {layerPaths.map((lp, idx) => (
             <linearGradient key={idx} id={`weekStackGrad${idx}`} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor={lp.color} stopOpacity={lp.isRemaining ? 0.35 : 0.65} />
-              <stop offset="100%" stopColor={lp.color} stopOpacity={lp.isRemaining ? 0.08 : 0.15} />
+              <stop offset="0%" stopColor={lp.color} stopOpacity={lp.isRemaining ? 0.4 : 0.9} />
+              <stop offset="100%" stopColor={lp.color} stopOpacity={lp.isRemaining ? 0.15 : 0.5} />
             </linearGradient>
           ))}
         </defs>
@@ -488,15 +484,23 @@ export default function WeekRhythmChart({ days, rangeStart: rs, rangeEnd: re }: 
 
         {/* 堆叠面积层（从底层到顶层渲染） */}
         {layerPaths.map((lp, idx) => (
-          <path
-            key={idx}
-            d={lp.path}
-            fill={`url(#weekStackGrad${idx})`}
-            stroke={lp.color}
-            strokeWidth={idx === layerPaths.length - 1 ? 1.5 : 0.8}
-            strokeOpacity={0.6}
-            strokeLinejoin="round"
-          />
+          <g key={idx}>
+            {/* 面积填充（无描边，避免下边界覆盖下层上边界颜色） */}
+            <path
+              d={lp.path}
+              fill={`url(#weekStackGrad${idx})`}
+              stroke="none"
+            />
+            {/* 顶部轮廓线（独立描边，颜色与该层一致） */}
+            <path
+              d={toStepLinePath(lp.topPts)}
+              fill="none"
+              stroke={lp.color}
+              strokeWidth={idx === layerPaths.length - 1 ? 1.5 : 0.8}
+              strokeOpacity={0.9}
+              strokeLinejoin="round"
+            />
+          </g>
         ))}
 
         {/* 每小时段 hover 交互（垂直高亮带 + tooltip） */}
@@ -568,18 +572,9 @@ export default function WeekRhythmChart({ days, rangeStart: rs, rangeEnd: re }: 
           const layer = stackedData.layers[layerIdx]
           if (!layer) return null
 
-          const layerTopPts = toPoints(layer.cumulativeTop, rangeStart, visibleHours, maxVal)
-          let lineY = PAD_T + CHART_H
-          const leftPt = layerTopPts.filter(p => p.x <= sp.x).at(-1)
-          const rightPt = layerTopPts.find(p => p.x > sp.x)
-          if (leftPt && rightPt) {
-            const t = (sp.x - leftPt.x) / (rightPt.x - leftPt.x)
-            lineY = leftPt.y + t * (rightPt.y - leftPt.y)
-          } else if (leftPt) {
-            lineY = leftPt.y
-          } else if (rightPt) {
-            lineY = rightPt.y
-          }
+          const layerTopPts = toStepPoints(layer.cumulativeTop, rangeStart, visibleHours, maxVal)
+          const step = layerTopPts.find(s => sp.x >= s.leftX && sp.x < s.rightX)
+          const lineY = step ? step.y : PAD_T + CHART_H
 
           // 红色卡顿点：视觉更轻一点（点击/悬停仍用透明大圆保持易点）
           const dotR = isHov ? 4 : 2.8

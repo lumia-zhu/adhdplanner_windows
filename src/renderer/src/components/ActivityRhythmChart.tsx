@@ -1,8 +1,8 @@
 /**
- * ActivityRhythmChart —— 每日使用节奏曲线
+ * ActivityRhythmChart —— 每日使用节奏阶梯图
  *
- * PAD_L / PAD_R 与热力图共享（通过 CSS 变量 / 导出常量），
- * 确保折线图绘图区与热力图方块区完全对齐。
+ * 每小时一个台阶，高度 = 该小时活跃分钟数。
+ * PAD_L / PAD_R 与热力图共享，确保绘图区与热力图方块区完全对齐。
  */
 
 import { useMemo, useState } from 'react'
@@ -64,55 +64,35 @@ export default function ActivityRhythmChart({ data, events, rangeStart: rs, rang
   const maxVal = 60
   const yTicks = [0, 15, 30, 45, 60]
 
-  const points = useMemo(() => {
-    const pts: { x: number; y: number; hour: number; val: number }[] = []
+  const steps = useMemo(() => {
+    const s: { leftX: number; rightX: number; y: number; hour: number; val: number }[] = []
     for (let i = 0; i < visibleHours; i++) {
       const h = rangeStart + i
-      const x = PAD_L + ((i + 0.5) / visibleHours) * CHART_W
+      const leftX = PAD_L + (i / visibleHours) * CHART_W
+      const rightX = PAD_L + ((i + 1) / visibleHours) * CHART_W
       const y = PAD_T + CHART_H - (hourlyUsage[h] / maxVal) * CHART_H
-      pts.push({ x, y, hour: h, val: hourlyUsage[h] })
+      s.push({ leftX, rightX, y, hour: h, val: hourlyUsage[h] })
     }
-    return pts
+    return s
   }, [hourlyUsage, maxVal, rangeStart, visibleHours])
 
-  // Catmull-Rom → cubic bezier 曲线段（控制点 clamp 在绘图区内，防止过冲）
-  const curveSegments = useMemo(() => {
-    if (points.length < 2) return []
-    const tension = 0.3
-    const yMin = PAD_T
-    const yMax = PAD_T + CHART_H
-    const clampY = (y: number) => Math.max(yMin, Math.min(yMax, y))
-    const segs: { p1: typeof points[0]; p2: typeof points[0]; cp1x: number; cp1y: number; cp2x: number; cp2y: number }[] = []
-    for (let i = 0; i < points.length - 1; i++) {
-      const p0 = points[Math.max(i - 1, 0)]
-      const p1 = points[i]
-      const p2 = points[i + 1]
-      const p3 = points[Math.min(i + 2, points.length - 1)]
-      segs.push({
-        p1, p2,
-        cp1x: p1.x + (p2.x - p0.x) * tension,
-        cp1y: clampY(p1.y + (p2.y - p0.y) * tension),
-        cp2x: p2.x - (p3.x - p1.x) * tension,
-        cp2y: clampY(p2.y - (p3.y - p1.y) * tension),
-      })
-    }
-    return segs
-  }, [points])
-
-  const smoothLinePath = useMemo(() => {
-    if (points.length < 2) return points.length === 1 ? `M ${points[0].x} ${points[0].y}` : ''
-    let d = `M ${points[0].x} ${points[0].y}`
-    for (const s of curveSegments) {
-      d += ` C ${s.cp1x} ${s.cp1y}, ${s.cp2x} ${s.cp2y}, ${s.p2.x} ${s.p2.y}`
+  const stepLinePath = useMemo(() => {
+    if (steps.length === 0) return ''
+    let d = `M ${steps[0].leftX} ${steps[0].y}`
+    for (let i = 0; i < steps.length; i++) {
+      d += ` H ${steps[i].rightX}`
+      if (i < steps.length - 1) {
+        d += ` V ${steps[i + 1].y}`
+      }
     }
     return d
-  }, [points, curveSegments])
+  }, [steps])
 
-  const smoothAreaPath = useMemo(() => {
-    if (points.length < 2) return ''
+  const stepAreaPath = useMemo(() => {
+    if (steps.length === 0) return ''
     const baseline = PAD_T + CHART_H
-    return `${smoothLinePath} L ${points[points.length - 1].x} ${baseline} L ${points[0].x} ${baseline} Z`
-  }, [smoothLinePath, points])
+    return `${stepLinePath} V ${baseline} H ${steps[0].leftX} Z`
+  }, [stepLinePath, steps])
 
   const peakHour = useMemo(() => {
     let peak = rangeStart, peakVal = 0
@@ -155,34 +135,33 @@ export default function ActivityRhythmChart({ data, events, rangeStart: rs, rang
     const pts: StuckPoint[] = []
 
     for (const e of events) {
-      if (e.type !== 'stuck.triggered') continue
-      const p = e.payload as { sessionId: string; microAction: string; elapsedSeconds: number }
+      if (e.type !== 'stuck.reason') continue
+      const p = e.payload as { sessionId: string; reason: string }
       const taskTitle = sessionTaskMap.get(p.sessionId) || '未知任务'
 
-      const d = new Date(e.timestamp)
+      // 找对应的 stuck.triggered 获取 microAction 和精确时间
+      const trigger = events.find(
+        t => t.type === 'stuck.triggered' &&
+          (t.payload as { sessionId: string }).sessionId === p.sessionId &&
+          t.timestamp <= e.timestamp
+      )
+      const ts = trigger?.timestamp ?? e.timestamp
+      const microAction = trigger
+        ? (trigger.payload as { microAction: string }).microAction
+        : ''
+
+      const d = new Date(ts)
       const hourFraction = d.getHours() + d.getMinutes() / 60 + d.getSeconds() / 3600
       if (hourFraction < rangeStart || hourFraction >= rangeEnd) continue
 
       const x = PAD_L + ((hourFraction - rangeStart) / visibleHours) * CHART_W
       const timeLabel = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 
-      // 找卡顿原因
-      let reason = ''
-      for (const re of events) {
-        if (re.type === 'stuck.reason') {
-          const rp = re.payload as { sessionId: string; reason: string }
-          if (rp.sessionId === p.sessionId && re.timestamp >= e.timestamp) {
-            reason = rp.reason
-            break
-          }
-        }
-      }
-
       // 判断是否已解决
       const resolves = resolveEvents.get(p.sessionId) || []
-      const resolved = resolves.some(ts => ts > e.timestamp)
+      const resolved = resolves.some(rts => rts > ts)
 
-      pts.push({ x, timestamp: e.timestamp, timeLabel, taskTitle, microAction: p.microAction, reason, resolved })
+      pts.push({ x, timestamp: ts, timeLabel, taskTitle, microAction, reason: p.reason, resolved })
     }
 
     return pts.sort((a, b) => a.timestamp - b.timestamp)
@@ -235,41 +214,40 @@ export default function ActivityRhythmChart({ data, events, rangeStart: rs, rang
         </defs>
 
         {/* 面积填充 */}
-        <path d={smoothAreaPath} fill="url(#usageGradient)" opacity={0.4} />
+        <path d={stepAreaPath} fill="url(#usageGradient)" opacity={0.4} />
 
-        {/* 平滑曲线 */}
-        <path d={smoothLinePath} fill="none" stroke="#10b981" strokeWidth={1.8} strokeLinejoin="round" />
+        {/* 阶梯轮廓线 */}
+        <path d={stepLinePath} fill="none" stroke="#10b981" strokeWidth={1.8} />
 
         {/* 每小时段 hover 交互（垂直高亮带 + tooltip） */}
-        {points.map(p => {
-          const isHovered = hovered === p.hour
-          const colW = CHART_W / visibleHours
-          const colX = PAD_L + ((p.hour - rangeStart) / visibleHours) * CHART_W
+        {steps.map(s => {
+          const isHovered = hovered === s.hour
           return (
-            <g key={p.hour}>
+            <g key={s.hour}>
               <rect
-                x={colX} y={PAD_T} width={colW} height={CHART_H}
+                x={s.leftX} y={PAD_T} width={s.rightX - s.leftX} height={CHART_H}
                 fill="transparent" style={{ cursor: 'pointer' }}
-                onMouseEnter={() => setHovered(p.hour)}
+                onMouseEnter={() => setHovered(s.hour)}
                 onMouseLeave={() => setHovered(null)}
               />
               {isHovered && (
                 <g pointerEvents="none">
                   <rect
-                    x={colX} y={PAD_T} width={colW} height={CHART_H}
+                    x={s.leftX} y={PAD_T} width={s.rightX - s.leftX} height={CHART_H}
                     fill="#10b981" opacity={0.07} rx={1}
                   />
                   {(() => {
-                    const nextHour = (p.hour + 1) % 24
-                    const headerText = `${p.hour}:00~${nextHour}:00`
-                    const valText = `${Math.round(p.val)} 分钟`
+                    const nextHour = (s.hour + 1) % 24
+                    const headerText = `${s.hour}:00~${nextHour}:00`
+                    const valText = `${Math.round(s.val)} 分钟`
                     const lineH = 14
                     const boxH = lineH * 2 + 8
-                    const measureW = (s: string) => [...s].reduce((w, c) => w + (/[\u4e00-\u9fff]/.test(c) ? 6 : 4), 0)
+                    const measureW = (str: string) => [...str].reduce((w, c) => w + (/[\u4e00-\u9fff]/.test(c) ? 6 : 4), 0)
                     const rectW = Math.max(measureW(headerText), measureW(valText)) + 20
-                    const tipX = Math.max(0, Math.min(colX + colW / 2 - rectW / 2, W - rectW))
-                    const showBelow = p.y - PAD_T < boxH + 4
-                    const tipY = showBelow ? p.y + 8 : p.y - boxH - 4
+                    const midX = (s.leftX + s.rightX) / 2
+                    const tipX = Math.max(0, Math.min(midX - rectW / 2, W - rectW))
+                    const showBelow = s.y - PAD_T < boxH + 4
+                    const tipY = showBelow ? s.y + 8 : s.y - boxH - 4
                     return (
                       <g>
                         <rect x={tipX} y={tipY} width={rectW} height={boxH}
@@ -290,22 +268,11 @@ export default function ActivityRhythmChart({ data, events, rangeStart: rs, rang
             </g>
           )
         })}
-        {/* 卡顿标记（红色圆点，在折线上） */}
+        {/* 卡顿标记（红色圆点，画在台阶顶边上） */}
         {stuckPoints.map((sp, idx) => {
           const isHov = hoveredStuck === idx
-          // 在 cubic bezier 曲线段上精确采样 y
-          let lineY = PAD_T + CHART_H
-          const seg = curveSegments.find(s => sp.x >= s.p1.x && sp.x <= s.p2.x)
-          if (seg) {
-            const t = (sp.x - seg.p1.x) / (seg.p2.x - seg.p1.x)
-            const mt = 1 - t
-            lineY = mt*mt*mt * seg.p1.y + 3*mt*mt*t * seg.cp1y + 3*mt*t*t * seg.cp2y + t*t*t * seg.p2.y
-          } else {
-            const leftPt = points.filter(p => p.x <= sp.x).at(-1)
-            const rightPt = points.find(p => p.x > sp.x)
-            if (leftPt) lineY = leftPt.y
-            else if (rightPt) lineY = rightPt.y
-          }
+          const step = steps.find(s => sp.x >= s.leftX && sp.x < s.rightX)
+          const lineY = step ? step.y : PAD_T + CHART_H
 
           // 日视图卡顿点缩小一档，和周视图保持一致
           const dotR = isHov ? 4 : 2.8
