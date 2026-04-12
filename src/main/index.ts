@@ -5,7 +5,7 @@ import {
   getSupabase, getCurrentUserId, setCachedUserId,
   persistSession, restoreSession,
 } from './supabase'
-import { markDirty, startSync, stopSync, flushSync } from './sync'
+import { markDirty, startSync, stopSync, flushSync, pullFromCloud } from './sync'
 import {
   migrateTasksIfNeeded,
   loadAIConfig, saveAIConfig,
@@ -73,6 +73,7 @@ function setupIPC(): void {
         setCachedUserId(data.user.id)
         setUserDataDir(data.user.id)
         migrateRootDataToUser(data.user.id)
+        await pullFromCloud(data.user.id)
         if (data.session) {
           persistSession({
             access_token: data.session.access_token,
@@ -96,6 +97,7 @@ function setupIPC(): void {
         setCachedUserId(data.user.id)
         setUserDataDir(data.user.id)
         migrateRootDataToUser(data.user.id)
+        await pullFromCloud(data.user.id)
         persistSession({
           access_token: data.session.access_token,
           refresh_token: data.session.refresh_token,
@@ -174,7 +176,8 @@ function setupIPC(): void {
       win.setSize(sw, sh)
       win.setMinimumSize(sw, sh)
       win.setMaximumSize(sw, sh)
-      win.setAlwaysOnTop(true, 'floating')
+      win.setAlwaysOnTop(true, 'screen-saver')
+      win.moveTop()
     })
 
     setTimeout(() => {
@@ -421,6 +424,7 @@ app.whenReady().then(async () => {
   if (restored) {
     setUserDataDir(restored.id)
     migrateRootDataToUser(restored.id)
+    await pullFromCloud(restored.id)
     console.log('[Auth] Auto-login restored for:', restored.email)
   }
 
@@ -452,7 +456,8 @@ app.whenReady().then(async () => {
     console.log(`[Power] ${source} detected, restoring window`)
     safeWinOp(source, (win) => {
       if (S.isWidgetMode) {
-        win.setAlwaysOnTop(true, 'floating')
+        win.setAlwaysOnTop(true, 'screen-saver')
+        win.moveTop()
         if (win.isMinimized()) win.restore()
         win.show()
         refreshDragRegion()

@@ -1008,7 +1008,6 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, onClose }: 
                 onClick={() => {
                   if (viewMode !== 'day') tracker.track('reflect.mode_switched', { from: viewMode, to: 'day' })
                   setViewMode('day')
-                  resetChatOnDateChange()
                 }}
                 className={`px-2 py-0.5 rounded text-2xs font-medium transition-all
                   ${viewMode === 'day'
@@ -1023,7 +1022,6 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, onClose }: 
                   if (viewMode !== 'week') tracker.track('reflect.mode_switched', { from: viewMode, to: 'week' })
                   setViewMode('week')
                   setWeekEndDate(selectedDate)
-                  resetChatOnDateChange()
                 }}
                 className={`px-2 py-0.5 rounded text-2xs font-medium transition-all
                   ${viewMode === 'week'

@@ -13,8 +13,10 @@ import {
   loadTasks, loadProfile, loadAIConfig,
   loadActivityData, loadTrackerEvents,
   loadRawSession, loadMemoryStore,
+  safeWriteJSON, getUserDir,
 } from './storage'
 import { getReflectionChatPath } from './storage'
+import { join } from 'path'
 import fs from 'fs'
 
 const SYNC_INTERVAL = 30_000
@@ -181,27 +183,28 @@ async function pushToCloud(userId: string, entity: string, key: string): Promise
       const records = loadActivityData(date)
       if (records.length === 0) break
 
-      // 查询已有的 ts，只插入新增的记录
-      const { data: existing } = await sb
-        .from('activity_records').select('ts')
+      // 先删除云端该天的全部记录，再插入本地的全量数据（避免分页去重缺陷导致重复膨胀）
+      const { error: delErr } = await sb
+        .from('activity_records').delete()
         .eq('user_id', userId).eq('date', date)
-      const existingTs = new Set((existing ?? []).map(r => r.ts))
+      if (delErr) throw delErr
 
-      const newRows = records
-        .filter(r => !existingTs.has(r.ts))
-        .map(r => ({
-          user_id: userId, date,
-          ts: r.ts, idle: r.idle,
-          active_samples: r.activeSamples,
-          total_samples: r.totalSamples,
-          active_ratio: r.activeRatio,
-        }))
+      const rows = records.map(r => ({
+        user_id: userId, date,
+        ts: r.ts, idle: r.idle,
+        active_samples: r.activeSamples,
+        total_samples: r.totalSamples,
+        active_ratio: r.activeRatio,
+      }))
 
-      if (newRows.length > 0) {
-        const { error } = await sb.from('activity_records').insert(newRows)
+      // 分批插入（Supabase 单次 insert 有体积限制）
+      const BATCH = 500
+      for (let i = 0; i < rows.length; i += BATCH) {
+        const batch = rows.slice(i, i + BATCH)
+        const { error } = await sb.from('activity_records').insert(batch)
         if (error) throw error
       }
-      console.log(`[Sync] activity/${date}: ${newRows.length} new / ${records.length} total`)
+      console.log(`[Sync] activity/${date}: replaced with ${rows.length} records`)
       break
     }
 
@@ -210,27 +213,27 @@ async function pushToCloud(userId: string, entity: string, key: string): Promise
       const events = loadTrackerEvents(date) as Array<Record<string, unknown>>
       if (events.length === 0) break
 
-      // 查询已有的 event_id，只插入新增的事件
-      const { data: existing } = await sb
-        .from('tracker_events').select('event_id')
+      // 先删除云端该天的全部事件，再插入本地的全量数据
+      const { error: delErr } = await sb
+        .from('tracker_events').delete()
         .eq('user_id', userId).eq('date', date)
-      const existingIds = new Set((existing ?? []).map(r => r.event_id))
+      if (delErr) throw delErr
 
-      const newRows = events
-        .filter(ev => !existingIds.has(String(ev.id || '')))
-        .map(ev => ({
-          user_id: userId, date,
-          event_id: String(ev.id || ''),
-          event_type: String(ev.type || ''),
-          timestamp: typeof ev.timestamp === 'number' ? ev.timestamp : null,
-          payload: ev.payload ?? null,
-        }))
+      const rows = events.map(ev => ({
+        user_id: userId, date,
+        event_id: String(ev.id || ''),
+        event_type: String(ev.type || ''),
+        timestamp: typeof ev.timestamp === 'number' ? ev.timestamp : null,
+        payload: ev.payload ?? null,
+      }))
 
-      if (newRows.length > 0) {
-        const { error } = await sb.from('tracker_events').insert(newRows)
+      const BATCH = 500
+      for (let i = 0; i < rows.length; i += BATCH) {
+        const batch = rows.slice(i, i + BATCH)
+        const { error } = await sb.from('tracker_events').insert(batch)
         if (error) throw error
       }
-      console.log(`[Sync] tracker/${date}: ${newRows.length} new / ${events.length} total`)
+      console.log(`[Sync] tracker/${date}: replaced with ${rows.length} events`)
       break
     }
 
@@ -269,5 +272,201 @@ async function pushToCloud(userId: string, entity: string, key: string): Promise
 
     default:
       console.warn(`[Sync] Unknown entity: ${entity}`)
+  }
+}
+
+// ===================== 云端拉取（新设备首次登录） =====================
+
+const PULL_PAGE_SIZE = 1000
+
+/** 分页拉取 Supabase 表的全部行 */
+async function fetchAllRows(
+  table: string,
+  userId: string,
+  selectCols: string = '*',
+): Promise<Record<string, unknown>[]> {
+  const sb = getSupabase()
+  const all: Record<string, unknown>[] = []
+  let from = 0
+  while (true) {
+    const { data, error } = await sb
+      .from(table).select(selectCols)
+      .eq('user_id', userId)
+      .range(from, from + PULL_PAGE_SIZE - 1)
+    if (error) throw error
+    if (!data || data.length === 0) break
+    all.push(...(data as Record<string, unknown>[]))
+    if (data.length < PULL_PAGE_SIZE) break
+    from += PULL_PAGE_SIZE
+  }
+  return all
+}
+
+/**
+ * 从 Supabase 拉取该用户的全部数据到本地。
+ * 仅在本地用户目录无 `.cloud-pulled` 标记时执行（新设备首次登录）。
+ * 拉取完成后写入标记，后续启动不会重复拉取。
+ */
+export async function pullFromCloud(userId: string): Promise<void> {
+  const userDir = getUserDir()
+  const markerPath = join(userDir, '.cloud-pulled')
+  if (fs.existsSync(markerPath)) return
+
+  console.log('[Sync] Pull from cloud started for user:', userId)
+  const startTime = Date.now()
+
+  try {
+    // 1. Profile
+    const profiles = await fetchAllRows('profiles', userId)
+    if (profiles.length > 0) {
+      const p = profiles[0]
+      const profile = {
+        major: p.major || '',
+        grade: p.grade || '',
+        challenges: p.challenges ?? [],
+        workplaces: p.workplaces ?? [],
+        reflectionTime: p.reflection_time || null,
+      }
+      safeWriteJSON(join(userDir, 'profile.json'), profile)
+      console.log('[Pull] profile restored')
+    }
+
+    // 2. AI Config
+    const configs = await fetchAllRows('ai_configs', userId)
+    if (configs.length > 0) {
+      const c = configs[0]
+      const config = {
+        apiUrl: c.api_url || '',
+        apiKey: c.api_key || '',
+        modelId: c.model_id || '',
+      }
+      safeWriteJSON(join(userDir, 'ai-config.json'), config)
+      console.log('[Pull] aiConfig restored')
+    }
+
+    // 3. Memory Store
+    const memRows = await fetchAllRows('memory_store', userId)
+    if (memRows.length > 0) {
+      const m = memRows[0]
+      const memDir = join(userDir, 'memory')
+      if (!fs.existsSync(memDir)) fs.mkdirSync(memDir, { recursive: true })
+      safeWriteJSON(join(memDir, 'memory.json'), {
+        sessions: m.sessions ?? [],
+        commitments: m.commitments ?? [],
+        lastUpdated: m.last_updated ?? 0,
+      })
+      console.log('[Pull] memory store restored')
+    }
+
+    // 4. Tasks（按 date 分组写文件）
+    const allTasks = await fetchAllRows('tasks', userId)
+    const tasksByDate = new Map<string, unknown[]>()
+    for (const row of allTasks) {
+      const date = String(row.date)
+      if (!tasksByDate.has(date)) tasksByDate.set(date, [])
+      tasksByDate.get(date)!.push({
+        id: row.id,
+        title: row.title || '',
+        note: row.note || '',
+        priority: row.priority || 'medium',
+        completed: !!row.completed,
+        subtasks: row.subtasks ?? [],
+        pausedSession: row.paused_session ?? null,
+        carriedFrom: row.carried_from || null,
+        focusDuration: row.focus_duration ?? 0,
+        createdAt: row.created_at ?? Date.now(),
+      })
+    }
+    for (const [date, tasks] of tasksByDate) {
+      safeWriteJSON(join(userDir, `tasks-${date}.json`), tasks)
+    }
+    console.log(`[Pull] tasks restored: ${allTasks.length} items across ${tasksByDate.size} days`)
+
+    // 5. Tracker Events（按 date 分组，按 event_id 去重后写文件）
+    const allEvents = await fetchAllRows('tracker_events', userId)
+    const eventsByDate = new Map<string, Map<string, unknown>>()
+    for (const row of allEvents) {
+      const date = String(row.date)
+      const eventId = String(row.event_id || '')
+      if (!eventsByDate.has(date)) eventsByDate.set(date, new Map())
+      if (!eventsByDate.get(date)!.has(eventId)) {
+        eventsByDate.get(date)!.set(eventId, {
+          id: eventId,
+          type: row.event_type || '',
+          date,
+          timestamp: row.timestamp ?? 0,
+          payload: row.payload ?? {},
+        })
+      }
+    }
+    let trackerDeduped = 0
+    for (const [date, evMap] of eventsByDate) {
+      const events = [...evMap.values()]
+      trackerDeduped += events.length
+      safeWriteJSON(join(userDir, `tracker-${date}.json`), events)
+    }
+    console.log(`[Pull] tracker events restored: ${trackerDeduped} unique (${allEvents.length} raw) across ${eventsByDate.size} days`)
+
+    // 6. Activity Records（按 date 分组，按 ts 去重后写文件，不 pretty-print）
+    const allActivity = await fetchAllRows('activity_records', userId)
+    const actByDate = new Map<string, Map<number, unknown>>()
+    for (const row of allActivity) {
+      const date = String(row.date)
+      const ts = Number(row.ts)
+      if (!actByDate.has(date)) actByDate.set(date, new Map())
+      if (!actByDate.get(date)!.has(ts)) {
+        actByDate.get(date)!.set(ts, {
+          ts,
+          idle: row.idle,
+          activeSamples: row.active_samples,
+          totalSamples: row.total_samples,
+          activeRatio: row.active_ratio,
+        })
+      }
+    }
+    let actDeduped = 0
+    for (const [date, tsMap] of actByDate) {
+      const records = [...tsMap.values()]
+      actDeduped += records.length
+      safeWriteJSON(join(userDir, `activity-${date}.json`), records, false)
+    }
+    console.log(`[Pull] activity restored: ${actDeduped} unique (${allActivity.length} raw) across ${actByDate.size} days`)
+
+    // 7. Reflection Chats
+    const allChats = await fetchAllRows('reflection_chats', userId)
+    for (const row of allChats) {
+      const chatKey = String(row.chat_key)
+      safeWriteJSON(join(userDir, `reflection-${chatKey}.json`), {
+        bubbles: row.bubbles ?? [],
+        messages: row.messages ?? [],
+        step: row.step ?? 0,
+        savedAt: row.saved_at ?? Date.now(),
+      })
+    }
+    console.log(`[Pull] reflection chats restored: ${allChats.length}`)
+
+    // 8. Raw Sessions（反思对话原始记录）
+    const allSessions = await fetchAllRows('reflection_sessions', userId)
+    if (allSessions.length > 0) {
+      const memDir = join(userDir, 'memory')
+      if (!fs.existsSync(memDir)) fs.mkdirSync(memDir, { recursive: true })
+      for (const row of allSessions) {
+        const key = String(row.session_key)
+        safeWriteJSON(join(memDir, `raw-session-${key}.json`), {
+          date: row.date,
+          mode: row.mode,
+          status: row.status,
+          messages: row.messages ?? [],
+          startedAt: row.started_at ?? 0,
+        })
+      }
+    }
+    console.log(`[Pull] raw sessions restored: ${allSessions.length}`)
+
+    // 写标记：后续不再重复拉取
+    fs.writeFileSync(markerPath, new Date().toISOString(), 'utf-8')
+    console.log(`[Sync] Pull from cloud completed in ${Date.now() - startTime}ms`)
+  } catch (e) {
+    console.error('[Sync] Pull from cloud failed:', e)
   }
 }

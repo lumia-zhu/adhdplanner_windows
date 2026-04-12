@@ -72,13 +72,14 @@ export function startWidgetHeartbeat(): void {
 
       if (!S.mainWindow.isAlwaysOnTop()) {
         console.log('[Heartbeat] alwaysOnTop lost, re-applying')
-        S.mainWindow.setAlwaysOnTop(true, 'floating')
+        S.mainWindow.setAlwaysOnTop(true, 'screen-saver')
+        S.mainWindow.moveTop()
         refreshDragRegion()
       }
     } catch (e) {
       console.error('[Heartbeat] Error:', e)
     }
-  }, 3000)
+  }, 1500)
 }
 
 export function stopWidgetHeartbeat(): void {
@@ -119,13 +120,26 @@ export function onWidgetMoved(): void {
   saveWidgetPos(x, y)
 }
 
+export function onWidgetBlur(): void {
+  if (!S.mainWindow || S.mainWindow.isDestroyed() || !S.isWidgetMode) return
+  setTimeout(() => {
+    safeWinOp('widget-blur-restore', (win) => {
+      if (S.isWidgetMode) {
+        win.setAlwaysOnTop(true, 'screen-saver')
+        win.moveTop()
+      }
+    })
+  }, 100)
+}
+
 export function onWidgetMinimize(): void {
   if (!S.mainWindow || S.mainWindow.isDestroyed() || !S.isWidgetMode) return
   setTimeout(() => {
     safeWinOp('anti-minimize', (win) => {
       if (S.isWidgetMode && win.isMinimized()) {
         win.restore()
-        win.setAlwaysOnTop(true, 'floating')
+        win.setAlwaysOnTop(true, 'screen-saver')
+        win.moveTop()
         refreshDragRegion()
       }
     })
@@ -159,17 +173,19 @@ export function enterWidget(): void {
   safeWinOp('enterWidget', (win) => {
     win.setMinimumSize(1, 1)
     win.setMaximumSize(9999, 9999)
-    win.setAlwaysOnTop(true, 'floating')
+    win.setAlwaysOnTop(true, 'screen-saver')
     win.setVisibleOnAllWorkspaces(true)
     win.setSize(scaledW, scaledH)
     win.setMinimumSize(scaledW, scaledH)
     win.setMaximumSize(scaledW, scaledH)
     win.setPosition(x, y)
     win.show()
+    win.moveTop()
   })
 
   S.mainWindow.on('moved', onWidgetMoved)
   S.mainWindow.on('minimize', onWidgetMinimize)
+  S.mainWindow.on('blur', onWidgetBlur)
   startWidgetHeartbeat()
 }
 
@@ -185,13 +201,14 @@ export function exitWidget(): void {
   } catch { /* 窗口已销毁时忽略 */ }
   S.mainWindow.off('moved', onWidgetMoved)
   S.mainWindow.off('minimize', onWidgetMinimize)
+  S.mainWindow.off('blur', onWidgetBlur)
 
   const { width: sw, height: sh } = screen.getPrimaryDisplay().workAreaSize
 
   safeWinOp('exitWidget', (win) => {
     win.setMinimumSize(1, 1)
     win.setMaximumSize(0, 0)
-    win.setAlwaysOnTop(true, 'floating')
+    win.setAlwaysOnTop(true, 'screen-saver')
     win.setVisibleOnAllWorkspaces(false)
     win.setSize(scaled(MAIN_WIDTH), scaled(MAIN_HEIGHT))
     win.setMinimumSize(scaled(MAIN_WIDTH), scaled(MAIN_HEIGHT))
@@ -310,6 +327,7 @@ export function createMainWindow(): void {
         S.isWidgetMode = false
         S.mainWindow?.off('moved', onWidgetMoved)
         S.mainWindow?.off('minimize', onWidgetMinimize)
+        S.mainWindow?.off('blur', onWidgetBlur)
         S.mainWindow?.webContents.send('widget:exit')
       }
       S.mainWindow?.hide()

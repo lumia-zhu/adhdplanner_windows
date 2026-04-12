@@ -139,7 +139,10 @@ export default function AuthPage({ onLoginSuccess }: AuthPageProps) {
                        disabled:opacity-50 disabled:cursor-not-allowed
                        text-white font-medium text-sm transition-colors"
           >
-            {loading ? '处理中...' : isSignUp ? '注册' : '登录'}
+            {loading
+              ? (isSignUp ? '注册中，正在同步数据...' : '登录中，正在同步数据...')
+              : (isSignUp ? '注册' : '登录')
+            }
           </button>
         </form>
 

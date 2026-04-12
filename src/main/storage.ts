@@ -47,7 +47,7 @@ export function setUserDataDir(userId: string | null): void {
 }
 
 /** 获取当前用户的数据根目录 */
-function getUserDir(): string {
+export function getUserDir(): string {
   return userDataDir ?? app.getPath('userData')
 }
 
@@ -361,7 +361,26 @@ export function loadActivityData(date: string): ActivityRecord[] {
     const p = getActivityPath(date)
     if (fs.existsSync(p)) {
       const raw = JSON.parse(fs.readFileSync(p, 'utf-8')) as unknown[]
-      return raw.map(normalizeActivityRecord).filter((r): r is ActivityRecord => r !== null)
+      const records = raw.map(normalizeActivityRecord).filter((r): r is ActivityRecord => r !== null)
+
+      // 按 ts 去重（修复云端同步曾产生的重复数据）
+      if (records.length > 0) {
+        const seen = new Set<number>()
+        const deduped: ActivityRecord[] = []
+        for (const r of records) {
+          if (!seen.has(r.ts)) {
+            seen.add(r.ts)
+            deduped.push(r)
+          }
+        }
+        if (deduped.length < records.length) {
+          console.log(`[Activity] Deduped ${date}: ${records.length} → ${deduped.length}`)
+          safeWriteJSON(p, deduped, false)
+          return deduped
+        }
+      }
+
+      return records
     }
   } catch (e) { console.error('[Activity] Failed to load data:', e) }
   return []
