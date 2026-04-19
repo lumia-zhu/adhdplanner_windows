@@ -4,25 +4,32 @@
 
 本研究采用 `Research through Design (RtD)` 视角，将原型作为研究载体，而非最终贡献本身。核心关注点是：
 
-- `GenAI-based metacognitive scaffolding` 如何进入 ADHD / 执行功能困难人群的日常任务管理实践
-- 用户如何调用、理解并协商这种支架
-- 这些使用经验会为未来设计揭示哪些关键原则与边界
+- `GenAI metacognitive scaffolding` 如何进入 ADHD 人群的日常任务管理实践
+- 用户如何体验、调用、理解并协商这种支架
+- 这些日常使用经验会为未来设计揭示哪些关键原则与边界
 
 本研究更适合做 `qualitative-dominant mixed-methods field study`，而不是一次性的实验室 A/B 测试。
 
 ## 当前研究问题
 
-### Main Research Question
+### RQ1
 
-**How does GenAI-based metacognitive scaffolding manifest in the everyday task management practices of people with executive function difficulties, and what design implications does it reveal?**
+**How do individuals with ADHD experience GenAI metacognitive scaffolding across planning, executing, and reflecting on everyday tasks?**
 
-### Sub-RQ 1
+### RQ2
 
-**How do people with executive function difficulties invoke, interpret, and negotiate GenAI-based metacognitive scaffolding in everyday task management?**
+**What design principles and boundaries for GenAI metacognitive scaffolding emerge from its everyday use by individuals with ADHD?**
 
-### Sub-RQ 2
+### Framing 说明
 
-**What key design principles and boundaries for GenAI-based metacognitive scaffolding are revealed through these use experiences?**
+本研究沿用前作（CHI 2026 _Scaffolding Metacognition with GenAI_）建立的**漏斗式 framing**：
+
+- RQ 层用 `individuals with ADHD`，保持研究议程的连贯性
+- Sample 层仍为 `university students with ADHD`（12-16 人），在 intro 通过 bridging sentence 收窄
+- Findings 的 claim 主语是 `our participants` 或 `university students with ADHD`
+- Discussion 可以在明确标注下把设计启示扩回 `individuals with ADHD` 或 `neurodivergent populations`
+
+RQ1 聚焦"**体验**"——在 `planning / execution / reflection` 三阶段中用户如何感受、调用、协商 GenAI 元认知支架。RQ2 聚焦"**提炼**"——从真实日常使用里涌现出的设计原则与边界（`principles` 指向"什么值得做"，`boundaries` 指向"什么必须克制"）。
 
 ## 推荐研究结构
 
@@ -37,7 +44,7 @@
 
 推荐样本：
 
-- `12-16` 位 ADHD 或具有显著执行功能困难特征的参与者
+- `12-16` 位 university students with ADHD（sample 层收窄，与前作 CHI 2026 口径一致）
 
 ## User Study 流程概览
 
@@ -70,12 +77,12 @@
 
 建议招募对象：
 
-- 正式 ADHD 诊断者
-- 或自我认同存在明显执行功能困难的人群
+- 正式 ADHD 诊断者（university students）
+- 或经过 ASRS / 其他筛查工具筛选的自我认同 ADHD university students
 
 建议记录背景：
 
-- 年龄、身份（学生/职场）
+- 年龄、年级、专业
 - ADHD 诊断或筛查情况
 - 当前任务管理方式
 - 常见困难情境：启动难、做到一半卡住、难以回顾、频繁切换等
@@ -84,6 +91,7 @@
 
 - 为后续解释不同使用模式提供背景
 - 提高样本与研究问题的匹配度
+- 与前作 CHI 2026 的招募标准保持一致，便于研究线索延续
 
 ### 3. Pre-study Session
 
@@ -187,8 +195,8 @@
 
 ### 1. 背景数据
 
-- ADHD / 执行功能困难背景
-- 基本人口信息
+- ADHD 诊断或筛查背景
+- 基本人口信息（年龄、年级、专业）
 - 原有任务管理习惯
 
 用途：
@@ -251,59 +259,46 @@
 
 用途：
 
-- 回答 `RQ1`、`RQ2`
-- 并最终提炼 `RQ3`
+- 回答 `RQ1`（体验与互动）
+- 并最终提炼 `RQ2`（设计原则与边界）
 
 ## 数据与研究问题对应关系
 
 ### RQ1
 
-**How does GenAI-based metacognitive scaffolding manifest in the everyday task management practices of people with executive function difficulties, and what design implications does it reveal?**
+**How do individuals with ADHD experience GenAI metacognitive scaffolding across planning, executing, and reflecting on everyday tasks?**
 
 重点数据：
 
-- 系统行为日志
+- 系统行为日志（覆盖三阶段的调用、频次、路径）
+- AI 互动内容与交互痕迹（包括采纳、修改、忽略、拒绝）
 - daily / event-based self-report
-- post-study interviews
+- post-study interviews + trace elicitation
 
 文章中可回答：
 
-- 支架在何时进入任务实践
-- 它如何参与开始任务、卡住求助和事后回看
-- 用户是否形成新的使用方式或节奏
+- 支架在 `planning / execution / reflection` 三阶段分别如何进入任务实践
+- 用户何时主动调用、何时接受/修改/忽略/拒绝
+- 用户如何理解和协商 AI 支架的角色
+- 跨时间是否形成新的使用方式或节奏
 
 ### RQ2
 
-**How do people with executive function difficulties invoke, interpret, and negotiate GenAI-based metacognitive scaffolding in everyday task management?**
+**What design principles and boundaries for GenAI metacognitive scaffolding emerge from its everyday use by individuals with ADHD?**
 
 重点数据：
-
-- AI 互动内容
-- 关键事件日志
-- trace elicitation 访谈
-- 事件后反馈
-
-文章中可回答：
-
-- 用户何时主动调用支架
-- 何时接受、修改、忽略或拒绝 AI 支持
-- 用户如何解释 AI 的角色和作用
-
-### RQ3
-
-**What key design principles and boundaries for GenAI-based metacognitive scaffolding are revealed through these use experiences?**
-
-重点数据来源：
 
 - 跨案例主题分析
 - 研究后访谈
 - 负面案例与中断使用案例
+- ADHD 专家反馈（可选但推荐，用于强化 boundaries 部分）
 
 文章中可回答：
 
-- 有效支架应出现在哪些时刻
-- 哪些交互方式更容易被接受
-- 哪些边界、风险与负担需要被控制
+- 有效支架应出现在哪些时刻、什么形态（principles）
+- 哪些交互方式更容易被接受、更贴合 ADHD 用户
+- 哪些边界、风险与负担需要被控制（boundaries）
+- 在真实日常部署里，哪些 AI 介入被用户理解为"帮助"，哪些被理解为"打扰"
 
 ## CHI 风格上的关键注意点
 
@@ -313,9 +308,9 @@
 - 主动报告负面案例、拒绝使用、疲劳和边界
 - 将原型定位为 `research artifact`
 - 将最终贡献落在：
-  - 使用经验
-  - 设计原则
-  - GenAI-based metacognitive scaffolding 的设计边界
+  - individuals with ADHD 在三阶段任务实践中的真实使用经验（RQ1）
+  - GenAI metacognitive scaffolding 的设计原则与边界（RQ2）
+  - 面向 neurodivergent populations 的更广研究议程
 
 ## 相关文档
 

@@ -4,24 +4,24 @@
 
 - **研究范式**：Qualitative-dominant mixed-methods field study
 - **研究周期**：约 2.5 周（Day 0 前测 + 14 天部署 + Day 15 后测访谈）
-- **目标样本**：12–16 位具有 ADHD 诊断或显著执行功能困难的大学生
-- **原型**：MetaPlan — 基于 GenAI 元认知支架的桌面任务管理工具
+- **目标样本**：12–16 位 university students with ADHD（正式诊断或通过 ASRS 筛查）
+- **原型**：MetaPlan — 覆盖 planning / executing / reflecting 三阶段的 GenAI 元认知支架桌面任务管理工具
 
 ---
 
 ## 2. 研究问题
 
-### Main RQ
+### RQ1
 
-**How does GenAI-based metacognitive scaffolding manifest in the everyday task management practices of people with executive function difficulties, and what design implications does it reveal?**
+**How do individuals with ADHD experience GenAI metacognitive scaffolding across planning, executing, and reflecting on everyday tasks?**
 
-### Sub-RQ 1
+### RQ2
 
-How do people with executive function difficulties invoke, interpret, and negotiate GenAI-based metacognitive scaffolding in everyday task management?
+**What design principles and boundaries for GenAI metacognitive scaffolding emerge from its everyday use by individuals with ADHD?**
 
-### Sub-RQ 2
+### Framing 说明
 
-What key design principles and boundaries for GenAI-based metacognitive scaffolding are revealed through these use experiences?
+沿用前作 CHI 2026 (_Scaffolding Metacognition with GenAI_) 的**漏斗式 framing**：RQ 层使用 `individuals with ADHD` 保持议程连贯，sample 层收窄到 `university students with ADHD`，通过 intro 里的 bridging sentence 完成收窄。
 
 ---
 
@@ -32,7 +32,7 @@ What key design principles and boundaries for GenAI-based metacognitive scaffold
 - 年龄 18–30 岁，在读大学生（本科或研究生）
 - 满足以下任一条件：
   - 持有正式 ADHD 诊断
-  - 自我报告存在显著执行功能困难（启动困难、注意力维持困难、任务切换频繁等）
+  - 通过 ASRS（成人 ADHD 自评量表）筛查达到临界及以上
 - 日常有使用电脑处理学习/工作任务的习惯
 - 使用 Windows 10/11 系统（64 位）
 
@@ -251,9 +251,10 @@ Day 15         Post-study Session
 | 现有任务管理习惯 | 前访谈 | 作为 baseline 参照 | RQ1 |
 | 前后测量表（MAI-19 + SESRL） | 问卷 | 元认知意识和效能感的变化信号 | RQ1 |
 | 每日微问卷 | 每日推送 | 纵向趋势 + 访谈追问素材 | RQ1 |
-| 系统行为日志 | MetaPlan 自动记录 | 任务行为、功能使用模式 | RQ1, RQ2 |
-| AI 交互痕迹 | MetaPlan 自动记录 | 用户如何与 AI 支架交互 | RQ2 |
-| 后访谈录音与转写 | Trace Elicitation | 深层理解、负面案例、设计边界 | RQ1, RQ2 |
+| 系统行为日志 | MetaPlan 自动记录 | 三阶段中的任务行为、功能使用模式 | RQ1 |
+| AI 交互痕迹 | MetaPlan 自动记录 | 用户如何调用/采纳/协商/拒绝 AI 支架 | RQ1 |
+| 后访谈录音与转写 | Trace Elicitation | 深层理解、负面案例、设计原则与边界 | RQ1, RQ2 |
+| ADHD 专家反馈（可选） | 专家访谈 | 强化 boundaries 论证 | RQ2 |
 
 ---
 

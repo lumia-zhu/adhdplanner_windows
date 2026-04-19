@@ -2,10 +2,10 @@
 
 ## Research Questions
 
-**Main RQ**: How does GenAI-based metacognitive scaffolding manifest in the everyday task management practices of people with executive function difficulties, and what design implications does it reveal?
+- **RQ1**: How do individuals with ADHD experience GenAI metacognitive scaffolding across planning, executing, and reflecting on everyday tasks?
+- **RQ2**: What design principles and boundaries for GenAI metacognitive scaffolding emerge from its everyday use by individuals with ADHD?
 
-- **Sub-RQ1**: How do people with executive function difficulties invoke, interpret, and negotiate GenAI-based metacognitive scaffolding in everyday task management?
-- **Sub-RQ2**: What key design principles and boundaries for GenAI-based metacognitive scaffolding are revealed through these use experiences?
+> **Framing note**: Following the funnel pattern established in our prior CHI 2026 work, the RQs use `individuals with ADHD` at the population level while the sample is narrowed to `university students with ADHD` via an explicit bridging sentence in the introduction.
 
 ---
 
@@ -13,8 +13,8 @@
 
 - **Paradigm**: Qualitative-dominant mixed-methods field study
 - **Duration**: ~2.5 weeks (Day 0 + 14-day deployment + Day 15)
-- **Participants**: 12–16 university students with ADHD diagnosis or significant executive function difficulties
-- **Prototype**: MetaPlan — a desktop task management tool with GenAI-based metacognitive scaffolding
+- **Participants**: 12–16 university students with ADHD (diagnosed or screened via ASRS)
+- **Prototype**: MetaPlan — a desktop task management tool with GenAI metacognitive scaffolding covering planning, execution, and reflection
 
 ---
 
@@ -89,8 +89,8 @@ Pre-study Session          2-week In-the-wild Deployment              Post-study
 
 ## Data Collection → Research Questions Mapping
 
-| Data Source | What It Captures | Sub-RQ1 | Sub-RQ2 |
-|-------------|-----------------|:-------:|:-------:|
+| Data Source | What It Captures | RQ1 | RQ2 |
+|-------------|-----------------|:---:|:---:|
 | **Pre interview** | Existing habits (baseline) | ✓ | |
 | **Pre/post questionnaires** | Metacognitive awareness & self-efficacy shift | ✓ | |
 | **System behavior logs** | Task events, session timing, feature usage patterns | ✓ | ✓ |

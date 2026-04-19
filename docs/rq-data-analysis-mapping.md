@@ -8,15 +8,15 @@
 
 ### RQ1
 
-**How does GenAI-based metacognitive scaffolding influence the academic task management practices of university students with ADHD?**
+**How do individuals with ADHD experience GenAI metacognitive scaffolding across planning, executing, and reflecting on everyday tasks?**
 
 ### RQ2
 
-**How do university students with ADHD engage with GenAI-based metacognitive scaffolding during academic task management?**
+**What design principles and boundaries for GenAI metacognitive scaffolding emerge from its everyday use by individuals with ADHD?**
 
-### RQ3
+### Framing 说明
 
-**Based on these experiences, what design considerations and boundaries should inform the design of GenAI-based metacognitive scaffolding for supporting academic task management among students with ADHD?**
+采用与前作 CHI 2026（_Scaffolding Metacognition with GenAI_）一致的**漏斗式 framing**：RQ 层用 `individuals with ADHD` 保持议程连贯，sample 层仍为 `university students with ADHD`（12-16 人），在 intro 通过 bridging sentence 收窄。
 
 ---
 
@@ -39,18 +39,18 @@
 
 ---
 
-## RQ1：任务管理实践如何被影响
+## RQ1：在三阶段中如何体验 AI 支架
 
 ### 关注点
 
-这个问题更关注：AI 元认知支架是否改变了 ADHD 大学生管理学业任务的方式。
+这个问题关注：individuals with ADHD 在 `planning / execution / reflection` 三阶段里，如何体验、调用、理解、协商 GenAI 元认知支架。
 
-这里的 “influence” 不一定理解成严格因果上的效率提升，更适合理解为：
+这里的 `experience` 覆盖行为层、主观感受层和协商层：
 
-- 是否改变了启动任务的方式
-- 是否改变了卡住时的应对方式
-- 是否改变了暂停后恢复的方式
-- 是否改变了回顾一天任务的方式
+- 支架在哪一阶段/哪些时刻进入任务实践
+- 用户何时主动调用，何时接受/修改/忽略/拒绝
+- 用户如何理解 AI 的角色（帮手/伙伴/打扰/压力）
+- 跨时间是否形成新的任务启动、应对卡住、恢复、回顾的方式
 
 ### 建议收集的数据
 
@@ -132,11 +132,13 @@
 
 ---
 
-## RQ2：用户如何与 AI 支架互动
+## RQ1 续：用户如何与 AI 支架互动
+
+> 本小节原为旧 RQ2，现统一并入新 RQ1（`experience` 的范畴已经同时覆盖行为实践的变化和与 AI 的协商/互动）。下面的数据收集与分析方向完全保留，作为 RQ1 的第二个子视角。
 
 ### 关注点
 
-这个问题更关注：ADHD 大学生是如何调用、理解、采纳、忽略、协商或绕过 AI 支架的。
+这个问题关注：individuals with ADHD 是如何调用、理解、采纳、忽略、协商或绕过 AI 支架的。
 
 ### 建议收集的数据
 
@@ -206,11 +208,11 @@
 
 ---
 
-## RQ3：设计考虑与边界
+## RQ2：设计原则与边界
 
 ### 关注点
 
-这个问题更关注：基于上述使用经验，未来应该如何设计 GenAI 元认知支架，以及哪些边界必须明确。
+这个问题关注：基于 RQ1 里观察到的真实日常使用经验，未来应该如何设计 GenAI 元认知支架（`principles`：什么值得做），以及哪些边界必须明确（`boundaries`：什么必须克制）。
 
 ### 建议收集的数据
 
@@ -354,7 +356,8 @@
 
 ## 一句话总结
 
-- **RQ1** 主要看“任务管理实践怎么变了”，重点依赖系统日志、前后访谈和少量 check-in
-- **RQ2** 主要看“用户如何与 AI 支架互动”，重点依赖 AI 使用日志、trace elicitation 和后访谈
-- **RQ3** 主要看“未来应该如何设计，以及边界在哪”，重点依赖负面案例、后访谈、ADHD 专家反馈，以及少量使用统计作支撑
+- **RQ1** 同时看两件事：
+  - "**任务管理实践怎么变了**" —— 重点依赖系统日志、前后访谈和少量 check-in
+  - "**用户如何与 AI 支架互动**" —— 重点依赖 AI 使用日志、trace elicitation 和后访谈
+- **RQ2** 主要看"**设计原则与边界**"，重点依赖负面案例、后访谈、ADHD 专家反馈，以及少量使用统计作支撑
 

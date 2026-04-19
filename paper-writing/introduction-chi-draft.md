@@ -8,4 +8,19 @@
 
 围绕任务管理，数字技术已经提供了大量支持。现有工具广泛帮助用户记录任务、设置提醒、安排日程和追踪进度，相关研究也提出了多种面向效率提升与行为支持的交互系统。然而，这些支持大多侧重于任务的外部组织与行为执行，较少关注用户如何理解自己的任务过程，以及如何在卡住、偏离和中断时重新组织行动。与此同时，生成式 AI 虽然已经越来越多地被用于计划生成、文本辅助和学习支持，但在任务管理场景中，其角色常被理解为给出建议、生成方案或替用户做决定。对于 ADHD 用户而言，这样的支持未必总是有效；过重、过抽象，或脱离当下情境的帮助，本身也可能成为新的认知负担。因此，一个尚未被充分解决的问题是：如何设计一种既贴近真实任务情境、又能够支持 ADHD 用户觉察、监控和调节自身任务过程的 AI 支持方式。
 
-生成式 AI 为这一问题提供了新的设计机会。与现有任务管理工具相比，GenAI 能够基于具体情境提供语言化、动态化和相对个性化的支持，因此有潜力作为一种元认知支架，帮助用户更好地理解任务、识别困难、回顾过程并形成后续调整。这里的关键并不在于让 AI 替用户规划或判断，而在于探索 AI 是否能够在任务过程的关键时刻支持用户更好地觉察、监控和调节自己的行动。基于这一思路，我们设计并研究了一个面向 ADHD 大学生的生成式 AI 任务管理原型，探索 AI 如何在真实学业任务中作为元认知支架提供支持。通过对原型真实使用过程的研究，我们发现，用户是否接受这类 AI 支持，并不主要取决于 AI 是否更强或更智能，而更多取决于支持是否轻量、贴近当下情境，并能够帮助他们更清楚地看见自己的任务过程，而不是替他们下判断或接管决策。基于这些发现，本研究为 HCI 社区提供三方面贡献：第一，增进了对 ADHD 大学生在真实学业任务中任务管理困难的实证理解；第二，提出了面向生成式 AI 元认知支架的设计启发；第三，进一步说明了在这一场景中，生成式 AI 的价值更适合被理解为对觉察与调节的支持，而非对思考与决策的替代。
+生成式 AI 为这一问题提供了新的设计机会。与现有任务管理工具相比，GenAI 能够基于具体情境提供语言化、动态化和相对个性化的支持，因此有潜力作为一种元认知支架，帮助用户更好地理解任务、识别困难、回顾过程并形成后续调整。这里的关键并不在于让 AI 替用户规划或判断，而在于探索 AI 是否能够在任务过程的关键时刻支持用户更好地觉察、监控和调节自己的行动。
+
+基于这一思路，我们设计并部署了一个 GenAI 元认知支架原型，覆盖计划、执行与反思三个阶段，并在真实日常任务情境中展开了为期两周的 in-the-wild field deployment 研究。我们的研究问题是：
+
+- **RQ1.** How do individuals with ADHD experience GenAI metacognitive scaffolding across planning, executing, and reflecting on everyday tasks?
+- **RQ2.** What design principles and boundaries for GenAI metacognitive scaffolding emerge from its everyday use by individuals with ADHD?
+
+University students with ADHD, who face both independent-living transitions and highly self-directed academic schedules, represent a particularly informative group for examining these questions. 基于这一考量，我们招募了 12-16 位 university students with ADHD，通过系统日志、每日 micro check-in、trace elicitation 访谈和后访谈组合收集数据，并结合 ADHD 专家访谈对发现进行验证。
+
+通过对原型真实使用过程的研究，我们发现，用户是否接受这类 AI 支持，并不主要取决于 AI 是否更强或更智能，而更多取决于支持是否轻量、贴近当下情境，并能够帮助他们更清楚地看见自己的任务过程，而不是替他们下判断或接管决策。
+
+基于这些发现，本研究为 HCI 社区提供三方面贡献：
+
+1. 增进了对 **university students with ADHD** 在真实日常任务中与 GenAI 元认知支架协商、采纳与拒绝的实证理解；
+2. 为面向 **individuals with ADHD** 的 GenAI 元认知支架提炼了一组设计原则与边界（principles and boundaries），落在轻量介入、时机匹配与可协商性等核心维度上；
+3. 为更广的 **neurodivergent populations** 指出了一条 GenAI 设计路径——GenAI 的价值更适合被理解为对觉察与调节的支持，而非对思考与决策的替代。
