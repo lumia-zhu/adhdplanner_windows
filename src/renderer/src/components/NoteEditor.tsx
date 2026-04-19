@@ -220,19 +220,32 @@ export default function NoteEditor({
     }])
   }, [setTasks])
 
-  /** 把文字作为最后一个任务的子任务添加 */
-  const addSubtaskToLast = useCallback((title: string) => {
-    if (tasks.length > 0) {
-      tracker.track('task.subtask_created', { taskId: tasks[tasks.length - 1].id, subtaskTitle: title })
+  /**
+   * 把文字作为「最后一条未完成任务」的子任务添加。
+   * 之所以要找"未完成"而不是数组末尾：拖拽规范化会把已完成任务排到数组末尾，
+   * 直接取末尾会让子任务挂到已完成任务下，与用户直觉不符。
+   * 返回 true 表示挂载成功，false 表示找不到合适父任务（应回退为创建独立任务）。
+   */
+  const addSubtaskToLast = useCallback((title: string): boolean => {
+    let targetIdx = -1
+    for (let i = tasks.length - 1; i >= 0; i--) {
+      if (!tasks[i].completed) { targetIdx = i; break }
     }
+    if (targetIdx === -1) return false
+    tracker.track('task.subtask_created', { taskId: tasks[targetIdx].id, subtaskTitle: title })
     setTasks(prev => {
-      if (prev.length === 0) return prev
+      let idx = -1
+      for (let i = prev.length - 1; i >= 0; i--) {
+        if (!prev[i].completed) { idx = i; break }
+      }
+      if (idx === -1) return prev
       const next = [...prev]
-      const last = { ...next[next.length - 1] }
-      last.subtasks = [...(last.subtasks ?? []), { id: uid('s'), title, completed: false }]
-      next[next.length - 1] = last
+      const parent = { ...next[idx] }
+      parent.subtasks = [...(parent.subtasks ?? []), { id: uid('s'), title, completed: false }]
+      next[idx] = parent
       return next
     })
+    return true
   }, [setTasks, tasks])
 
   /** 删除一行，返回应该聚焦的前一行 ID（或 null 表示聚焦底部新行） */
@@ -420,14 +433,15 @@ export default function NoteEditor({
       e.preventDefault()
       if (newLineText.trim()) {
         if (newLineIndented && tasks.length > 0) {
-          // 缩进模式：创建为最后一个任务的子任务
-          addSubtaskToLast(newLineText.trim())
+          const ok = addSubtaskToLast(newLineText.trim())
+          if (!ok) {
+            addTaskAtEnd(newLineText.trim())
+            setNewLineIndented(false)
+          }
         } else {
-          // 普通模式：创建独立任务
           addTaskAtEnd(newLineText.trim())
         }
         setNewLineText('')
-        // 保持当前缩进状态，方便连续添加子任务
       } else if (newLineIndented) {
         // 空行 + 子任务模式 → 取消缩进，变为新任务模式（类似"连按两次 Enter"）
         setNewLineIndented(false)
@@ -435,8 +449,9 @@ export default function NoteEditor({
     }
     if (e.key === 'Tab' && !e.shiftKey) {
       e.preventDefault()
-      // 切换缩进模式（无论有没有文字都可以切换）
-      if (tasks.length > 0) {
+      // 至少要有一条"未完成"任务才允许进入缩进模式：
+      // 否则按下 Tab 后没有合适的父任务，新文字会被回退创建为独立任务，缩进态没有意义。
+      if (tasks.some(t => !t.completed)) {
         setNewLineIndented(true)
       }
     }
@@ -635,7 +650,11 @@ export default function NoteEditor({
                       const trimmed = newLineText.trim()
                       if (trimmed) {
                         if (newLineIndented && tasks.length > 0) {
-                          addSubtaskToLast(trimmed)
+                          const ok = addSubtaskToLast(trimmed)
+                          if (!ok) {
+                            addTaskAtEnd(trimmed)
+                            setNewLineIndented(false)
+                          }
                         } else {
                           addTaskAtEnd(trimmed)
                         }

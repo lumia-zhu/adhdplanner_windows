@@ -5,7 +5,7 @@ import {
 import { join } from 'path'
 import fs from 'fs'
 import { S } from './state'
-import { loadWidgetPos, saveWidgetPos, loadProfile, getTodayStr, getNowHHMM } from './storage'
+import { loadProfile, getTodayStr, getNowHHMM } from './storage'
 
 // ===================== 窗口尺寸常量 =====================
 
@@ -105,7 +105,6 @@ export function validateWidgetBounds(): void {
       const defaultY = 8
       console.log(`[BoundsCheck] Widget out of screen (${x},${y}), resetting to (${defaultX},${defaultY})`)
       S.mainWindow.setPosition(defaultX, defaultY)
-      saveWidgetPos(defaultX, defaultY)
     }
   } catch (e) {
     console.error('[BoundsCheck] Error:', e)
@@ -115,9 +114,9 @@ export function validateWidgetBounds(): void {
 // ===================== Widget 事件处理 =====================
 
 export function onWidgetMoved(): void {
+  // 已废弃位置记忆：拖动后不再持久化坐标，下次进入小组件统一回到顶部中间。
+  // 保留此空函数以维持现有事件订阅接口。
   if (!S.mainWindow || !S.isWidgetMode) return
-  const [x, y] = S.mainWindow.getPosition()
-  saveWidgetPos(x, y)
 }
 
 export function onWidgetBlur(): void {
@@ -152,23 +151,14 @@ export function enterWidget(): void {
   if (!S.mainWindow || S.isWidgetMode) return
   S.isWidgetMode = true
 
-  const { width: sw, height: sh } = screen.getPrimaryDisplay().workAreaSize
-  const saved = loadWidgetPos()
-
+  // 每次进入小组件都强制放到顶部中间（不再使用"位置记忆"）：
+  // 用户反馈"任务开始时悬浮窗不在顶部中间"——是因为之前拖动过的位置被记住了。
+  // 去掉记忆后，每次进入位置稳定可预期；后续若想拖动，依然可以，但本次会话外不持久化。
+  const { width: sw } = screen.getPrimaryDisplay().workAreaSize
   const scaledW = scaled(WIDGET_WIDTH)
   const scaledH = scaled(WIDGET_HEIGHT)
-  const defaultX = Math.round((sw - scaledW) / 2)
-  const defaultY = 8
-
-  let x = saved ? saved.x : defaultX
-  let y = saved ? saved.y : defaultY
-
-  const halfW = Math.round(scaledW / 2)
-  if (x < -halfW || x > sw - halfW || y < 0 || y > sh - scaledH) {
-    x = defaultX
-    y = defaultY
-    saveWidgetPos(x, y)
-  }
+  const x = Math.round((sw - scaledW) / 2)
+  const y = 8
 
   safeWinOp('enterWidget', (win) => {
     win.setMinimumSize(1, 1)
@@ -195,10 +185,6 @@ export function exitWidget(): void {
 
   stopWidgetHeartbeat()
 
-  try {
-    const [cx, cy] = S.mainWindow.getPosition()
-    saveWidgetPos(cx, cy)
-  } catch { /* 窗口已销毁时忽略 */ }
   S.mainWindow.off('moved', onWidgetMoved)
   S.mainWindow.off('minimize', onWidgetMinimize)
   S.mainWindow.off('blur', onWidgetBlur)
