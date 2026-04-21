@@ -5,6 +5,7 @@ node_modules/
 out/
 dist/
 release/
+release2/
 
 # 编辑器配置（每个人电脑不一样，不上传）
 .vscode/
