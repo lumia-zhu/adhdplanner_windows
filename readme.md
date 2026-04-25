@@ -156,6 +156,11 @@ C:\Users\{用户名}\AppData\Roaming\task-manager\tasks.json
 
 ## 🛠️ 最近修复
 
+- **2026-04-25**：
+  - 个人资料新增「每日计划提醒时间」（在反思提醒前面）。设置后每天到点会通过系统通知提醒用户为今天列计划，文案随机从 7 套不同 emoji + 文案中挑选，避免每天提醒长一样。点击通知会唤起主窗口。
+  - 去掉「每日反思提醒时间」旁边的「(可选)」字样。
+  - 涉及：`UserProfile` 类型新增 `planTime`、`ProfileSettings` UI、主进程 `startPlanTimer/checkPlanTime`、Supabase `profiles` 表新增 `plan_time` 列（已写入 `supabase-schema.sql`，老库会自动 `ADD COLUMN IF NOT EXISTS`，无需重建表）。
+
 - **2026-04-19**：
   - 修复在底部输入框 + Tab 缩进模式下添加子任务时，子任务会错误挂到「已完成区最后一条任务」下的问题；
     改为挂到「最后一条未完成任务」，符合视觉直觉。涉及 `src/renderer/src/components/NoteEditor.tsx`。

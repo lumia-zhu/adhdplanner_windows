@@ -51,6 +51,7 @@ export interface UserProfile {
   grade: string            // 年级（如 "大三"、"硕一"、"博二"）
   challenges: string[]     // 我的挑战标签（如 ["拖延", "容易分心"]）
   workplaces: string[]     // 常用工作场所（如 ["图书馆", "宿舍"]）
+  planTime: string | null        // 每日计划提醒时间（如 "08:30"，null 表示不提醒）
   reflectionTime: string | null  // 每日反思提醒时间（如 "21:30"，null 表示不提醒）
 }
 
@@ -60,6 +61,7 @@ export const EMPTY_PROFILE: UserProfile = {
   grade: '',
   challenges: [],
   workplaces: [],
+  planTime: null,
   reflectionTime: null,
 }
 

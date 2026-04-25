@@ -23,9 +23,13 @@ create table if not exists profiles (
   grade text default '',
   challenges text[] default '{}',
   workplaces text[] default '{}',
+  plan_time text,
   reflection_time text,
   updated_at timestamptz default now()
 );
+
+-- 已建库的用户：补加 plan_time 列（多次执行不会报错）
+alter table profiles add column if not exists plan_time text;
 
 alter table profiles enable row level security;
 create policy "profiles_user_policy" on profiles

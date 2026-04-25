@@ -247,6 +247,63 @@ export function startReflectionTimer(): void {
   S.reflectionTimer = setInterval(checkReflectionTime, 30_000)
 }
 
+// ===================== 每日计划提醒 =====================
+
+// 多套文案 + emoji，每次提醒时随机挑一条，避免每天都长一样让用户失去兴趣
+const PLAN_NOTIFICATIONS: Array<{ title: string; body: string }> = [
+  { title: '☀️ 新的一天开始了',    body: '花两分钟列一下今天的计划吧'           },
+  { title: '📝 该列今日清单啦',    body: '想想今天最想完成哪 3 件事？'           },
+  { title: '🌱 给今天种几个目标',  body: '小小一步也算数，写下来更有方向'         },
+  { title: '🚀 准备发车了',        body: '今天打算先做什么？写下来就完成 10% 啦' },
+  { title: '🗓️ 今天要做什么？',    body: '先列出来，再决定从哪里开始'            },
+  { title: '📋 今天先列个清单',    body: '写下来，脑子就不用一直记着了'           },
+  { title: '✏️ 花些时间列好今天的事', body: '写完之后做起来会顺很多'             },
+]
+
+function pickPlanNotification(): { title: string; body: string } {
+  const i = Math.floor(Math.random() * PLAN_NOTIFICATIONS.length)
+  return PLAN_NOTIFICATIONS[i]
+}
+
+function showMainWindow(): void {
+  if (!S.mainWindow || S.mainWindow.isDestroyed()) return
+  if (S.isWidgetMode) {
+    exitWidget()
+    safeWinOp('showMain:exitWidget', (win) => win.webContents.send('widget:exit'))
+  }
+  safeWinOp('showMain', (win) => {
+    win.show()
+    win.focus()
+  })
+  updateTrayMenu()
+}
+
+function checkPlanTime(): void {
+  if (!S.cachedPlanTime) return
+  const today = getTodayStr()
+  const now = getNowHHMM()
+  if (S.lastPlanNotifiedDate === today) return
+  if (now === S.cachedPlanTime) {
+    S.lastPlanNotifiedDate = today
+    const { title, body } = pickPlanNotification()
+    const notification = new Notification({ title, body, silent: false })
+    notification.on('click', () => showMainWindow())
+    notification.show()
+  }
+}
+
+export function startPlanTimer(): void {
+  if (S.planTimer) clearInterval(S.planTimer)
+  const profile = loadProfile()
+  S.cachedPlanTime = profile.planTime ? String(profile.planTime) : null
+  if (!S.cachedPlanTime) {
+    S.planTimer = null
+    return
+  }
+  checkPlanTime()
+  S.planTimer = setInterval(checkPlanTime, 30_000)
+}
+
 // ===================== 托盘图标 =====================
 
 function buildTrayIcon(): Electron.NativeImage {

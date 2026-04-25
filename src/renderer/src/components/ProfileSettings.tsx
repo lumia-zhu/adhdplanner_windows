@@ -225,11 +225,28 @@ export default function ProfileSettings({ visible, profile, onSave, onClose }: P
             />
           </div>
 
+          {/* 每日计划提醒时间 */}
+          <div>
+            <label className="block text-sm font-semibold text-gray-800 mb-1.5">
+              每日计划提醒时间
+            </label>
+            <div className="relative">
+              <input
+                type="time"
+                value={form.planTime || ''}
+                onChange={(e) => setForm(f => ({ ...f, planTime: e.target.value || null }))}
+                className="w-full px-3 py-2.5 text-sm rounded-lg border border-gray-200
+                           focus:border-indigo-400 focus:ring-1 focus:ring-indigo-100
+                           outline-none bg-gray-50 focus:bg-white transition-all"
+              />
+            </div>
+            <p className="text-xs text-gray-400 mt-1">设置后每天会在该时间提醒你为今天列计划</p>
+          </div>
+
           {/* 每日反思提醒时间 */}
           <div>
             <label className="block text-sm font-semibold text-gray-800 mb-1.5">
               每日反思提醒时间
-              <span className="text-xs text-gray-400 font-normal ml-1.5">(可选)</span>
             </label>
             <div className="relative">
               <input

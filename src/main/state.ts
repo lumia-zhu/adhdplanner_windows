@@ -16,5 +16,8 @@ export const S = {
   cachedReflectionTime: null as string | null,
   lastNotifiedDate: null as string | null,
   reflectionTimer: null as ReturnType<typeof setInterval> | null,
+  cachedPlanTime: null as string | null,
+  lastPlanNotifiedDate: null as string | null,
+  planTimer: null as ReturnType<typeof setInterval> | null,
   rendererReady: false,
 }

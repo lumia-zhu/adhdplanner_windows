@@ -134,6 +134,7 @@ async function pushToCloud(userId: string, entity: string, key: string): Promise
         grade: String(profile.grade || ''),
         challenges: Array.isArray(profile.challenges) ? profile.challenges : [],
         workplaces: Array.isArray(profile.workplaces) ? profile.workplaces : [],
+        plan_time: profile.planTime ? String(profile.planTime) : null,
         reflection_time: profile.reflectionTime ? String(profile.reflectionTime) : null,
         updated_at: new Date().toISOString(),
       })
@@ -325,6 +326,7 @@ export async function pullFromCloud(userId: string): Promise<void> {
         grade: p.grade || '',
         challenges: p.challenges ?? [],
         workplaces: p.workplaces ?? [],
+        planTime: p.plan_time || null,
         reflectionTime: p.reflection_time || null,
       }
       safeWriteJSON(join(userDir, 'profile.json'), profile)

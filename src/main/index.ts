@@ -29,6 +29,7 @@ import {
   startWidgetHeartbeat, stopWidgetHeartbeat,
   validateWidgetBounds, refreshDragRegion,
   startReflectionTimer,
+  startPlanTimer,
 } from './window'
 
 // ===================== 全局异常兜底（防止闪退） =====================
@@ -223,6 +224,7 @@ function setupIPC(): void {
   ipcMain.handle('profile:save', (_, profile: Record<string, unknown>) => {
     const result = saveProfile(profile)
     startReflectionTimer()
+    startPlanTimer()
     return result
   })
 
@@ -437,6 +439,7 @@ app.whenReady().then(async () => {
   createMainWindow()
   createTray()
   startReflectionTimer()
+  startPlanTimer()
   activitySampler.start()
   startSync()
 

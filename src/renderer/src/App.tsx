@@ -122,6 +122,7 @@ export default function App() {
             grade: String(savedProfile.grade || ''),
             challenges: Array.isArray(savedProfile.challenges) ? savedProfile.challenges.map(String) : [],
             workplaces: Array.isArray(savedProfile.workplaces) ? savedProfile.workplaces.map(String) : [],
+            planTime: savedProfile.planTime ? String(savedProfile.planTime) : null,
             reflectionTime: savedProfile.reflectionTime ? String(savedProfile.reflectionTime) : null,
           })
         }
