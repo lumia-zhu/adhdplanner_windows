@@ -22,6 +22,7 @@ import type { ActivityRecord } from './ActivityHeatmap'
 import { getActiveRatio } from './ActivityHeatmap'
 import ActivityRhythmChart from './ActivityRhythmChart'
 import InteractiveActivityHeatmap, { computeActiveTimeRange } from './InteractiveActivityHeatmap'
+import AppUsageRanking from './AppUsageRanking'
 import ReflectionChat from './ReflectionChat'
 import type { ReflectionChatHandle } from './ReflectionChat'
 import ManualTimeEntry from './ManualTimeEntry'
@@ -1164,6 +1165,21 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, onClose }: 
                 <div className="mt-0">
                   <InteractiveActivityHeatmap data={activityData} events={events} rangeStart={sharedRangeStart} rangeEnd={sharedRangeEnd} highlightTask={hoveredTask} />
                 </div>
+              </div>
+
+              {/* 应用使用时长（按分钟展示，少于 1 分钟显示「< 1 分钟」；默认 Top 10，可展开） */}
+              <div className="border-t border-gray-100" />
+              <div id="chart-app-usage">
+                <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                  📱 应用使用时长
+                  <span className="relative group">
+                    <span className="inline-flex items-center justify-center w-4 h-4 rounded-full border border-gray-300 text-gray-400 text-[10px] leading-none cursor-help group-hover:text-gray-600 group-hover:border-gray-400 transition-colors">?</span>
+                    <span className="pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-150 absolute left-1/2 -translate-x-1/2 top-full mt-1.5 z-50 w-[280px] bg-gray-800 text-white text-[11px] leading-relaxed rounded-lg px-3 py-2.5 shadow-lg normal-case tracking-normal font-normal">
+                      今日各前台应用的累计使用时长（精度到分钟，少于 1 分钟显示「&lt; 1 分钟」）。仅在电脑处于活跃状态时统计，已自动排除 MetaPlan 自身、资源管理器、终端等非生产力应用。默认显示前 10 项，可展开查看全部。
+                    </span>
+                  </span>
+                </h3>
+                <AppUsageRanking data={activityData} />
               </div>
 
               {/* 遗留任务（仅今天显示，历史日期没有任务快照） */}

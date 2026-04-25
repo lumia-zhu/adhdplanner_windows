@@ -18,6 +18,7 @@ import WeekMetricCards from './WeekMetricCards'
 import WeekTaskRanking from './WeekTaskRanking'
 import WeekHeatmapGrid, { computeWeekActiveTimeRange } from './WeekHeatmapGrid'
 import WeekRhythmChart from './WeekRhythmChart'
+import AppUsageRanking from './AppUsageRanking'
 import { tracker } from '../services/tracker'
 
 // ===================== 类型 =====================
@@ -344,6 +345,23 @@ export default function WeekView({ weekEndDate, onDataReady, chatOpen }: WeekVie
         <div className="mt-0">
           <WeekHeatmapGrid days={weekData} rangeStart={weekRangeStart} rangeEnd={weekRangeEnd} />
         </div>
+      </div>
+
+      {/* 分隔线 */}
+      <div className="border-t border-gray-100" />
+
+      {/* 应用使用时长排行（周聚合，默认 Top 10，可展开） */}
+      <div id="chart-week-app-usage">
+        <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+          📱 应用使用时长（本周）
+          <span className="relative group">
+            <span className="inline-flex items-center justify-center w-4 h-4 rounded-full border border-gray-300 text-gray-400 text-[10px] leading-none cursor-help group-hover:text-gray-600 group-hover:border-gray-400 transition-colors">?</span>
+            <span className="pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-150 absolute left-1/2 -translate-x-1/2 top-full mt-1.5 z-50 w-[280px] bg-gray-800 text-white text-[11px] leading-relaxed rounded-lg px-3 py-2.5 shadow-lg normal-case tracking-normal font-normal">
+              本周 7 天累计的前台应用使用时长。仅在电脑处于活跃状态时统计，已自动排除 MetaPlan 自身、资源管理器、终端等非生产力应用。
+            </span>
+          </span>
+        </h3>
+        <AppUsageRanking data={weekData.flatMap((d) => d.activity)} />
       </div>
     </div>
   )
