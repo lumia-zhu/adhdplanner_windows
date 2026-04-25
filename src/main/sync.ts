@@ -196,6 +196,7 @@ async function pushToCloud(userId: string, entity: string, key: string): Promise
         active_samples: r.activeSamples,
         total_samples: r.totalSamples,
         active_ratio: r.activeRatio,
+        app_usage: r.appUsage || {},
       }))
 
       // 分批插入（Supabase 单次 insert 有体积限制）
@@ -417,12 +418,16 @@ export async function pullFromCloud(userId: string): Promise<void> {
       const ts = Number(row.ts)
       if (!actByDate.has(date)) actByDate.set(date, new Map())
       if (!actByDate.get(date)!.has(ts)) {
+        const appUsage = row.app_usage && typeof row.app_usage === 'object' && Object.keys(row.app_usage).length > 0
+          ? row.app_usage
+          : undefined
         actByDate.get(date)!.set(ts, {
           ts,
           idle: row.idle,
           activeSamples: row.active_samples,
           totalSamples: row.total_samples,
           activeRatio: row.active_ratio,
+          ...(appUsage ? { appUsage } : {}),
         })
       }
     }

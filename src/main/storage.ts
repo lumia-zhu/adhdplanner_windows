@@ -303,6 +303,54 @@ interface ActivityRecord {
   activeSamples: number
   totalSamples: number
   activeRatio: number
+  // 此 30 秒窗口里，每个前台应用被采到的次数（次数 × 2 ≈ 秒数）。可选以兼容老数据。
+  appUsage?: Record<string, number>
+}
+
+// 缓存动态导入的 get-windows 模块；warnedOnce 避免日志刷屏
+let getWindowsModule: typeof import('get-windows') | null = null
+let getWindowsWarnedOnce = false
+
+// 研究里只关心用户真正投入的应用，排除 MetaPlan 自身和常见系统工具。
+const EXCLUDED_APP_NAMES = new Set([
+  'electron',
+  'metaplan',
+  'task-manager',
+  '任务管理器',
+  'explorer',
+  'windows explorer',
+  'file explorer',
+  '资源管理器',
+  'windows terminal',
+  'terminal',
+  'powershell',
+  'windows powershell',
+  'command prompt',
+  'cmd',
+  'conhost',
+  'openconsole',
+])
+
+function shouldTrackAppName(name: string): boolean {
+  return !EXCLUDED_APP_NAMES.has(name.trim().toLowerCase())
+}
+
+/** 拿当前前台应用名；任何失败都静默返回 null，不影响主功能 */
+async function getActiveAppName(): Promise<string | null> {
+  try {
+    if (!getWindowsModule) {
+      getWindowsModule = await import('get-windows')
+    }
+    const win = await getWindowsModule.activeWindow()
+    const name = win?.owner?.name?.trim()
+    return name && name.length > 0 && shouldTrackAppName(name) ? name : null
+  } catch (e) {
+    if (!getWindowsWarnedOnce) {
+      console.warn('[ActivitySampler] get-windows unavailable, app usage will not be tracked:', e)
+      getWindowsWarnedOnce = true
+    }
+    return null
+  }
 }
 
 export function appendActivityRecords(date: string, records: ActivityRecord[]): boolean {
@@ -322,11 +370,24 @@ export function appendActivityRecords(date: string, records: ActivityRecord[]): 
   }
 }
 
+function normalizeAppUsage(raw: unknown): Record<string, number> | undefined {
+  if (!raw || typeof raw !== 'object') return undefined
+  const out: Record<string, number> = {}
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof k === 'string' && typeof v === 'number' && v > 0) {
+      out[k] = v
+    }
+  }
+  return Object.keys(out).length > 0 ? out : undefined
+}
+
 function normalizeActivityRecord(raw: unknown): ActivityRecord | null {
   if (!raw || typeof raw !== 'object') return null
 
   const r = raw as Record<string, unknown>
   if (typeof r.ts !== 'number' || typeof r.idle !== 'number') return null
+
+  const appUsage = normalizeAppUsage(r.appUsage)
 
   if (
     typeof r.activeSamples === 'number' &&
@@ -339,6 +400,7 @@ function normalizeActivityRecord(raw: unknown): ActivityRecord | null {
       activeSamples: r.activeSamples,
       totalSamples: r.totalSamples,
       activeRatio: r.activeRatio,
+      ...(appUsage ? { appUsage } : {}),
     }
   }
 
@@ -353,6 +415,7 @@ function normalizeActivityRecord(raw: unknown): ActivityRecord | null {
     activeSamples,
     totalSamples,
     activeRatio: approxRatio,
+    ...(appUsage ? { appUsage } : {}),
   }
 }
 
@@ -397,6 +460,8 @@ export const activitySampler = {
   totalSamples: 0,
   windowStart: Date.now(),
   buffer: [] as ActivityRecord[],
+  // 当前 30 秒窗口内每个前台应用被采到的次数；aggregate 时清零
+  currentWindowApps: new Map<string, number>(),
 
   SAMPLE_INTERVAL: 2000,
   WINDOW_SIZE: 30_000,
@@ -407,6 +472,7 @@ export const activitySampler = {
     this.activeSamples = 0
     this.totalSamples = 0
     this.windowStart = Date.now()
+    this.currentWindowApps.clear()
     this.fastTimer = setInterval(() => this.sample(), this.SAMPLE_INTERVAL)
     this.flushTimer = setInterval(() => this.flush(), this.FLUSH_INTERVAL)
     console.log('[ActivitySampler] Started, interval', this.SAMPLE_INTERVAL, 'ms')
@@ -422,13 +488,29 @@ export const activitySampler = {
   sample(): void {
     const currentIdle = powerMonitor.getSystemIdleTime()
     this.totalSamples++
-    if (currentIdle <= this.ACTIVE_IDLE_THRESHOLD) {
+    const isActive = currentIdle <= this.ACTIVE_IDLE_THRESHOLD
+    if (isActive) {
       this.activeSamples++
     }
+
+    // 仅在「活跃」状态下记录前台应用：避免把屏保/锁屏期间的最后一个应用算进时长
+    if (isActive) {
+      this.captureAppNameAsync()
+    }
+
     const now = Date.now()
     if (now - this.windowStart >= this.WINDOW_SIZE) {
       this.aggregate(now, currentIdle)
     }
+  },
+
+  // fire-and-forget：异步获取前台应用名并累加。失败/慢都不阻塞 sample 主流程
+  captureAppNameAsync(): void {
+    void getActiveAppName().then((name) => {
+      if (name) {
+        this.currentWindowApps.set(name, (this.currentWindowApps.get(name) || 0) + 1)
+      }
+    })
   },
 
   aggregate(now: number, currentIdle: number): void {
@@ -442,11 +524,21 @@ export const activitySampler = {
       totalSamples: this.totalSamples,
       activeRatio,
     }
+
+    if (this.currentWindowApps.size > 0) {
+      const appUsage: Record<string, number> = {}
+      for (const [name, count] of this.currentWindowApps) {
+        appUsage[name] = count
+      }
+      record.appUsage = appUsage
+    }
+
     this.buffer.push(record)
 
     this.activeSamples = 0
     this.totalSamples = 0
     this.windowStart = now
+    this.currentWindowApps.clear()
 
     if (this.buffer.length >= this.FLUSH_THRESHOLD) {
       this.flush()

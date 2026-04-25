@@ -21,6 +21,8 @@ export interface ActivityRecord {
   totalSamples?: number  // 30 秒窗口内总采样次数（新版）
   activeRatio?: number   // 使用时间占比 0-1（新版，语义已改为 60 秒阈值）
   inputs?: number        // 旧版字段（兼容）
+  // 此 30 秒窗口内每个前台应用被采到的次数（次数 × 2 ≈ 秒数）。可选以兼容老数据
+  appUsage?: Record<string, number>
 }
 
 /**

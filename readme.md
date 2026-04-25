@@ -156,6 +156,15 @@ C:\Users\{用户名}\AppData\Roaming\task-manager\tasks.json
 
 ## 🛠️ 最近修复
 
+- **2026-04-25（晚）**：新增「应用使用时长采集」（研究项目，默认开启，无开关）
+  - 反思页在「电脑活动分布」之后新增「📱 应用使用时长」模块，按使用时长降序展示当天 Top 10 应用，超过 10 个可展开。展示精度：≥ 60 秒按分钟整数显示（如「12 分钟」）；< 60 秒显示「< 1 分钟」。
+  - 采集机制：复用现有 `[ActivitySampler]` 架构（每 2 秒采样、每 30 秒聚合、每 5 分钟刷盘）。每次采样调用 [`get-windows`](https://www.npmjs.com/package/get-windows) v9 拿到当前前台应用名，仅在「活跃」状态下记录（屏保/锁屏期间不记），按 30 秒聚合块累加。
+  - 过滤规则：排除 MetaPlan/开发原型自身（如 `Electron`、`MetaPlan`）以及常见系统工具（如资源管理器、Windows Terminal、PowerShell、CMD），避免把启动/调试工具误算成正式应用使用。
+  - 数据结构：`ActivityRecord` 新增 `appUsage?: Record<string, number>` 字段，值是该应用在 30 秒窗口内被采到的次数（次数 × 2 ≈ 秒数）。Supabase `activity_records` 表新增 `app_usage jsonb` 列（已写入 `supabase-schema.sql`，老库会自动 `ADD COLUMN IF NOT EXISTS`）。
+  - 隐私与数据：仅记录应用名（如「Google Chrome」「微信」），**不记录窗口标题、不记录文件名/网址**。本地 JSON 与 Supabase 同步策略与现有 activity 数据一致，使用 RLS 行级安全策略。
+  - 容错：`get-windows` 是原生模块，依赖 prebuilt binary。任何加载或调用失败都会被静默捕获并打一次警告（`[ActivitySampler] get-windows unavailable`），主功能（idle 采样）不受影响。
+  - 涉及文件：`src/main/storage.ts`（核心）、`src/main/sync.ts`、`src/renderer/src/components/ActivityHeatmap.tsx`（接口扩展）、`src/renderer/src/components/AppUsageRanking.tsx`（新组件）、`src/renderer/src/components/ReflectionView.tsx`（集成）、`supabase-schema.sql`、`package.json`。
+
 - **2026-04-25**：
   - 个人资料新增「每日计划提醒时间」（在反思提醒前面）。设置后每天到点会通过系统通知提醒用户为今天列计划，文案随机从 7 套不同 emoji + 文案中挑选，避免每天提醒长一样。点击通知会唤起主窗口。
   - 去掉「每日反思提醒时间」旁边的「(可选)」字样。

@@ -83,8 +83,12 @@ create table if not exists activity_records (
   idle integer default 0,
   active_samples integer default 0,
   total_samples integer default 0,
-  active_ratio real default 0
+  active_ratio real default 0,
+  app_usage jsonb default '{}'::jsonb
 );
+
+-- 已建库的用户：补加 app_usage 列（多次执行不会报错）
+alter table activity_records add column if not exists app_usage jsonb default '{}'::jsonb;
 
 alter table activity_records enable row level security;
 create policy "activity_user_policy" on activity_records
