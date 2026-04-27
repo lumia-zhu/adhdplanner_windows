@@ -173,6 +173,7 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, onClose }: 
 
   // ---- 任务 hover 联动热力图 ----
   const [hoveredTask, setHoveredTask] = useState<string | null>(null)
+  const [showAllTaskDistribution, setShowAllTaskDistribution] = useState(false)
 
   // ---- AI 浮标气泡 ----
   const [showBubble, setShowBubble] = useState(false)
@@ -1138,9 +1139,23 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, onClose }: 
               {/* 任务用时条形图 */}
               {taskDurations.length > 0 && (
                 <div id="chart-task-duration">
-                  <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
-                    ⏱ 任务用时
-                  </h3>
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                      ⏱ 任务用时
+                    </h3>
+                    {taskDurations.length > 1 && (
+                      <button
+                        onClick={() => setShowAllTaskDistribution(v => !v)}
+                        className={`text-2xs px-2 py-1 rounded-full border transition-colors ${
+                          showAllTaskDistribution
+                            ? 'bg-blue-50 border-blue-200 text-blue-600'
+                            : 'bg-white border-gray-200 text-gray-400 hover:border-blue-200 hover:text-blue-500'
+                        }`}
+                      >
+                        {showAllTaskDistribution ? '隐藏全部分布' : '显示全部分布'}
+                      </button>
+                    )}
+                  </div>
                   <TaskDurationChart data={taskDurations} onTaskHover={setHoveredTask} />
                 </div>
               )}
@@ -1163,7 +1178,15 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, onClose }: 
                   <ActivityRhythmChart data={activityData} events={events} rangeStart={sharedRangeStart} rangeEnd={sharedRangeEnd} />
                 </div>
                 <div className="mt-0">
-                  <InteractiveActivityHeatmap data={activityData} events={events} rangeStart={sharedRangeStart} rangeEnd={sharedRangeEnd} highlightTask={hoveredTask} />
+                  <InteractiveActivityHeatmap
+                    data={activityData}
+                    events={events}
+                    rangeStart={sharedRangeStart}
+                    rangeEnd={sharedRangeEnd}
+                    highlightTask={hoveredTask}
+                    showAllTasks={showAllTaskDistribution}
+                    taskTitles={taskDurations.map(t => t.title)}
+                  />
                 </div>
               </div>
 
