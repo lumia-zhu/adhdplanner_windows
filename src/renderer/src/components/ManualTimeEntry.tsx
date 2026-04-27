@@ -29,17 +29,23 @@ interface EntryRow {
   isNew: boolean
 }
 
-const TIME_OPTIONS: { value: number; label: string }[] = []
-for (let h = 0; h < 24; h++) {
-  for (const m of [0, 15, 30, 45]) {
-    const totalMin = h * 60 + m
-    const label = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
-    TIME_OPTIONS.push({ value: totalMin, label })
-  }
-}
+const DAY_END_MINUTES = 23 * 60 + 59
 
 function uid(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+}
+
+function minutesToTimeValue(minutes: number): string {
+  const clamped = Math.max(0, Math.min(DAY_END_MINUTES, minutes))
+  const h = Math.floor(clamped / 60)
+  const m = clamped % 60
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
+}
+
+function timeValueToMinutes(value: string): number | null {
+  const [h, m] = value.split(':').map(Number)
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return null
+  return Math.max(0, Math.min(DAY_END_MINUTES, h * 60 + m))
 }
 
 function toTimestamp(dateStr: string, minutes: number): number {
@@ -141,10 +147,29 @@ export default function ManualTimeEntry({
 
   const updateRowTime = useCallback(
     (id: string, field: 'startMinutes' | 'endMinutes', value: number) => {
-      setRows((prev) => prev.map((r) => (r.id === id ? { ...r, [field]: value } : r)))
+      setRows((prev) => prev.map((r) => {
+        if (r.id !== id) return r
+        if (field === 'startMinutes') {
+          const duration = Math.max(1, r.endMinutes - r.startMinutes)
+          return {
+            ...r,
+            startMinutes: value,
+            endMinutes: Math.min(DAY_END_MINUTES, value + duration),
+          }
+        }
+        return { ...r, endMinutes: value }
+      }))
     },
     [],
   )
+
+  const updateNewStart = useCallback((value: number) => {
+    setNewStart((prevStart) => {
+      const duration = Math.max(1, newEnd - prevStart)
+      setNewEnd(Math.min(DAY_END_MINUTES, value + duration))
+      return value
+    })
+  }, [newEnd])
 
   const removeRow = useCallback((id: string) => {
     setRows((prev) => prev.filter((r) => r.id !== id))
@@ -318,7 +343,7 @@ export default function ManualTimeEntry({
                 className="flex-1 text-xs border border-gray-200 rounded-md px-2.5 py-1.5
                            focus:outline-none focus:border-blue-300 focus:ring-1 focus:ring-blue-100"
               />
-              <TimePicker value={newStart} onChange={setNewStart} />
+              <TimePicker value={newStart} onChange={updateNewStart} />
               <span className="text-xs text-gray-300">→</span>
               <TimePicker value={newEnd} onChange={setNewEnd} />
               <button
@@ -441,17 +466,18 @@ function TimePicker({
   onChange: (minutes: number) => void
 }) {
   return (
-    <select
-      value={value}
-      onChange={(e) => onChange(Number(e.target.value))}
-      className="text-xs border border-gray-200 rounded-md px-1.5 py-1 bg-white
-                 focus:outline-none focus:border-blue-300 cursor-pointer"
-    >
-      {TIME_OPTIONS.map((opt) => (
-        <option key={opt.value} value={opt.value}>
-          {opt.label}
-        </option>
-      ))}
-    </select>
+    <input
+      type="time"
+      step="60"
+      min="00:00"
+      max="23:59"
+      value={minutesToTimeValue(value)}
+      onChange={(e) => {
+        const minutes = timeValueToMinutes(e.target.value)
+        if (minutes !== null) onChange(minutes)
+      }}
+      className="w-[82px] text-xs border border-gray-200 rounded-md px-1.5 py-1 bg-white
+                 focus:outline-none focus:border-blue-300 focus:ring-1 focus:ring-blue-100"
+    />
   )
 }
