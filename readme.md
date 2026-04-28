@@ -163,6 +163,7 @@ C:\Users\{用户名}\AppData\Roaming\task-manager\tasks.json
   - 修复历史日期没有任务完成率圆环图时，顶部三张指标卡片在右侧 AI 面板展开状态下会变成两列换行的问题；现在会继续保持一行三列。
   - 反思页「应用使用时长」默认从 Top 10 改为 Top 5，剩余应用仍可通过「展开剩余」查看，减少默认页面信息量。
   - 优化反思 AI 的日期和图表引用表达：历史日期开场会先显示具体日期（如 `4月27日`），编号洞察会把图表引用放在编号后；同时清理流式输出中的半截 `chart` / `SUGGESTIONS` 控制文本，避免乱码露出到聊天气泡或探索方向按钮。
+  - 优化反思页切换日期的过渡体验：切换时左侧数据区会保留旧内容并显示轻量蒙层，新日期数据加载完成后再柔和淡入，避免页面白一下或图表突然跳动。
   - 涉及文件：`src/main/sync.ts`、`src/main/index.ts`、`src/renderer/src/components/ReflectionView.tsx`、`src/renderer/src/components/ReflectionChat.tsx`、`src/renderer/src/services/ai.ts`。
 
 - **2026-04-27（夜）**：

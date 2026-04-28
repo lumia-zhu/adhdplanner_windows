@@ -167,6 +167,7 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, onClose }: 
   const [chatWidth, setChatWidth] = useState(400)
   // 截图功能已移除：纯文本数据更精确、可控、可调试，避免视觉误读
   const dataPanelRef = useRef<HTMLDivElement>(null)
+  const hasDisplayDataRef = useRef(false)
   const [manualEntryExpanded, setManualEntryExpanded] = useState(false)
   const chatRef = useRef<ReflectionChatHandle>(null)
   const [closingAfterSave, setClosingAfterSave] = useState(false)
@@ -185,6 +186,14 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, onClose }: 
   const today = getToday()
   const [selectedDate, setSelectedDate] = useState(today)
   const isToday = selectedDate === today
+  const [displayDate, setDisplayDate] = useState(today)
+  const [displayEvents, setDisplayEvents] = useState<TrackEvent[]>([])
+  const [displaySummary, setDisplaySummary] = useState<DailySummary | null>(null)
+  const [displayActivityData, setDisplayActivityData] = useState<ActivityRecord[]>([])
+  const [displayTasks, setDisplayTasks] = useState<Task[]>(propTasks)
+  const [isDataTransitioning, setIsDataTransitioning] = useState(false)
+  const [contentVisible, setContentVisible] = useState(true)
+  const displayIsToday = displayDate === today
   const [reflCalendarOpen, setReflCalendarOpen] = useState(false)
 
   // ---- 周视图导航 ----
@@ -252,8 +261,13 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, onClose }: 
   // 加载选中日期的事件数据 + 活跃度数据 + 任务
   useEffect(() => {
     let cancelled = false
+    let transitionTimer: ReturnType<typeof setTimeout> | null = null
     async function loadEvents() {
       setLoadingData(true)
+      if (hasDisplayDataRef.current) {
+        setIsDataTransitioning(true)
+        setContentVisible(false)
+      }
       setSummary(null)  // 立即清空，防止 systemPrompt 用旧日期数据初始化 AI 对话
       try {
         // ★ 如果是今天，先刷新 tracker 缓冲区确保最新数据
@@ -275,15 +289,28 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, onClose }: 
         setLocalTasks(rawTasks as Task[])
 
         const s = buildDailySummary(selectedDate, typedEvents)
+        setDisplayDate(selectedDate)
+        setDisplayEvents(typedEvents)
+        setDisplayActivityData(rawActivity as ActivityRecord[])
+        setDisplayTasks(rawTasks as Task[])
+        setDisplaySummary(s)
+        hasDisplayDataRef.current = true
         setSummary(s)
       } catch (e) {
         console.error('加载反思数据失败:', e)
       } finally {
-        if (!cancelled) setLoadingData(false)
+        if (!cancelled) {
+          setLoadingData(false)
+          requestAnimationFrame(() => setContentVisible(true))
+          transitionTimer = setTimeout(() => setIsDataTransitioning(false), 220)
+        }
       }
     }
     loadEvents()
-    return () => { cancelled = true }
+    return () => {
+      cancelled = true
+      if (transitionTimer) clearTimeout(transitionTimer)
+    }
   }, [selectedDate])
 
   // 加载记忆上下文（开场 prompt 注入用）；切换日期时重新读取，确保包含最新保存的记忆
@@ -388,12 +415,12 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, onClose }: 
 
   // 计算任务完成率
   const completionRate = useMemo(() => {
-    if (localTasks.length === 0) return 0
-    return Math.round((localTasks.filter(t => t.completed).length / localTasks.length) * 100)
-  }, [localTasks])
+    if (displayTasks.length === 0) return 0
+    return Math.round((displayTasks.filter(t => t.completed).length / displayTasks.length) * 100)
+  }, [displayTasks])
 
   // 构建时间轴条目
-  const timelineEntries = useMemo(() => buildTimelineEntries(events), [events])
+  const timelineEntries = useMemo(() => buildTimelineEntries(displayEvents), [displayEvents])
 
   // 构建任务用时数据（从 session.ended 事件聚合），同时附带卡顿标记
   const taskDurations: TaskDurationItem[] = useMemo(() => {
@@ -416,7 +443,7 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, onClose }: 
     // taskTitle → [{sessionId, durationSec}]（按时间顺序排列）
     const sessionOrderByTask = new Map<string, { sessionId: string; durationSec: number }[]>()
 
-    for (const e of events) {
+    for (const e of displayEvents) {
       if (e.type === 'session.started') {
         const p = e.payload as { sessionId: string; taskTitle: string }
         sessionStartMap.set(p.sessionId, { timestamp: e.timestamp, taskTitle: p.taskTitle })
@@ -446,7 +473,7 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, onClose }: 
     }
 
     // 建立 localTasks 中已完成的任务名集合
-    const completedTaskTitles = new Set(localTasks.filter(t => t.completed).map(t => t.title))
+    const completedTaskTitles = new Set(displayTasks.filter(t => t.completed).map(t => t.title))
 
     // ---- 5. 收集卡顿标记，并计算正确的累计偏移 ----
     const stuckMarksByTask = new Map<string, StuckMark[]>()
@@ -454,7 +481,7 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, onClose }: 
     // 预构建"恢复事件"索引：同 sessionId 下在 stuck.triggered 之后出现的恢复性事件
     // 有这些事件说明卡顿已解决：stuck.pivot_chosen / exec.micro_started / exec.micro_completed / exec.flow_entered
     const resolvedSessionSet = new Set<string>()
-    for (const e of events) {
+    for (const e of displayEvents) {
       if (
         e.type === 'stuck.pivot_chosen' ||
         e.type === 'exec.micro_started' ||
@@ -466,7 +493,7 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, onClose }: 
       }
     }
 
-    for (const e of events) {
+    for (const e of displayEvents) {
       if (e.type === 'stuck.triggered') {
         const p = e.payload as { sessionId: string; microAction: string; elapsedSeconds: number }
         const sessionInfo = sessionStartMap.get(p.sessionId)
@@ -487,7 +514,7 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, onClose }: 
 
         // 找对应的 stuck.reason：同 sessionId，且时间在此事件之后最近的一条
         let reason = ''
-        for (const re of events) {
+        for (const re of displayEvents) {
           if (re.type === 'stuck.reason') {
             const rp = re.payload as { sessionId: string; reason: string }
             if (rp.sessionId === p.sessionId && re.timestamp >= e.timestamp) {
@@ -499,7 +526,7 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, onClose }: 
 
         // 判断卡顿是否已解决：同 session 中在卡顿之后是否有恢复性事件
         let resolved = false
-        for (const re of events) {
+        for (const re of displayEvents) {
           if (re.timestamp <= e.timestamp) continue
           const rp = re.payload as { sessionId?: string }
           if (rp.sessionId !== p.sessionId) continue
@@ -543,38 +570,38 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, onClose }: 
       }))
       .filter(d => d.durationSec > 0)            // ★ 只过滤真正 0 秒的异常数据
       .sort((a, b) => b.durationSec - a.durationSec)
-  }, [events, localTasks])
+  }, [displayEvents, displayTasks])
 
   // ---- 生产力指标（基于使用时长模型：1 分钟无操作 → 未使用） ----
 
   // 热力图与节奏曲线共享的动态时间范围
   const { rangeStart: sharedRangeStart, rangeEnd: sharedRangeEnd } = useMemo(
-    () => computeActiveTimeRange(activityData),
-    [activityData],
+    () => computeActiveTimeRange(displayActivityData),
+    [displayActivityData],
   )
 
   /** 电脑使用总时长（分钟）：所有 30 秒窗口的 usageRatio 之和 × 0.5 */
   const totalUsageMinutes = useMemo(() => {
-    if (activityData.length === 0) return 0
+    if (displayActivityData.length === 0) return 0
     return Math.round(
-      activityData.reduce((sum, r) => sum + getActiveRatio(r) * 0.5, 0)
+      displayActivityData.reduce((sum, r) => sum + getActiveRatio(r) * 0.5, 0)
     )
-  }, [activityData])
+  }, [displayActivityData])
 
   /** 生产力比率：专注时长 / 电脑使用时长 × 100% */
   const productivityRatio = useMemo(() => {
     if (totalUsageMinutes <= 0) return 0
-    const focusMin = summary?.stats.totalFocusMinutes ?? 0
+    const focusMin = displaySummary?.stats.totalFocusMinutes ?? 0
     return Math.min(Math.round((focusMin / totalUsageMinutes) * 100), 100)
-  }, [totalUsageMinutes, summary])
+  }, [totalUsageMinutes, displaySummary])
 
   /** 心流占比：心流时长 / 专注时长 × 100% */
   const flowRatio = useMemo(() => {
-    const focusMin = summary?.stats.totalFocusMinutes ?? 0
+    const focusMin = displaySummary?.stats.totalFocusMinutes ?? 0
     if (focusMin <= 0) return 0
-    const flowMin = summary?.stats.totalFlowMinutes ?? 0
+    const flowMin = displaySummary?.stats.totalFlowMinutes ?? 0
     return Math.min(Math.round((flowMin / focusMin) * 100), 100)
-  }, [summary])
+  }, [displaySummary])
 
   /** 格式化使用时长：< 60 分钟显示"X分钟"，>= 60 分钟显示"X.Xh" */
   const usageDurationStr = useMemo(() => {
@@ -588,10 +615,10 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, onClose }: 
    * 例如："9点-10点 活跃、14点-16点 基本空闲"
    */
   const activityTimeDistribution = useMemo(() => {
-    if (activityData.length === 0) return ''
+    if (displayActivityData.length === 0) return ''
     const EXPECTED_PER_HOUR = 120 // 每小时应有 120 条 30 秒采样，和图表保持一致
     const hourBuckets: Record<number, number> = {}
-    for (const r of activityData) {
+    for (const r of displayActivityData) {
       const h = new Date(r.ts).getHours()
       if (!hourBuckets[h]) hourBuckets[h] = 0
       hourBuckets[h] += getActiveRatio(r)
@@ -606,7 +633,7 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, onClose }: 
       segments.push(`${h}:00 ${label}(${ratio}%)`)
     }
     return segments.join('、')
-  }, [activityData])
+  }, [displayActivityData])
 
   // 构建 AI system prompt
   const systemPrompt = useMemo(() => {
@@ -764,9 +791,16 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, onClose }: 
         window.electronAPI.loadActivityData(selectedDate),
       ])
       const typedEvents = raw as TrackEvent[]
+      const updatedSummary = buildDailySummary(selectedDate, typedEvents)
       setEvents(typedEvents)
       setActivityData(rawActivity as ActivityRecord[])
-      setSummary(buildDailySummary(selectedDate, typedEvents))
+      setSummary(updatedSummary)
+      setDisplayDate(selectedDate)
+      setDisplayEvents(typedEvents)
+      setDisplayActivityData(rawActivity as ActivityRecord[])
+      setDisplayTasks(finalTasks)
+      setDisplaySummary(updatedSummary)
+      hasDisplayDataRef.current = true
     },
     [selectedDate],
   )
@@ -854,8 +888,8 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, onClose }: 
     }
   }, [])
 
-  // ---- 加载中（仅日视图模式下等待日数据加载） ----
-  if (loadingData && viewMode === 'day') {
+  // ---- 初次加载中（切换日期时保留旧内容，只在没有任何展示数据时显示整页 loading） ----
+  if (loadingData && viewMode === 'day' && !displaySummary) {
     return (
       <div className="h-full flex items-center justify-center bg-white">
         <div className="flex flex-col items-center gap-3">
@@ -1045,7 +1079,7 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, onClose }: 
         {/* ---- 数据可视化区域（日/周内容切换） ---- */}
         <div
           ref={dataPanelRef}
-          className="flex-1 overflow-y-auto transition-all duration-400"
+          className="flex-1 overflow-y-auto transition-all duration-400 relative"
           style={{ minWidth: MIN_DATA_WIDTH }}
         >
           {viewMode === 'week' ? (
@@ -1053,9 +1087,13 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, onClose }: 
             <WeekView weekEndDate={weekEndDate} onDataReady={handleWeekDataReady} chatOpen={chatOpen} />
           ) : (
             /* ---- 日视图 ---- */
-            <div className="p-6 space-y-6 transition-all duration-400 max-w-xl mx-auto">
+            <div
+              className={`p-6 space-y-6 transition-all duration-200 ease-out max-w-xl mx-auto ${
+                contentVisible ? 'opacity-100 translate-y-0' : 'opacity-70 translate-y-1'
+              }`}
+            >
               {/* 圆环图 + 核心指标并排（chatOpen 时节省纵向空间） */}
-              {isToday && (
+              {displayIsToday && (
                 <div id="chart-completion-rate" className={`${
                   chatOpen
                     ? 'flex items-center gap-6'
@@ -1071,7 +1109,7 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, onClose }: 
                   {chatOpen && (
                     <div id="chart-key-metrics" className="grid grid-cols-3 gap-3 flex-1">
                       <div className="text-center bg-gray-100 rounded-xl py-2.5 px-2">
-                        <p className="text-lg font-bold text-gray-600">{localTasks.filter(t => t.completed).length}</p>
+                        <p className="text-lg font-bold text-gray-600">{displayTasks.filter(t => t.completed).length}</p>
                         <p className="text-2xs text-gray-500 mt-0.5">完成任务数</p>
                       </div>
                       <div className="text-center bg-emerald-50 rounded-xl py-2.5 px-2">
@@ -1083,7 +1121,7 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, onClose }: 
                       </div>
                       <div className="text-center bg-blue-50 rounded-xl py-2.5 px-2">
                         <p className="text-lg font-bold text-blue-600">
-                          {summary?.stats.totalFocusMinutes ?? 0}
+                          {displaySummary?.stats.totalFocusMinutes ?? 0}
                           <span className="text-xs font-normal ml-0.5">分钟</span>
                         </p>
                         <p className="text-2xs text-blue-500 mt-0.5">任务时长</p>
@@ -1094,11 +1132,11 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, onClose }: 
               )}
 
               {/* 核心指标卡片（仅 chatOpen=false 时独立显示） */}
-              {(!chatOpen || !isToday) && (
+              {(!chatOpen || !displayIsToday) && (
               <div id="chart-key-metrics" className="grid grid-cols-3 gap-3 w-full">
                 <div className="text-center bg-gray-100 rounded-xl py-2.5 px-2">
                   <p className="text-lg font-bold text-gray-600">
-                    {localTasks.filter(t => t.completed).length}
+                    {displayTasks.filter(t => t.completed).length}
                   </p>
                   <p className="text-2xs text-gray-500 mt-0.5">完成任务数</p>
                 </div>
@@ -1111,7 +1149,7 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, onClose }: 
                 </div>
                 <div className="text-center bg-blue-50 rounded-xl py-2.5 px-2">
                   <p className="text-lg font-bold text-blue-600">
-                    {summary?.stats.totalFocusMinutes ?? 0}
+                    {displaySummary?.stats.totalFocusMinutes ?? 0}
                     <span className="text-xs font-normal ml-0.5">分钟</span>
                   </p>
                   <p className="text-2xs text-blue-500 mt-0.5">任务时长</p>
@@ -1161,12 +1199,12 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, onClose }: 
                   </span>
                 </h3>
                 <div id="chart-rhythm">
-                  <ActivityRhythmChart data={activityData} events={events} rangeStart={sharedRangeStart} rangeEnd={sharedRangeEnd} />
+                  <ActivityRhythmChart data={displayActivityData} events={displayEvents} rangeStart={sharedRangeStart} rangeEnd={sharedRangeEnd} />
                 </div>
                 <div className="mt-0">
                   <InteractiveActivityHeatmap
-                    data={activityData}
-                    events={events}
+                    data={displayActivityData}
+                    events={displayEvents}
                     rangeStart={sharedRangeStart}
                     rangeEnd={sharedRangeEnd}
                     highlightTask={hoveredTask}
@@ -1188,11 +1226,11 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, onClose }: 
                     </span>
                   </span>
                 </h3>
-                <AppUsageRanking data={activityData} />
+                <AppUsageRanking data={displayActivityData} />
               </div>
 
               {/* 遗留任务（仅今天显示，历史日期没有任务快照） */}
-              {isToday && summary && summary.leftoverTasks.length > 0 && (
+              {displayIsToday && displaySummary && displaySummary.leftoverTasks.length > 0 && (
                 <>
                   <div className="border-t border-gray-100" />
                   <div>
@@ -1200,7 +1238,7 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, onClose }: 
                       📦 未执行任务
                     </h3>
                     <div className="flex flex-wrap gap-1.5">
-                      {summary.leftoverTasks.map((t, i) => (
+                      {displaySummary.leftoverTasks.map((t, i) => (
                         <span
                           key={i}
                           className="text-xxs px-2 py-0.5 rounded-full bg-gray-100 text-gray-500"
@@ -1216,12 +1254,19 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, onClose }: 
               {/* 补记时间入口 */}
               <div className="border-t border-gray-100" />
               <ManualTimeEntry
-                tasks={localTasks}
-                events={events}
+                tasks={displayTasks}
+                events={displayEvents}
                 selectedDate={selectedDate}
                 onConfirm={handleManualEntry}
                 onExpandChange={setManualEntryExpanded}
               />
+            </div>
+          )}
+          {viewMode === 'day' && isDataTransitioning && (
+            <div className="pointer-events-auto absolute inset-0 z-20 flex items-start justify-center bg-white/45 backdrop-blur-[1px] transition-opacity duration-200">
+              <div className="mt-5 rounded-full border border-gray-200 bg-white/90 px-3 py-1.5 text-2xs text-gray-500 shadow-sm">
+                正在切换日期...
+              </div>
             </div>
           )}
         </div>
