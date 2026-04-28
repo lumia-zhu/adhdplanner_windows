@@ -350,7 +350,7 @@ export default function WeekView({ weekEndDate, onDataReady, chatOpen }: WeekVie
       {/* 分隔线 */}
       <div className="border-t border-gray-100" />
 
-      {/* 应用使用时长排行（周聚合，默认 Top 10，可展开） */}
+      {/* 应用使用时长排行（周聚合，默认 Top 5，可展开） */}
       <div id="chart-week-app-usage">
         <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-1.5">
           📱 应用使用时长（本周）

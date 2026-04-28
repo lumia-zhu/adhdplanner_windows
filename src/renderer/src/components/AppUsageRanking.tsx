@@ -1,5 +1,5 @@
 /**
- * AppUsageRanking —— 应用使用时长排行（Top 10 + 展开全部）
+ * AppUsageRanking —— 应用使用时长排行（Top 5 + 展开全部）
  *
  * 把传入的 ActivityRecord[] 里所有 appUsage 字段累加，得到每个应用的总秒数。
  * 展示精度：≥ 60 秒按分钟整数显示（如「12 分钟」）；< 60 秒显示「< 1 分钟」。
@@ -19,7 +19,7 @@ interface Props {
 /** 每次采样间隔（秒），与主进程 ActivitySampler.SAMPLE_INTERVAL 保持一致 */
 const SAMPLE_INTERVAL_SEC = 2
 
-const DEFAULT_SHOW = 10
+const DEFAULT_SHOW = 5
 
 const EXCLUDED_APP_NAMES = new Set([
   'electron',

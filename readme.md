@@ -160,7 +160,10 @@ C:\Users\{用户名}\AppData\Roaming\task-manager\tasks.json
   - 修复线上 Supabase 尚未添加 `activity_records.app_usage` 列时，活动数据同步会反复失败的问题；现在会自动降级为只同步基础活跃度数据，等数据库列补齐后再恢复上传应用使用时长。
   - 优化 AI 流式请求的主进程日志：不再把中文 chunk 内容直接输出到终端，避免 Windows PowerShell 编码不一致时出现乱码刷屏。
   - 反思页切换日期或周时，右侧 AI 反思面板会保持当前展开/收起状态，只刷新对应日期/周的反思内容，减少布局跳动。
-  - 涉及文件：`src/main/sync.ts`、`src/main/index.ts`、`src/renderer/src/components/ReflectionView.tsx`。
+  - 修复历史日期没有任务完成率圆环图时，顶部三张指标卡片在右侧 AI 面板展开状态下会变成两列换行的问题；现在会继续保持一行三列。
+  - 反思页「应用使用时长」默认从 Top 10 改为 Top 5，剩余应用仍可通过「展开剩余」查看，减少默认页面信息量。
+  - 优化反思 AI 的日期和图表引用表达：历史日期开场会先显示具体日期（如 `4月27日`），编号洞察会把图表引用放在编号后；同时清理流式输出中的半截 `chart` / `SUGGESTIONS` 控制文本，避免乱码露出到聊天气泡或探索方向按钮。
+  - 涉及文件：`src/main/sync.ts`、`src/main/index.ts`、`src/renderer/src/components/ReflectionView.tsx`、`src/renderer/src/components/ReflectionChat.tsx`、`src/renderer/src/services/ai.ts`。
 
 - **2026-04-27（夜）**：
   - 优化反思 AI 回复的可读性：提示词要求回复按 `1️⃣ / 2️⃣ / 3️⃣` 短块分段，每块 1-2 句，避免把多个数据点挤在同一段里。

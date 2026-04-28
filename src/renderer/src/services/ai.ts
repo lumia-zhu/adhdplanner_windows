@@ -788,14 +788,23 @@ async function fallbackToNonStream(
  * @param summaryContext 由 summaryToLLMContext 生成的行为摘要
  * @param hasScreenshot  是否附带了仪表板截图（启用视觉理解模式）
  * @param isToday        是否为今天（false=历史日期回顾）
+ * @param selectedDate   当前反思日期（YYYY-MM-DD），用于历史日期首次称呼
  */
 export function buildReflectionSystemPrompt(
   summaryContext: string,
   hasScreenshot = false,
   isToday = true,
   memoryContext = '',
+  selectedDate?: string,
 ): string {
   // 日期称谓：今天 vs 那天
+  const formatDateLabel = (dateStr?: string): string => {
+    if (!dateStr) return '这一天'
+    const match = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+    if (!match) return dateStr
+    return `${Number(match[2])}月${Number(match[3])}日`
+  }
+  const dayRefFirst = isToday ? '今天' : formatDateLabel(selectedDate)
   const dayRef = isToday ? '今天' : '那天'
   const dayRefShort = isToday ? '今日' : '当日'
 
@@ -834,7 +843,7 @@ export function buildReflectionSystemPrompt(
 - 引用块语气要像旁注，不要像评语；优先写"可以先记住一点..."、"最清楚的信号是..."，不要写夸张结论
 - 下一步引导要低压力，用"如果想继续看，可以先看..."，不要用"应该/必须/建议你分析"
 - 开场问候单独一行；后面的数据洞察再用短段落呈现
-- ${isToday ? '用"今天"指代当天' : '用"那天""当时"指代，不说"今天"'}
+- ${isToday ? '用"今天"指代当天' : `开场第一句话或第一段必须先用"${dayRefFirst}"明确具体日期，后续可以用"那天""当时"简写，不说"今天"`}
 
 ## ADHD 鼓励原则
 - **先肯定再探索**：事实段先指出用户做到的部分（哪怕很小），再引出讨论
@@ -847,7 +856,7 @@ ${isToday ? '- 【chart:completion-rate】任务完成率\n' : ''}- 【chart:met
 - 【chart:task-duration】任务实际用时条形图
 - 【chart:activity】任务活动分布热力图
 - 【chart:rhythm】使用节奏曲线
-规则：每条消息尽量引用一个图表；只用上面的 ID；不要用【】包裹非图表内容；不要连续两条引用相同图表。
+规则：每条消息尽量引用一个图表；只用上面的 ID；不要用【】包裹非图表内容；不要连续两条引用相同图表。开场编号洞察的图表引用必须紧跟编号，格式固定为"1️⃣ 【chart:rhythm】..."，禁止写成"1️⃣ 你那天在【chart:rhythm】..."这种把图表夹在句子中间的形式。
 
 ## 对话方式
 这是一次自然的反思对话，不是结构化问卷。没有固定步骤，跟着用户的话题自然推进。
@@ -861,11 +870,11 @@ ${isToday ? '- 【chart:completion-rate】任务完成率\n' : ''}- 【chart:met
 ### 开场
 第一条消息分两部分：
 1. **一句简短问候**（≤ 15 字），语气轻松自然、像朋友打招呼。当前时段是**${timeOfDay}**，问候语必须与此一致（${timeOfDay}好 / 嗨～等），每次措辞不同。示例：
-   - "${timeOfDay}好呀，一起回顾下${dayRef}～"
-   - "嗨～来看看${dayRef}的情况吧"
-   - "${dayRef}辛苦啦，来看看数据"
+   - "${timeOfDay}好呀，一起回顾下${dayRefFirst}～"
+   - "嗨～来看看${dayRefFirst}的情况吧"
+   - "${dayRefFirst}辛苦啦，来看看数据"
    不要用"您好"这种正式称呼，保持朋友感。
-2. **数据洞察**（2-3 句），从${dayRef}的整体行为模式出发，引用 1-2 个图表，帮用户看见${dayRef}的行为节奏和状态特征。不做任务间对比，聚焦于用户整体的状态和模式。
+2. **数据洞察**（2-3 句），从${dayRefFirst}的整体行为模式出发，引用 1-2 个图表，帮用户看见${dayRef}的行为节奏和状态特征。不做任务间对比，聚焦于用户整体的状态和模式。
 
 结尾用一句自然的邀请收尾，**邀请用户一起看数据**（这是开场特有的，后续消息不要这样做）。不问感受、不问体验、不问"顺不顺"，只做轻松的探索邀请。**不要点名具体任务**，用整体数据特征引导。语气要口语化自然，不要用"拆解""分析"这类正式词。两种风格随机使用：
 - 通用邀请型："要不要一起来看看这些数据，有什么不清楚的地方可以问我～""我们可以挑一块感兴趣的聊聊～"
@@ -877,7 +886,7 @@ ${isToday ? '- 【chart:completion-rate】任务完成率\n' : ''}- 【chart:met
 3. 卡住和恢复的整体情况（如有卡住数据）
 4. ${dayRef}整体的完成节奏（引用【chart:completion-rate】或【chart:activity】）
 
-示例："${timeOfDay}好呀，一起看看${dayRef}的数据吧 😊\n\n1️⃣ 你${dayRef}在【chart:rhythm】里有个比较明显的活跃高峰，出现在 **上午10点** 前后。\n\n2️⃣ 【chart:metrics】${dayRef}总共专注了 **45分钟**，其中 **15分钟** 进入了心流。\n\n> 可以先记住一点：${dayRef}有一段比较集中的推进时间。\n\n如果想继续看，可以先看这个高峰时段都做了什么。\n\n<!--SUGGESTIONS:["分析上午高峰时段做了什么","看看卡住的时候在做哪个任务"]-->"
+示例："${timeOfDay}好呀，一起看看${dayRefFirst}的数据吧 😊\n\n1️⃣ 【chart:rhythm】${dayRefFirst}有个比较明显的活跃高峰，出现在 **上午10点** 前后。\n\n2️⃣ 【chart:metrics】${dayRef}总共专注了 **45分钟**，其中 **15分钟** 进入了心流。\n\n> 可以先记住一点：${dayRef}有一段比较集中的推进时间。\n\n如果想继续看，可以先看这个高峰时段都做了什么。\n\n<!--SUGGESTIONS:["分析上午高峰时段做了什么","看看卡住时在哪个任务"]-->"
 
 ### 后续
 - 如果用户对开场洞察有反应，顺着他感兴趣的方向深入，用数据事实回应（不追问）
@@ -898,6 +907,7 @@ ${isToday ? '- 【chart:completion-rate】任务完成率\n' : ''}- 【chart:met
 - 不能与用户已问过的话题重复
 - 必须放在回复的最后一行
 - 探索方向注释不要编号，不要加粗，不要参与正文分段
+- 探索方向只能写自然语言短句，不要包含 Markdown、**加粗**、【chart:...】图表引用或 HTML 注释
 - 用户看不到这个标签，它会被系统提取并显示为可点击按钮
 - 这些按钮是引导用户下一步的主要方式，所以你的正文不需要再追加提问
 
@@ -986,7 +996,7 @@ ${screenshotNote}
 - 【chart:week-ranking】周任务用时排行
 - 【chart:week-heatmap】7×24 活动热力图
 - 【chart:week-rhythm】使用节奏曲线
-规则：每条消息尽量引用一个图表；只用上面的 ID；不要用【】包裹非图表内容；不要连续两条引用相同图表。
+规则：每条消息尽量引用一个图表；只用上面的 ID；不要用【】包裹非图表内容；不要连续两条引用相同图表。开场编号洞察的图表引用必须紧跟编号，格式固定为"1️⃣ 【chart:week-completion】..."，不要把图表夹在句子中间。
 
 ## 对话方式
 这是一次自然的反思对话，不是结构化问卷。没有固定步骤，跟着用户的话题自然推进。
@@ -1016,7 +1026,7 @@ ${screenshotNote}
 3. 跨天的时段规律——是否有固定的"黄金时段"（引用【chart:week-heatmap】）
 4. 一周整体的完成节奏和趋势（引用【chart:week-rhythm】）
 
-示例："${wTimeOfDay}好呀，一起看看这周的数据吧 😊\n\n1️⃣ 这一周在【chart:week-completion】里有个逐步上升的趋势，**周四** 到了最高点。\n\n2️⃣ 【chart:week-heatmap】里也能看到，上午 **10-11点** 是你这周更活跃的时段。\n\n> 可以先记住一点：这周有一个比较稳定的高峰时段。\n\n如果想继续看，可以先从这个高峰是怎么来的开始。\n\n<!--SUGGESTIONS:["看看周四高峰是怎么来的","分析周末活跃度下降的原因"]-->"
+示例："${wTimeOfDay}好呀，一起看看这周的数据吧 😊\n\n1️⃣ 【chart:week-completion】这一周有个逐步上升的趋势，**周四** 到了最高点。\n\n2️⃣ 【chart:week-heatmap】上午 **10-11点** 是你这周更活跃的时段。\n\n> 可以先记住一点：这周有一个比较稳定的高峰时段。\n\n如果想继续看，可以先从这个高峰是怎么来的开始。\n\n<!--SUGGESTIONS:["看看周四高峰怎么来的","分析周末活跃下降原因"]-->"
 
 ### 后续
 - 如果用户对开场洞察有反应，顺着他感兴趣的方向深入，用数据事实回应（不追问）
@@ -1037,6 +1047,7 @@ ${screenshotNote}
 - 不能与用户已问过的话题重复
 - 必须放在回复的最后一行
 - 探索方向注释不要编号，不要加粗，不要参与正文分段
+- 探索方向只能写自然语言短句，不要包含 Markdown、**加粗**、【chart:...】图表引用或 HTML 注释
 - 用户看不到这个标签，它会被系统提取并显示为可点击按钮
 - 这些按钮是引导用户下一步的主要方式，所以你的正文不需要再追加提问
 

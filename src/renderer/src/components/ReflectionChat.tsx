@@ -54,6 +54,68 @@ function parseBoldText(text: string, keyPrefix: string): React.ReactNode[] {
   })
 }
 
+/** 把编号行里位于句子中间的图表引用移动到编号后，形成稳定扫读结构 */
+function normalizeNumberedChartRefs(text: string): string {
+  return text.split('\n').map((line) => {
+    const match = line.match(/^(\s*[1-3]️⃣\s+)(?!【\s*chart:)(.*?)(【\s*chart:[^】]+】)(.*)$/i)
+    if (!match) return line
+
+    const [, prefix, before, chartRef, after] = match
+    const sentence = `${before.trim()}${after.trimStart()}`
+    return `${prefix}${chartRef}${sentence ? ` ${sentence}` : ''}`
+  }).join('\n')
+}
+
+/** 清理 AI 流式输出里不该展示给用户的控制语法 */
+function sanitizeAssistantDisplayText(text: string): string {
+  let cleaned = text
+
+  const suggestionStart = cleaned.search(/<!--\s*SUGGESTIONS:/i)
+  if (suggestionStart >= 0) {
+    cleaned = cleaned.slice(0, suggestionStart)
+  }
+
+  cleaned = cleaned
+    .replace(/<!--\s*SUGGESTIONS:[\s\S]*?-->/gi, '')
+    .replace(/^\s*.*SUGGESTIONS\s*:.*$/gim, '')
+    .replace(/^\s*【\s*chart(?::[A-Za-z-]*)?\s*$/gim, '')
+    .replace(/【\s*chart(?::[A-Za-z-]*)?$/gim, '')
+
+  return normalizeNumberedChartRefs(cleaned).trimEnd()
+}
+
+function cleanSuggestionLabel(label: unknown): string | null {
+  const cleaned = String(label)
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .replace(/【\s*chart:[^】]*】/gi, '')
+    .replace(/<!--[\s\S]*?-->/g, '')
+    .replace(/SUGGESTIONS\s*:.*$/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+
+  if (!cleaned) return null
+  if (cleaned.length < 4 || cleaned.length > 30) return null
+  if (/chart:|SUGGESTIONS|<!--|\*\*/i.test(cleaned)) return null
+  return cleaned
+}
+
+function extractSuggestions(rawText: string): string[] {
+  const match = rawText.match(/<!--\s*SUGGESTIONS:\s*(\[[\s\S]*?\])\s*-->/i)
+  if (!match) return []
+
+  try {
+    const parsed = JSON.parse(match[1])
+    if (!Array.isArray(parsed)) return []
+    return parsed
+      .map(cleanSuggestionLabel)
+      .filter((item): item is string => Boolean(item))
+      .slice(0, 3)
+  } catch (e) {
+    console.warn('[ReflectionChat] 解析探索方向失败:', e, match[1])
+    return []
+  }
+}
+
 /**
  * 解析 AI 回复中的图表引用标签，返回 React 节点数组
  *
@@ -130,7 +192,7 @@ function parseAssistantContent(
   text: string,
   onRef: (chartId: string) => void,
 ): React.ReactNode[] {
-  const lines = text.split('\n')
+  const lines = sanitizeAssistantDisplayText(text).split('\n')
   return lines.map((line, i) => {
     const quoteMatch = line.match(/^>\s?(.*)$/)
     if (quoteMatch) {
@@ -261,6 +323,7 @@ const ReflectionChat = forwardRef<ReflectionChatHandle, ReflectionChatProps>(fun
 
       let settled = false
       let gotActivity = false
+      let streamedText = ''
       const TIMEOUT_MS = 60_000
       const startTime = Date.now()
 
@@ -282,13 +345,14 @@ const ReflectionChat = forwardRef<ReflectionChatHandle, ReflectionChatProps>(fun
         aiConfig,
         (delta) => {
           gotActivity = true
+          streamedText += delta
           setStreaming(true)
           setLoading(false)
           setBubbles(prev => {
             const updated = [...prev]
             const last = updated[updated.length - 1]
             if (last?.role === 'assistant') {
-              updated[updated.length - 1] = { ...last, content: last.content + delta }
+              updated[updated.length - 1] = { ...last, content: sanitizeAssistantDisplayText(streamedText) }
             }
             return updated
           })
@@ -309,22 +373,12 @@ const ReflectionChat = forwardRef<ReflectionChatHandle, ReflectionChatProps>(fun
             setBubbles(prev => prev.slice(0, -1))
             resolve(null)
           } else {
-            // 提取嵌入的探索方向标签
-            const sugMatch = rawContent.match(/<!--SUGGESTIONS:\s*(\[[\s\S]*?\])\s*-->/)
-            const content = rawContent.replace(/\s*<!--SUGGESTIONS:[\s\S]*?-->\s*$/, '').trim()
+            const cleanedSuggestions = extractSuggestions(rawContent)
+            const content = sanitizeAssistantDisplayText(rawContent).trim()
 
-            if (sugMatch) {
-              try {
-                const dirs: string[] = JSON.parse(sugMatch[1])
-                const cleaned = dirs
-                  .map(d => d.trim())
-                  .filter(d => d.length >= 4 && d.length <= 30)
-                  .slice(0, 3)
-                console.log('[ReflectionChat] 内嵌探索方向:', cleaned)
-                if (cleaned.length > 0) setSuggestions(cleaned)
-              } catch (e) {
-                console.warn('[ReflectionChat] 解析探索方向失败:', e, sugMatch[1])
-              }
+            if (cleanedSuggestions.length > 0) {
+              console.log('[ReflectionChat] 内嵌探索方向:', cleanedSuggestions)
+              setSuggestions(cleanedSuggestions)
             }
 
             // 更新 bubbles 中的最后一条消息为去掉标签后的内容
@@ -671,7 +725,9 @@ const ReflectionChat = forwardRef<ReflectionChatHandle, ReflectionChatProps>(fun
                     </div>
                   ) : b.role === 'assistant' && onChartRef
                     ? parseAssistantContent(b.content, onChartRef)
-                    : b.content}
+                    : b.role === 'assistant'
+                      ? sanitizeAssistantDisplayText(b.content)
+                      : b.content}
                 </div>
               </div>
               {showRestoredBanner && (
