@@ -40,6 +40,20 @@ const CHART_ID_MAP: Record<string, { domId: string; label: string }> = {
   'week-rhythm':     { domId: 'chart-week-rhythm',     label: '节奏曲线' },
 }
 
+/** 轻量解析 Markdown 加粗：只支持 **重点文本**，避免引入完整 Markdown 渲染器 */
+function parseBoldText(text: string, keyPrefix: string): React.ReactNode[] {
+  const parts = text.split(/(\*\*[^*]+\*\*)/g)
+  return parts.map((part, i) => {
+    const match = part.match(/^\*\*([^*]+)\*\*$/)
+    if (!match) return <span key={`${keyPrefix}-${i}`}>{part}</span>
+    return (
+      <strong key={`${keyPrefix}-${i}`} className="font-semibold text-gray-900">
+        {match[1]}
+      </strong>
+    )
+  })
+}
+
 /**
  * 解析 AI 回复中的图表引用标签，返回 React 节点数组
  *
@@ -55,7 +69,7 @@ function parseChartRefs(
   const parts = text.split(/(【[^】]+】)/g)
   return parts.map((part, i) => {
     const match = part.match(/^【([^】]+)】$/)
-    if (!match) return <span key={i}>{part}</span>
+    if (!match) return <span key={i}>{parseBoldText(part, `text-${i}`)}</span>
 
     const inner = match[1]
 
@@ -109,6 +123,33 @@ function parseChartRefs(
 
     // ---- 4. 都没匹配上：去掉【】，渲染为加粗文字 ----
     return <strong key={i} className="text-gray-700 font-semibold">{inner}</strong>
+  })
+}
+
+function parseAssistantContent(
+  text: string,
+  onRef: (chartId: string) => void,
+): React.ReactNode[] {
+  const lines = text.split('\n')
+  return lines.map((line, i) => {
+    const quoteMatch = line.match(/^>\s?(.*)$/)
+    if (quoteMatch) {
+      return (
+        <div
+          key={i}
+          className="my-1.5 border-l-2 border-gray-200 pl-3 py-0.5 text-gray-500"
+        >
+          {parseChartRefs(quoteMatch[1], onRef)}
+        </div>
+      )
+    }
+
+    return (
+      <span key={i}>
+        {parseChartRefs(line, onRef)}
+        {i < lines.length - 1 ? '\n' : null}
+      </span>
+    )
   })
 }
 
@@ -629,7 +670,7 @@ const ReflectionChat = forwardRef<ReflectionChatHandle, ReflectionChatProps>(fun
                       <span className="w-2 h-2 bg-gray-300 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
                     </div>
                   ) : b.role === 'assistant' && onChartRef
-                    ? parseChartRefs(b.content, onChartRef)
+                    ? parseAssistantContent(b.content, onChartRef)
                     : b.content}
                 </div>
               </div>

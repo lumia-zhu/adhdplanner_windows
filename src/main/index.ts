@@ -277,7 +277,7 @@ function setupIPC(): void {
     const timer = setTimeout(() => controller.abort(), STREAM_TIMEOUT_MS)
     const sender = event.sender
 
-    console.log(`[Stream#${requestId}] 开始请求 → ${payload.url}`)
+    console.log(`[Stream#${requestId}] start request -> ${payload.url}`)
 
     ;(async () => {
       try {
@@ -291,18 +291,18 @@ function setupIPC(): void {
           signal: controller.signal as AbortSignal,
         })
 
-        console.log(`[Stream#${requestId}] 响应状态 ${resp.status}`)
+        console.log(`[Stream#${requestId}] status ${resp.status}`)
 
         if (!resp.ok) {
           const text = await resp.text()
-          console.error(`[Stream#${requestId}] 接口错误：${text.slice(0, 300)}`)
+          console.error(`[Stream#${requestId}] api error ${resp.status}, body length=${text.length}`)
           safeSend(sender, 'ai:stream-error', requestId, `接口错误 ${resp.status}：${text.slice(0, 200)}`)
           return
         }
 
         const reader = resp.body?.getReader()
         if (!reader) {
-          console.error(`[Stream#${requestId}] 无法获取 reader`)
+          console.error(`[Stream#${requestId}] reader unavailable`)
           safeSend(sender, 'ai:stream-error', requestId, '无法获取响应流')
           return
         }
@@ -323,7 +323,7 @@ function setupIPC(): void {
             const trimmed = line.trim()
             if (!trimmed) continue
             if (trimmed === 'data: [DONE]') {
-              console.log(`[Stream#${requestId}] 收到 [DONE]，共 ${chunkCount} 个 chunk`)
+              console.log(`[Stream#${requestId}] done, chunks=${chunkCount}`)
               continue
             }
             if (!trimmed.startsWith('data: ')) continue
@@ -332,20 +332,20 @@ function setupIPC(): void {
               const delta = json?.choices?.[0]?.delta?.content
               if (delta) {
                 chunkCount++
-                if (chunkCount <= 3) console.log(`[Stream#${requestId}] chunk#${chunkCount}: "${delta.slice(0, 40)}"`)
+                if (chunkCount <= 3) console.log(`[Stream#${requestId}] chunk#${chunkCount}, chars=${delta.length}`)
                 safeSend(sender, 'ai:stream-chunk', requestId, delta)
               }
             } catch {
-              console.warn(`[Stream#${requestId}] 无法解析 SSE 行: ${trimmed.slice(0, 100)}`)
+              console.warn(`[Stream#${requestId}] invalid SSE line, length=${trimmed.length}`)
             }
           }
         }
 
-        console.log(`[Stream#${requestId}] 流结束，共 ${chunkCount} 个 chunk`)
+        console.log(`[Stream#${requestId}] stream ended, chunks=${chunkCount}`)
         safeSend(sender, 'ai:stream-end', requestId)
       } catch (e: unknown) {
         const isTimeout = e instanceof Error && e.name === 'AbortError'
-        console.error(`[Stream#${requestId}] 异常: ${isTimeout ? 'TIMEOUT' : String(e)}`)
+        console.error(`[Stream#${requestId}] error: ${isTimeout ? 'TIMEOUT' : String(e)}`)
         safeSend(sender, 'ai:stream-error', requestId,
           isTimeout ? 'AI 请求超时（60 秒无响应）' : String(e))
       } finally {

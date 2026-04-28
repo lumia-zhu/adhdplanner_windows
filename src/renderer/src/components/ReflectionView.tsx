@@ -203,29 +203,18 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, onClose }: 
     return hints[Math.floor(Math.random() * hints.length)]
   }, [viewMode, isToday])
 
-  // 切换日期时：关闭 AI 侧边栏
-  const resetChatOnDateChange = useCallback(() => {
-    if (chatOpen) {
-      setChatOpen(false)
-      window.electronAPI.resizeMainWindow(MAIN_WIDTH, MAIN_HEIGHT)
-    }
-  }, [chatOpen])
-
   const goPrev = useCallback(() => {
     setSelectedDate(d => shiftDate(d, -1))
-    resetChatOnDateChange()
-  }, [resetChatOnDateChange])
+  }, [])
   const goNext = useCallback(() => {
     setSelectedDate(d => {
       const next = shiftDate(d, 1)
       return next > getToday() ? d : next   // 不能超过今天
     })
-    resetChatOnDateChange()
-  }, [resetChatOnDateChange])
+  }, [])
   const goToday = useCallback(() => {
     setSelectedDate(getToday())
-    resetChatOnDateChange()
-  }, [resetChatOnDateChange])
+  }, [])
 
   // ---- 拖拽分隔条 ----
   const isDragging = useRef(false)
@@ -926,7 +915,6 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, onClose }: 
                       const todayStr = getToday()
                       setSelectedDate(date > todayStr ? todayStr : date)
                       setReflCalendarOpen(false)
-                      resetChatOnDateChange()
                     }}
                     onClose={() => setReflCalendarOpen(false)}
                   />
@@ -961,7 +949,7 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, onClose }: 
               /* ---- 周视图导航 ---- */
               <div className="flex items-center gap-1">
                 <button
-                  onClick={() => { setWeekEndDate(d => shiftDate(d, -7)); resetChatOnDateChange() }}
+                  onClick={() => { setWeekEndDate(d => shiftDate(d, -7)) }}
                   className="w-6 h-6 rounded-md hover:bg-gray-100 flex items-center justify-center
                              text-gray-400 hover:text-gray-600 transition-colors"
                   title="前一周"
@@ -979,7 +967,7 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, onClose }: 
                 </span>
 
                 <button
-                  onClick={() => { setWeekEndDate(d => { const next = shiftDate(d, 7); return next > getToday() ? getToday() : next }); resetChatOnDateChange() }}
+                  onClick={() => { setWeekEndDate(d => { const next = shiftDate(d, 7); return next > getToday() ? getToday() : next }) }}
                   disabled={weekEndDate === today}
                   className={`w-6 h-6 rounded-md flex items-center justify-center transition-colors
                     ${weekEndDate === today
@@ -995,7 +983,7 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, onClose }: 
 
                 {weekEndDate !== today && (
                   <button
-                    onClick={() => { setWeekEndDate(getToday()); resetChatOnDateChange() }}
+                    onClick={() => { setWeekEndDate(getToday()) }}
                     className="ml-1 px-2 py-0.5 rounded-full text-2xs font-semibold
                                bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors"
                   >

@@ -24,6 +24,19 @@ const SYNC_INTERVAL = 30_000
 const dirtySet = new Map<string, Set<string>>()
 let syncTimer: ReturnType<typeof setInterval> | null = null
 
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message
+  if (error && typeof error === 'object' && 'message' in error) {
+    return String((error as { message: unknown }).message)
+  }
+  return JSON.stringify(error)
+}
+
+function isMissingAppUsageColumn(error: unknown): boolean {
+  const msg = getErrorMessage(error)
+  return msg.includes('app_usage') && msg.includes('schema cache')
+}
+
 /** 标记某个实体有变更，需要同步到云端。不阻塞调用方。 */
 export function markDirty(entity: string, key: string = ''): void {
   if (!dirtySet.has(entity)) dirtySet.set(entity, new Set())
@@ -201,10 +214,25 @@ async function pushToCloud(userId: string, entity: string, key: string): Promise
 
       // 分批插入（Supabase 单次 insert 有体积限制）
       const BATCH = 500
-      for (let i = 0; i < rows.length; i += BATCH) {
-        const batch = rows.slice(i, i + BATCH)
-        const { error } = await sb.from('activity_records').insert(batch)
-        if (error) throw error
+      const insertRows = async (payloadRows: Array<Record<string, unknown>>) => {
+        for (let i = 0; i < payloadRows.length; i += BATCH) {
+          const batch = payloadRows.slice(i, i + BATCH)
+          const { error } = await sb.from('activity_records').insert(batch)
+          if (error) throw error
+        }
+      }
+
+      try {
+        await insertRows(rows)
+      } catch (error) {
+        if (!isMissingAppUsageColumn(error)) throw error
+
+        // 线上库还没执行 app_usage migration 时，先保证基础活跃度数据能同步。
+        // 等数据库列补上后，新版本会自动恢复上传 app_usage。
+        console.warn(`[Sync] activity/${date}: app_usage column unavailable, retrying without app usage`)
+        const rowsWithoutAppUsage = rows.map(({ app_usage: _appUsage, ...rest }) => rest)
+        await sb.from('activity_records').delete().eq('user_id', userId).eq('date', date)
+        await insertRows(rowsWithoutAppUsage)
       }
       console.log(`[Sync] activity/${date}: replaced with ${rows.length} records`)
       break
