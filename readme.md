@@ -63,6 +63,8 @@ npm run build:portable
 
 - `docs/flowchart.md`：核心交互流程，理解计划、执行、反思三阶段如何串起来
 - `docs/pilot-interview-outline.md`：3 天预实验后的访谈提纲
+- `docs/pretest-p1-behavior-analysis.md`：P1（studentpretest01）预实验行为数据分析总结
+- `docs/pretest-p2-behavior-analysis.md`：P2（user2）预实验行为数据分析总结
 - `docs/chi-user-study-plan.md`：正式 user study 的研究结构与数据收集建议
 - `docs/rq-data-analysis-mapping.md`：研究问题、数据和分析方向的对应关系
 - `docs/entry-trigger-strategy.md`：针对 ADHD 用户“忘记或懒得打开主界面”的入口触发策略
@@ -155,6 +157,12 @@ C:\Users\{用户名}\AppData\Roaming\task-manager\tasks.json
 ---
 
 ## 🛠️ 最近修复
+
+- **2026-04-29**：
+  - 启动第一步新增本地记忆推荐：用户反复输入或采用过的第一步会被保存，之后遇到相似任务时优先混入原有建议按钮中。
+  - UI 不拆成“记忆推荐 / AI 推荐”两个区域，仍保持原来的第一步建议列表；记忆建议只在内部排序上更靠前，避免增加用户理解负担。
+  - 记忆采用“最近 30 条或最近两周短期记录 + 稳定记忆”结构，重复出现的相似任务第一步会长期保留，并按最近使用时间、使用次数和接受次数衰减排序。
+  - 涉及文件：`src/renderer/src/services/startup-memory.ts`、`src/renderer/src/components/StandbyWidget.tsx`、`src/renderer/src/components/FocusFlow.tsx`、`src/renderer/src/hooks/useFocusSession.ts`、`src/main/storage.ts`。
 
 - **2026-04-28**：
   - Widget「卡住了」第一阶段改造：用户输入卡住原因后，不再只看到一次性建议卡片，而是进入一个小型 AI 急救对话面板；AI 会先安抚情绪，再结合当前任务、当前步骤、当天任务列表和历史记忆给出更小的下一步，用户也可以继续追问“这个不适合”“换个更小的”等。

@@ -16,6 +16,7 @@ import type { Task } from '../types'
 import type { AIConfig, MicroActionChip } from '../services/ai'
 import { buildStartupHint } from '../services/ai'
 import { aiCache } from '../services/ai-cache'
+import { findStartupMemoryMatches, mergeStartupSuggestions } from '../services/startup-memory'
 import AILoadingTips from './AILoadingTips'
 
 const BAR_W = 380
@@ -32,7 +33,7 @@ const FALLBACK_CHIPS: MicroActionChip[] = [
 interface StandbyWidgetProps {
   tasks: Task[]
   aiConfig: AIConfig
-  onStartMicro: (taskId: string, microTask: string, source: 'self' | 'ai_chip' | 'skip') => void
+  onStartMicro: (taskId: string, microTask: string, source: 'self' | 'ai_chip' | 'memory_chip' | 'skip') => void
   onResumePaused: (taskId: string) => void
   onExpand: () => void
   onQuickAddTask?: (title: string, id: string) => void
@@ -112,23 +113,37 @@ export default function StandbyWidget({
   // ---- 加载 AI 建议（openFirstStep 和重试共用） ----
   const loadAIChips = useCallback((task: Task) => {
     const hasAI = !!(aiConfig.apiKey && aiConfig.modelId)
-    if (!hasAI) return
 
     setChips([])
     setChipError(null)
     setLoadingChips(true)
     const subtaskTitle = (task.subtasks ?? []).find(s => !s.completed)?.title
     window.electronAPI.loadMemoryStore()
-      .then(raw => buildStartupHint((raw as any).firstSteps ?? []))
-      .catch(() => '')
-      .then(hint =>
-        aiCache.get(task.id, task.title, aiConfig, subtaskTitle, undefined, hint || undefined)
+      .then(raw => {
+        const store = raw as any
+        const memoryChips = findStartupMemoryMatches(task.title, subtaskTitle, store)
+        const hint = buildStartupHint(store.firstSteps ?? [])
+        if (!hasAI) {
+          return { chips: mergeStartupSuggestions(memoryChips, [], FALLBACK_CHIPS), error: undefined }
+        }
+        return aiCache
+          .get(task.id, task.title, aiConfig, subtaskTitle, undefined, hint || undefined)
+          .then(({ chips: aiChips, error }) => ({
+            chips: mergeStartupSuggestions(memoryChips, aiChips, FALLBACK_CHIPS),
+            error,
+          }))
+      })
+      .catch(() => hasAI
+        ? aiCache.get(task.id, task.title, aiConfig, subtaskTitle).then(({ chips: aiChips, error }) => ({
+          chips: mergeStartupSuggestions([], aiChips, FALLBACK_CHIPS),
+          error,
+        }))
+        : { chips: FALLBACK_CHIPS, error: undefined }
       )
       .then(({ chips: newChips, error }) => {
-        setChips(newChips.length > 0 ? newChips : FALLBACK_CHIPS)
+        setChips(newChips)
         if (error) setChipError(error)
       })
-      .catch(() => setChips(FALLBACK_CHIPS))
       .finally(() => setLoadingChips(false))
   }, [aiConfig])
 
@@ -191,7 +206,7 @@ export default function StandbyWidget({
 
   const handleChipStart = (chip: MicroActionChip) => {
     if (!firstStepTaskId) return
-    onStartMicro(firstStepTaskId, chip.action, 'ai_chip')
+    onStartMicro(firstStepTaskId, chip.action, chip.source ?? 'ai_chip')
   }
 
   const handleSkipFirstStep = () => {

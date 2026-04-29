@@ -683,9 +683,24 @@ export interface MemoryCommitment {
 export interface FirstStepRecord {
   taskTitle: string
   microAction: string
-  source: 'self' | 'ai_chip' | 'skip'
+  source: 'self' | 'ai_chip' | 'memory_chip' | 'skip'
   subtaskTitle?: string
   date: string
+}
+
+/** 用户反复采用后沉淀下来的稳定第一步记忆 */
+export interface FirstStepStableMemory {
+  taskKey: string
+  microAction: string
+  source: 'self' | 'ai_chip' | 'memory_chip'
+  taskExamples: string[]
+  count: number
+  acceptedCount: number
+  rejectedCount: number
+  firstUsedAt: string
+  lastUsedAt: string
+  lastShownAt?: string
+  confidence: number
 }
 
 /** 用户提交的卡住原因记录（用于精准预测卡点） */
@@ -708,6 +723,7 @@ export interface MemoryStore {
   sessions: MemorySessionSummary[]
   commitments: MemoryCommitment[]
   firstSteps: FirstStepRecord[]
+  stableFirstSteps: FirstStepStableMemory[]
   stuckReasons: StuckReasonRecord[]
   hintFeedback: HintFeedbackRecord[]
   lastUpdated: number
@@ -735,13 +751,14 @@ export function loadMemoryStore(): MemoryStore {
         sessions,
         commitments: raw.commitments ?? [],
         firstSteps: raw.firstSteps ?? [],
+        stableFirstSteps: raw.stableFirstSteps ?? [],
         stuckReasons: raw.stuckReasons ?? [],
         hintFeedback: raw.hintFeedback ?? [],
         lastUpdated: raw.lastUpdated ?? 0,
       }
     }
   } catch (e) { console.error('[loadMemoryStore]', e) }
-  return { sessions: [], commitments: [], firstSteps: [], stuckReasons: [], hintFeedback: [], lastUpdated: 0 }
+  return { sessions: [], commitments: [], firstSteps: [], stableFirstSteps: [], stuckReasons: [], hintFeedback: [], lastUpdated: 0 }
 }
 
 export function saveMemoryStore(store: MemoryStore): boolean {

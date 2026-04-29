@@ -19,6 +19,7 @@ import type { AIConfig, MicroActionChip } from '../services/ai'
 import { generateReflectionQuestion, generateFollowUpQuestion, getRandomFallbackQuestion, buildStartupHint } from '../services/ai'
 import { tracker } from '../services/tracker'
 import { aiCache } from '../services/ai-cache'
+import { findStartupMemoryMatches, mergeStartupSuggestions } from '../services/startup-memory'
 import AILoadingTips from './AILoadingTips'
 
 // ★ Feature Flag：关闭任务理解阶段，直接进入第一步选择
@@ -42,7 +43,7 @@ export interface UnderstandingEntry {
 interface FocusFlowProps {
   task: Task
   aiConfig: AIConfig
-  onStart: (microTask: string, source: 'self' | 'ai_chip' | 'skip', understandingContext?: string) => void
+  onStart: (microTask: string, source: 'self' | 'ai_chip' | 'memory_chip' | 'skip', understandingContext?: string) => void
   onCancel: () => void
 }
 
@@ -67,8 +68,8 @@ export default function FocusFlow({ task, aiConfig, onStart, onCancel }: FocusFl
   // ---- micro_action 阶段状态 ----
   const [microTask, setMicroTask] = useState('')
   const [chips, setChips] = useState<MicroActionChip[]>([])
-  // ★ 如果有 AI 且直接进入 micro_action，初始就显示 loading 避免闪烁
-  const [loadingChips, setLoadingChips] = useState(hasAI && phase === 'micro_action')
+  // 进入 micro_action 时会加载本地记忆和 AI 建议，先显示轻量 loading 避免闪烁
+  const [loadingChips, setLoadingChips] = useState(phase === 'micro_action')
   const [chipError, setChipError] = useState<string | null>(null)
   const microInputRef = useRef<HTMLInputElement>(null)
   const sourceRef = useRef<'self' | 'ai_chip'>('self')
@@ -229,24 +230,41 @@ export default function FocusFlow({ task, aiConfig, onStart, onCancel }: FocusFl
     if (phase !== 'micro_action') return
 
     const focusTimer = setTimeout(() => microInputRef.current?.focus(), 350)
-    if (!aiConfig.apiKey || !aiConfig.modelId) return () => clearTimeout(focusTimer)
-
+    const hasAIForChips = !!(aiConfig.apiKey && aiConfig.modelId)
     setChips([])
     setLoadingChips(true)
     setChipError(null)
     let cancelled = false
 
-    // 加载行为记忆 → 构建 memoryHint → 传入 AI 缓存
+    // 加载行为记忆 → 合并本地记忆建议和 AI 建议，UI 仍保持同一组按钮
     window.electronAPI.loadMemoryStore()
-      .then(raw => buildStartupHint((raw as any).firstSteps ?? []))
-      .catch(() => '')
-      .then(hint => {
-        if (cancelled) return
-        return aiCache.get(task.id, task.title, aiConfig, activeSubtask?.title, undefined, hint || undefined)
+      .then(raw => {
+        const store = raw as any
+        const memoryChips = findStartupMemoryMatches(task.title, activeSubtask?.title, store)
+        const hint = buildStartupHint(store.firstSteps ?? [])
+        if (!hasAIForChips) {
+          return { chips: mergeStartupSuggestions(memoryChips, [], FALLBACK_CHIPS), error: undefined, fromCache: false }
+        }
+        return aiCache
+          .get(task.id, task.title, aiConfig, activeSubtask?.title, undefined, hint || undefined)
+          .then(result => ({
+            chips: mergeStartupSuggestions(memoryChips, result.chips, FALLBACK_CHIPS),
+            error: result.error,
+            fromCache: result.fromCache,
+          }))
+      })
+      .catch(() => {
+        if (!hasAIForChips) return { chips: FALLBACK_CHIPS, error: undefined, fromCache: false }
+        return aiCache.get(task.id, task.title, aiConfig, activeSubtask?.title)
+          .then(result => ({
+            chips: mergeStartupSuggestions([], result.chips, FALLBACK_CHIPS),
+            error: result.error,
+            fromCache: result.fromCache,
+          }))
       })
       .then(result => {
         if (cancelled || !result) return
-        setChips(result.chips.length > 0 ? result.chips : FALLBACK_CHIPS)
+        setChips(result.chips)
         if (result.error) setChipError(result.error)
         if (result.fromCache) console.log('[FocusFlow] AI 建议来自缓存，秒出 ✓')
       })
@@ -287,7 +305,7 @@ export default function FocusFlow({ task, aiConfig, onStart, onCancel }: FocusFl
   const handleChipStart = (chip: MicroActionChip) => {
     tracker.track('plan.chip_selected', { taskId: task.id, chipText: chip.action })
     const ctx = buildUnderstandingContext(reflectionHistory)
-    onStart(chip.action, 'ai_chip', ctx)
+    onStart(chip.action, chip.source ?? 'ai_chip', ctx)
   }
 
   /** 跳过：不等 AI、不输入，直接用默认动作开始 */

@@ -5,6 +5,7 @@ import { ENABLE_STEP_BY_STEP } from '../components/WidgetView'
 import type { AIConfig } from '../services/ai'
 import { tracker } from '../services/tracker'
 import { aiCache } from '../services/ai-cache'
+import { updateStartupMemory, type FirstStepSource } from '../services/startup-memory'
 import { getToday } from './useDateNavigation'
 
 interface UseFocusSessionParams {
@@ -43,7 +44,7 @@ export function useFocusSession({
 
   // ===================== 待命 widget → 开始/继续 =====================
 
-  const handleStandbyStartMicro = useCallback((taskId: string, microTask: string, source: 'self' | 'ai_chip' | 'skip') => {
+  const handleStandbyStartMicro = useCallback((taskId: string, microTask: string, source: FirstStepSource) => {
     const task = tasks.find(t => t.id === taskId)
     if (!task) return
 
@@ -83,16 +84,14 @@ export function useFocusSession({
     tracker.track('session.started', { sessionId: sid, taskId: task.id, taskTitle: task.title })
     tracker.track('exec.micro_started', { sessionId: sid, taskId: task.id, taskTitle: task.title, microAction: microTask })
 
-    // 行为学习：记录第一步选择到 MemoryStore
+    // 行为学习：记录第一步选择，并在重复使用后沉淀为稳定记忆。
     window.electronAPI.loadMemoryStore().then(raw => {
       const store = raw as any
-      if (!store.firstSteps) store.firstSteps = []
-      store.firstSteps.push({
+      const nextStore = updateStartupMemory(store, {
         taskTitle: task.title, microAction: microTask,
         source, subtaskTitle: activeSubtask?.title, date: getToday(),
       })
-      store.firstSteps = store.firstSteps.slice(-30)
-      window.electronAPI.saveMemoryStore(store)
+      window.electronAPI.saveMemoryStore(nextStore)
     }).catch(() => {})
   }, [tasks, setIsStandbyMode, setTasks]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -175,7 +174,7 @@ export function useFocusSession({
 
   // ===================== FocusFlow 确认微任务 → 进入执行 =====================
 
-  const handleStartMicro = useCallback((microTask: string, source: 'self' | 'ai_chip' | 'skip', understandingContext?: string) => {
+  const handleStartMicro = useCallback((microTask: string, source: FirstStepSource, understandingContext?: string) => {
     const task = tasks.find(t => t.id === scaffoldTaskId)
     if (!task) return
     setScaffoldTaskId(null)
@@ -212,16 +211,14 @@ export function useFocusSession({
     tracker.track('session.started', { sessionId: sid, taskId: task.id, taskTitle: task.title })
     tracker.track('exec.micro_started', { sessionId: sid, taskId: task.id, taskTitle: task.title, microAction: microTask })
 
-    // 行为学习：记录第一步选择到 MemoryStore
+    // 行为学习：记录第一步选择，并在重复使用后沉淀为稳定记忆。
     window.electronAPI.loadMemoryStore().then(raw => {
       const store = raw as any
-      if (!store.firstSteps) store.firstSteps = []
-      store.firstSteps.push({
+      const nextStore = updateStartupMemory(store, {
         taskTitle: task.title, microAction: microTask,
         source, subtaskTitle: activeSubtask?.title, date: getToday(),
       })
-      store.firstSteps = store.firstSteps.slice(-30)
-      window.electronAPI.saveMemoryStore(store)
+      window.electronAPI.saveMemoryStore(nextStore)
     }).catch(() => {})
 
     window.electronAPI.enterWidget()

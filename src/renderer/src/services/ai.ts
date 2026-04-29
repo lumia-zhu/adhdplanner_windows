@@ -328,6 +328,7 @@ export function buildStuckHint(
 export interface MicroActionChip {
   action: string   // 具体动作（如"打开空白文档"）
   note: string     // 简短安抚说明（如"先准备好工具就够了"）
+  source?: 'ai_chip' | 'memory_chip'
 }
 
 /** 从 AI 返回的文本中解析微动作数组（兼容旧格式 string[] 和新格式 {action,note}[]） */
