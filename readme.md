@@ -157,6 +157,9 @@ C:\Users\{用户名}\AppData\Roaming\task-manager\tasks.json
 ## 🛠️ 最近修复
 
 - **2026-04-28**：
+  - Widget「卡住了」第一阶段改造：用户输入卡住原因后，不再只看到一次性建议卡片，而是进入一个小型 AI 急救对话面板；AI 会先安抚情绪，再结合当前任务、当前步骤、当天任务列表和历史记忆给出更小的下一步，用户也可以继续追问“这个不适合”“换个更小的”等。
+  - 该阶段保留「继续任务」出口，暂不做“用这个建议继续”、新增埋点、点赞点踩写入记忆等第二阶段能力，先用于验证对话式卡住支持是否真的能帮助用户重新动起来。
+  - 涉及文件：`src/renderer/src/components/WidgetView.tsx`、`src/renderer/src/services/ai.ts`。
   - 修复线上 Supabase 尚未添加 `activity_records.app_usage` 列时，活动数据同步会反复失败的问题；现在会自动降级为只同步基础活跃度数据，等数据库列补齐后再恢复上传应用使用时长。
   - 优化 AI 流式请求的主进程日志：不再把中文 chunk 内容直接输出到终端，避免 Windows PowerShell 编码不一致时出现乱码刷屏。
   - 反思页切换日期或周时，右侧 AI 反思面板会保持当前展开/收起状态，只刷新对应日期/周的反思内容，减少布局跳动。
@@ -164,7 +167,8 @@ C:\Users\{用户名}\AppData\Roaming\task-manager\tasks.json
   - 反思页「应用使用时长」默认从 Top 10 改为 Top 5，剩余应用仍可通过「展开剩余」查看，减少默认页面信息量。
   - 优化反思 AI 的日期和图表引用表达：历史日期开场会先显示具体日期（如 `4月27日`），编号洞察会把图表引用放在编号后；同时清理流式输出中的半截 `chart` / `SUGGESTIONS` 控制文本，避免乱码露出到聊天气泡或探索方向按钮。
   - 优化反思页切换日期的过渡体验：切换时左侧数据区会保留旧内容并显示轻量蒙层，新日期数据加载完成后再柔和淡入，避免页面白一下或图表突然跳动。
-  - 涉及文件：`src/main/sync.ts`、`src/main/index.ts`、`src/renderer/src/components/ReflectionView.tsx`、`src/renderer/src/components/ReflectionChat.tsx`、`src/renderer/src/services/ai.ts`。
+  - 修复第一步面板「跳过，直接开始」仍进入“开始做/完成这一步”确认阶段的问题；现在跳过会直接进入主任务执行视图，但仍保留 `source: skip` 的第一步行为记录。
+  - 涉及文件：`src/main/sync.ts`、`src/main/index.ts`、`src/renderer/src/components/ReflectionView.tsx`、`src/renderer/src/components/ReflectionChat.tsx`、`src/renderer/src/services/ai.ts`、`src/renderer/src/hooks/useFocusSession.ts`。
 
 - **2026-04-27（夜）**：
   - 优化反思 AI 回复的可读性：提示词要求回复按 `1️⃣ / 2️⃣ / 3️⃣` 短块分段，每块 1-2 句，避免把多个数据点挤在同一段里。

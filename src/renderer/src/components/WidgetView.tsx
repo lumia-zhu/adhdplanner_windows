@@ -5,20 +5,19 @@
  *   executing  – 正在执行微任务：任务名 + 计时 + [✓完成] + [🆘卡住了]
  *   relay      – 微任务完成后展开：输入下一步 + AI筹码 + [继续] + [🚀直接做]
  *   stuck_a    – 急救状态A：LLM 提示 + 卡点预测筹码 + 自由输入
- *   stuck_b    – 急救状态B：同理心安抚 + 绕路筹码 + 自定义输入
+ *   stuck_b    – 急救状态B：AI 急救对话 + 继续任务
  *   flow       – 心流模式：只显示宏观任务名 + 计时 + [✓完成]
  *
  * 窗口尺寸：
  *   executing / flow → 380×48（薄条）
  *   relay            → 380×232（展开）
- *   stuck_a / stuck_b→ 380×304（急救面板）
+ *   stuck_a / stuck_b→ 380×304/460（急救面板）
  */
 
 import { useState, useEffect, useRef } from 'react'
 import type { Task } from '../types'
-import type { AIConfig, MicroActionChip } from '../services/ai'
-import { generateStuckChips, generatePivotResponse, generateStuckReflection, buildStuckHint } from '../services/ai'
-import type { PivotResult, StuckReflectionResult } from '../services/ai'
+import type { AIConfig, MicroActionChip, StuckChatContext, StuckChatMessage } from '../services/ai'
+import { generateStuckChips, chatStuckSupport, buildStuckHint } from '../services/ai'
 import { aiCache } from '../services/ai-cache'
 import { tracker } from '../services/tracker'
 import { triggerEffect } from '../effects'
@@ -31,6 +30,7 @@ const BAR_W = 380
 const BAR_H_THIN = 66
 const BAR_H_RELAY = 280
 const BAR_H_STUCK = 340
+const BAR_H_STUCK_CHAT = 460
 const BAR_H_FIRST_STEP = 102  // 简化模式：父任务 + 当前步骤 + 按钮行
 
 // ★ Feature Flag：关闭逐步拆解（relay 循环），简化为"理解 → 第一步 → 完成 → 退出"
@@ -44,8 +44,6 @@ const STUCK_COMMON_REASONS = [
   '不确定去哪找需要的信息',
   '总是被其他事情分心',
 ]
-
-type HintFeedback = 'up' | 'down' | null
 
 // ===================== 类型 =====================
 
@@ -131,6 +129,7 @@ export default function WidgetView({
     <FocusDynamicBar
       session={session}
       aiConfig={aiConfig}
+      todayTasks={tasks}
       taskSubtasks={taskSubtasks}
       onMicroComplete={onMicroComplete}
       onNextMicro={onNextMicro}
@@ -152,6 +151,7 @@ export default function WidgetView({
 interface FocusDynamicBarProps {
   session: FocusSession
   aiConfig: AIConfig
+  todayTasks: Task[]
   taskSubtasks: Array<{ id: string; title: string; completed: boolean }>
   onMicroComplete: () => void
   onNextMicro: (micro: string) => void
@@ -167,7 +167,7 @@ interface FocusDynamicBarProps {
 }
 
 function FocusDynamicBar({
-  session, aiConfig, taskSubtasks,
+  session, aiConfig, todayTasks, taskSubtasks,
   onMicroComplete, onNextMicro, onEnterFlow, onTaskDone,
   onStuck, onStuckToB, onResume, onSubtaskDone, onExit, onPause,
   onWidgetSubtaskToggle,
@@ -208,16 +208,15 @@ function FocusDynamicBar({
   const [stuckInput, setStuckInput] = useState('')
   const stuckInputRef = useRef<HTMLInputElement>(null)
 
-  const [pivotData, setPivotData] = useState<PivotResult | null>(null)
-  const [loadingPivot, setLoadingPivot] = useState(false)
-  const [pivotInput, setPivotInput] = useState('')
-  const pivotInputRef = useRef<HTMLInputElement>(null)
-
-  // ---- 卡住反思状态 ----
-  const [reflectionData, setReflectionData] = useState<StuckReflectionResult | null>(null)
-  const [loadingReflection, setLoadingReflection] = useState(false)
-  const [hintRatings, setHintRatings] = useState<HintFeedback[]>([])
-  const hintSummaryTrackedRef = useRef(false)
+  // ---- 卡住急救对话状态 ----
+  const [stuckReason, setStuckReason] = useState('')
+  const [stuckMessages, setStuckMessages] = useState<StuckChatMessage[]>([])
+  const [stuckChatContext, setStuckChatContext] = useState<StuckChatContext | null>(null)
+  const [stuckChatInput, setStuckChatInput] = useState('')
+  const [loadingStuckChat, setLoadingStuckChat] = useState(false)
+  const [stuckChatError, setStuckChatError] = useState('')
+  const stuckChatInputRef = useRef<HTMLTextAreaElement>(null)
+  const stuckMessagesEndRef = useRef<HTMLDivElement>(null)
 
   // ---- ★ Workaround: Windows 下 Chromium 拖拽区域缓存 bug ----
   // 窗口 resize 后 -webkit-app-region 命中区域不会自动重算，
@@ -299,8 +298,8 @@ function FocusDynamicBar({
           .finally(() => setLoadingStuck(false))
       }
     } else if (phase === 'stuck_b') {
-      window.electronAPI.resizeWidget(BAR_W, BAR_H_STUCK)
-      pivotInputRef.current?.focus()
+      window.electronAPI.resizeWidget(BAR_W, BAR_H_STUCK_CHAT)
+      stuckChatInputRef.current?.focus()
     } else {
       // executing / flow
       let execHeight = BAR_H_THIN
@@ -320,8 +319,11 @@ function FocusDynamicBar({
       setChips([])
       setStuckChips([])
       setStuckInput('')
-      setPivotData(null)
-      setPivotInput('')
+      setStuckReason('')
+      setStuckMessages([])
+      setStuckChatContext(null)
+      setStuckChatInput('')
+      setStuckChatError('')
       // 清理回退定时器
       if (fallbackTimerRef.current) { clearTimeout(fallbackTimerRef.current); fallbackTimerRef.current = null }
     }
@@ -348,104 +350,77 @@ function FocusDynamicBar({
     if (text) onNextMicro(text)
   }
 
-  // 反思提示内容变更后，重置建议反馈状态
-  useEffect(() => {
-    if (reflectionData?.hints?.length) {
-      setHintRatings(Array.from({ length: reflectionData.hints.length }, () => null))
-      hintSummaryTrackedRef.current = false
-    } else {
-      setHintRatings([])
+  const buildTodayTaskSnapshot = (): StuckChatContext['todayTasks'] => {
+    return todayTasks
+      .map(task => ({
+        title: task.title,
+        completed: task.completed,
+        priority: task.priority,
+      }))
+      .slice(0, 8)
+  }
+
+  const fallbackStuckReply = (reason: string): string => {
+    const cleanReason = reason.trim()
+    return cleanReason
+      ? `先不用急着解决全部。你刚才卡在「${cleanReason}」，这已经是一个很有用的信号。\n\n第一步：先把当前步骤缩小到一个 30 秒动作，比如只打开需要的页面或文件。`
+      : '先不用急着解决全部。\n\n第一步：把当前步骤缩小到一个 30 秒动作，比如只打开需要的页面或文件。'
+  }
+
+  const requestStuckChatReply = async (
+    messages: StuckChatMessage[],
+    context: StuckChatContext,
+  ) => {
+    setLoadingStuckChat(true)
+    setStuckChatError('')
+    const result = await chatStuckSupport(messages, context, aiConfig)
+    const assistantMessage: StuckChatMessage = {
+      role: 'assistant',
+      content: result.content?.trim() || fallbackStuckReply(context.stuckReason),
     }
-  }, [reflectionData])
+    setStuckMessages([...messages, assistantMessage])
+    setStuckChatError(result.error ?? '')
+    setLoadingStuckChat(false)
+  }
 
-  // 记录单条建议反馈（👍 / 👎）
-  const handleHintFeedback = (hintIndex: number, feedback: 'up' | 'down') => {
-    const hintText = reflectionData?.hints?.[hintIndex]
-    if (!hintText) return
-    setHintRatings((prev) => {
-      const next = [...prev]
-      const current = next[hintIndex] ?? null
-      let action: 'select' | 'switch' | 'clear'
-
-      if (current === feedback) {
-        next[hintIndex] = null
-        action = 'clear'
-      } else if (current === null) {
-        next[hintIndex] = feedback
-        action = 'select'
-      } else {
-        next[hintIndex] = feedback
-        action = 'switch'
-      }
-
-      tracker.track('stuck.hint_feedback_clicked', {
-        sessionId: session.sessionId,
-        taskId: session.taskId,
-        hintIndex,
-        hintText,
-        feedback,
-        action,
-      })
-
-      // 行为学习：记录反馈到 MemoryStore（仅 select/switch 时写入，clear 不写）
-      if (action !== 'clear') {
-        window.electronAPI.loadMemoryStore().then(raw => {
-          const store = raw as any
-          if (!store.hintFeedback) store.hintFeedback = []
-          store.hintFeedback.push({
-            taskTitle: session.taskTitle,
-            hintText,
-            feedback,
-            date: getToday(),
-          })
-          store.hintFeedback = store.hintFeedback.slice(-30)
-          window.electronAPI.saveMemoryStore(store)
-        }).catch(() => {})
-      }
-
-      return next
+  const handleSendStuckChat = () => {
+    const text = stuckChatInput.trim()
+    if (!text || loadingStuckChat || !stuckChatContext) return
+    const nextMessages: StuckChatMessage[] = [
+      ...stuckMessages,
+      { role: 'user', content: text },
+    ]
+    setStuckMessages(nextMessages)
+    setStuckChatInput('')
+    requestStuckChatReply(nextMessages, stuckChatContext).catch(() => {
+      setStuckMessages([
+        ...nextMessages,
+        { role: 'assistant', content: fallbackStuckReply(stuckChatContext.stuckReason) },
+      ])
+      setStuckChatError('AI 暂时没有回复，先给你一个备用小步骤。')
+      setLoadingStuckChat(false)
     })
   }
 
-  // 离开 stuck_b 时记录反馈汇总（允许不选）
-  const trackHintFeedbackSummary = () => {
-    if (hintSummaryTrackedRef.current) return
-    if (!reflectionData?.hints?.length) return
-
-    const ratings = reflectionData.hints
-      .map((hintText, hintIndex) => {
-        const feedback = hintRatings[hintIndex]
-        if (!feedback) return null
-        return { hintIndex, hintText, feedback }
-      })
-      .filter((r): r is { hintIndex: number; hintText: string; feedback: 'up' | 'down' } => !!r)
-
-    const upCount = ratings.filter((r) => r.feedback === 'up').length
-    const downCount = ratings.filter((r) => r.feedback === 'down').length
-
-    tracker.track('stuck.hint_feedback_summary', {
-      sessionId: session.sessionId,
-      taskId: session.taskId,
-      hintCount: reflectionData.hints.length,
-      ratedCount: ratings.length,
-      upCount,
-      downCount,
-      skipped: ratings.length === 0,
-      ratings,
+  useEffect(() => {
+    if (phase !== 'stuck_b') return
+    const frameId = requestAnimationFrame(() => {
+      stuckMessagesEndRef.current?.scrollIntoView({ block: 'end' })
     })
-    hintSummaryTrackedRef.current = true
-  }
+    return () => cancelAnimationFrame(frameId)
+  }, [phase, stuckMessages, loadingStuckChat])
 
-  // stuck_a → stuck_b：用户点击 Reflect，提交困难描述并请求 AI 反思提示
+  // stuck_a → stuck_b：用户提交困难描述后进入 AI 急救对话
   const handleSubmitStuckReason = (reason: string, reasonSource: 'common_chip' | 'self') => {
-    if (!reason.trim()) return
+    const trimmedReason = reason.trim()
+    if (!trimmedReason) return
 
     // 📊 埋点：卡顿归因
     tracker.track('stuck.reason', {
       sessionId: session.sessionId,
       taskId: session.taskId,
       microAction: currentMicroTask,
-      reason: reason.trim(),
+      reason: trimmedReason,
       reasonSource,
     })
 
@@ -456,75 +431,57 @@ function FocusDynamicBar({
       store.stuckReasons.push({
         taskTitle: session.taskTitle,
         microAction: currentMicroTask,
-        reason: reason.trim(),
+        reason: trimmedReason,
         date: getToday(),
       })
       store.stuckReasons = store.stuckReasons.slice(-30)
       window.electronAPI.saveMemoryStore(store)
     }).catch(() => {})
 
-    // 切换到 stuck_b 阶段（显示反思提示）
+    // 切换到 stuck_b 阶段（显示 AI 急救对话）
     onStuckToB()
 
-    // 请求 AI 生成反思提示（注入行为记忆中的不喜欢建议）
-    setLoadingReflection(true)
-    setReflectionData(null)
+    setStuckReason(trimmedReason)
+    setStuckChatInput('')
+    setStuckChatError('')
+    const initialMessages: StuckChatMessage[] = [{ role: 'user', content: trimmedReason }]
+    setStuckMessages(initialMessages)
 
     window.electronAPI.loadMemoryStore()
-      .then(raw => buildStuckHint([], (raw as any).hintFeedback ?? []).forReflection)
-      .catch(() => '')
-      .then(hint => generateStuckReflection(taskTitle, currentMicroTask, reason.trim(), aiConfig, hint || undefined))
-      .then(result => {
-        if (result.reflection) {
-          setReflectionData(result.reflection)
-          // 📊 埋点：AI 生成了反思提示
-          tracker.track('stuck.reflection_shown', {
-            sessionId: session.sessionId,
-            taskId: session.taskId,
-            difficulty: reason.trim(),
-            reflection: JSON.stringify(result.reflection),
-          })
-          // 📊 埋点：AI 提供了绕路建议（hints 即为 pivot suggestions）
-          if (result.reflection.hints.length > 0) {
-            tracker.track('stuck.pivot_offered', {
-              sessionId: session.sessionId,
-              taskId: session.taskId,
-              empathy: result.reflection.interpret,
-              pivotSuggestions: result.reflection.hints,
-            })
-          }
-        } else {
-          // AI 返回失败时用 fallback
-          setReflectionData({
-            interpret: '暂时没能帮你分析，不过没关系——试着自己想一想刚才为什么会卡住。',
-            hints: ['回忆一下刚才具体卡在哪个点？'],
-            cheer: '你可以的 💪',
-          })
+      .then(raw => {
+        const hints = buildStuckHint(
+          (raw as any).stuckReasons ?? [],
+          (raw as any).hintFeedback ?? [],
+        )
+        const context: StuckChatContext = {
+          taskTitle,
+          currentStep: currentMicroTask,
+          currentSubtaskTitle,
+          stuckReason: trimmedReason,
+          todayTasks: buildTodayTaskSnapshot(),
+          memoryHint: `${hints.forChips}${hints.forReflection}`,
         }
-        setLoadingReflection(false)
+        setStuckChatContext(context)
+        return requestStuckChatReply(initialMessages, context)
       })
       .catch(() => {
-        setReflectionData({
-          interpret: '网络不太好，不过没关系——这也是一个暂停思考的机会。',
-          hints: ['想想刚才卡在哪一步，也许答案已经在你脑海里了'],
-          cheer: '相信自己 ✨',
+        const context: StuckChatContext = {
+          taskTitle,
+          currentStep: currentMicroTask,
+          currentSubtaskTitle,
+          stuckReason: trimmedReason,
+          todayTasks: buildTodayTaskSnapshot(),
+        }
+        setStuckChatContext(context)
+        requestStuckChatReply(initialMessages, context).catch(() => {
+          setStuckMessages([
+            ...initialMessages,
+            { role: 'assistant', content: fallbackStuckReply(trimmedReason) },
+          ])
+          setStuckChatError('AI 暂时没有回复，先给你一个备用小步骤。')
+          setLoadingStuckChat(false)
         })
-        setLoadingReflection(false)
       })
-  }
-
-  // stuck_b → 重启：用户选了绕路方案或自定义输入
-  const handlePivotResume = (newMicro: string, pivotSource: 'ai_chip' | 'self' | 'resume_original') => {
-    if (newMicro.trim()) {
-      // 📊 埋点：用户选择了绕路方案
-      tracker.track('stuck.pivot_chosen', {
-        sessionId: session.sessionId,
-        taskId: session.taskId,
-        chosenPivot: newMicro.trim(),
-        pivotSource,
-      })
-      onResume(newMicro.trim())
-    }
   }
 
   // ============ 微任务完成闪动动画状态 ============
@@ -846,10 +803,7 @@ function FocusDynamicBar({
           <span className="text-xs text-gray-500 font-mono flex-shrink-0
                            bg-gray-100/80 px-2 py-0.5 rounded-md">{timeStr}</span>
           <button
-            onClick={() => {
-              trackHintFeedbackSummary()
-              onResume(currentMicroTask)
-            }}
+            onClick={() => onResume(currentMicroTask)}
             className="no-drag w-6 h-6 rounded-xl flex items-center justify-center
                        text-gray-300 hover:text-gray-500 hover:bg-gray-100
                        transition-all flex-shrink-0"
@@ -944,7 +898,7 @@ function FocusDynamicBar({
     )
   }
 
-  // ============ 急救状态B：反思提示 ============
+  // ============ 急救状态B：AI 急救对话 ============
   if (phase === 'stuck_b') {
     return (
       <div className="drag-region w-full h-full flex flex-col bg-white/95 backdrop-blur-sm
@@ -955,10 +909,10 @@ function FocusDynamicBar({
         <div className="flex items-center px-4 py-2.5 gap-2.5 border-b border-gray-100/80">
           <div className="w-6 h-6 rounded-full bg-gradient-to-br from-amber-400 to-amber-500
                           flex items-center justify-center flex-shrink-0 shadow-sm">
-            <span className="text-white text-2xs">💡</span>
+            <span className="text-white text-2xs">AI</span>
           </div>
           <span className="text-xs text-amber-700 font-medium flex-1 truncate">
-            反思提示
+            卡住急救对话
           </span>
           <span className="text-xs text-gray-500 font-mono flex-shrink-0
                            bg-gray-100/80 px-2 py-0.5 rounded-md">{timeStr}</span>
@@ -975,80 +929,91 @@ function FocusDynamicBar({
           </button>
         </div>
 
-        {/* 反思内容 —— 单卡片自然呈现，ADHD 友好 */}
-        <div className="no-drag flex-1 px-4 py-3 flex flex-col gap-2.5 overflow-y-auto">
+        <div className="no-drag flex-1 px-4 py-3 flex flex-col gap-2.5 min-h-0">
+          <div className="text-xxs text-gray-500 bg-amber-50/70 border border-amber-100 rounded-xl px-3 py-2 leading-relaxed">
+            你刚才卡在：<span className="text-amber-700">{stuckReason || '这个步骤'}</span>
+          </div>
 
-          {/* 加载中 */}
-          {loadingReflection && (
-            <AILoadingTips
-              variant="stuck"
-              title="AI 正在帮你梳理思路…"
-              compact
-            />
-          )}
-
-          {/* 反思卡片 —— 统一样式，分段但不分格式 */}
-          {!loadingReflection && reflectionData && (
-            <div className="bg-amber-50/60 border border-amber-200/60 rounded-xl px-4 py-3
-                            text-xs text-gray-700 leading-[1.85] flex flex-col gap-2">
-              <p>{reflectionData.interpret}</p>
-              {reflectionData.hints.length > 0 && (
-                <div className="flex flex-col gap-1.5">
-                  {reflectionData.hints.map((h, i) => {
-                    const current = hintRatings[i] ?? null
-                    return (
-                      <div key={i} className="flex items-start justify-between gap-2">
-                        <span className="flex-1">💡 {h}</span>
-                        <div className="flex items-center gap-1 flex-shrink-0">
-                          <button
-                            onClick={() => handleHintFeedback(i, 'up')}
-                            className={`w-6 h-6 rounded-md text-xs transition-all ${
-                              current === 'up'
-                                ? 'bg-emerald-100 text-emerald-600'
-                                : 'text-gray-300 hover:text-emerald-500 hover:bg-emerald-50'
-                            }`}
-                            title="这条建议有帮助"
-                          >
-                            👍
-                          </button>
-                          <button
-                            onClick={() => handleHintFeedback(i, 'down')}
-                            className={`w-6 h-6 rounded-md text-xs transition-all ${
-                              current === 'down'
-                                ? 'bg-rose-100 text-rose-600'
-                                : 'text-gray-300 hover:text-rose-500 hover:bg-rose-50'
-                            }`}
-                            title="这条建议不太合适"
-                          >
-                            👎
-                          </button>
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
-              <p>{reflectionData.cheer}</p>
-            </div>
-          )}
-
-          {/* Continue task 按钮 */}
-          {!loadingReflection && (
-            <div className="flex justify-center pt-0.5">
-              <button
-                onClick={() => {
-                  trackHintFeedbackSummary()
-                  onResume(currentMicroTask)
-                }}
-                className="px-6 py-2 rounded-xl bg-emerald-500 text-white text-xs font-semibold
-                           shadow-sm shadow-emerald-200/50
-                           hover:bg-emerald-600 hover:shadow-md hover:shadow-emerald-200/60
-                           active:scale-95 transition-all"
+          <div className="flex-1 overflow-y-auto pr-1 flex flex-col gap-2.5">
+            {stuckMessages.map((message, index) => (
+              <div
+                key={`${message.role}-${index}`}
+                className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
               >
-                继续任务
-              </button>
+                <div
+                  className={`max-w-[86%] rounded-2xl px-3 py-2 text-xs leading-relaxed whitespace-pre-wrap ${
+                    message.role === 'user'
+                      ? 'bg-orange-500 text-white rounded-br-md'
+                      : 'bg-gray-50 text-gray-700 border border-gray-100 rounded-bl-md'
+                  }`}
+                >
+                  {message.content}
+                </div>
+              </div>
+            ))}
+
+            {loadingStuckChat && (
+              <div className="flex justify-start">
+                <div className="bg-gray-50 border border-gray-100 rounded-2xl rounded-bl-md px-3 py-2">
+                  <AILoadingTips
+                    variant="stuck"
+                    title="AI 正在想一个更小的下一步…"
+                    compact
+                  />
+                </div>
+              </div>
+            )}
+
+            <div ref={stuckMessagesEndRef} />
+          </div>
+
+          {stuckChatError && (
+            <div className="text-xxs text-amber-600 bg-amber-50 border border-amber-100 rounded-lg px-2.5 py-1.5">
+              {stuckChatError}
             </div>
           )}
+
+          <div className="flex items-end gap-2">
+            <textarea
+              ref={stuckChatInputRef}
+              value={stuckChatInput}
+              onChange={(e) => setStuckChatInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault()
+                  handleSendStuckChat()
+                }
+              }}
+              placeholder="可以说：这个建议不适合 / 我现在没力气 / 换个更小的"
+              rows={2}
+              disabled={loadingStuckChat}
+              className="flex-1 resize-none rounded-xl border border-gray-200 bg-white px-3 py-2
+                         text-xs text-gray-700 placeholder:text-gray-300 outline-none
+                         focus:border-orange-300 focus:ring-2 focus:ring-orange-100
+                         disabled:bg-gray-50 disabled:text-gray-400 transition-all"
+            />
+            <button
+              onClick={handleSendStuckChat}
+              disabled={!stuckChatInput.trim() || loadingStuckChat || !stuckChatContext}
+              className="px-3 py-2 rounded-xl bg-orange-500 text-white text-xs font-semibold
+                         hover:bg-orange-600 active:scale-95 disabled:opacity-40
+                         disabled:cursor-not-allowed transition-all"
+            >
+              发送
+            </button>
+          </div>
+
+          <div className="flex items-center justify-between pt-1 border-t border-gray-100/80">
+            <span className="text-xxs text-gray-400">先聊两句也可以，准备好了再回去。</span>
+            <button
+              onClick={() => onResume(currentMicroTask)}
+              className="px-4 py-1.5 rounded-xl bg-emerald-500 text-white text-xs font-semibold
+                         shadow-sm shadow-emerald-200/50 hover:bg-emerald-600
+                         active:scale-95 transition-all"
+              >
+              继续任务
+            </button>
+          </div>
         </div>
       </div>
     )

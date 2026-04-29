@@ -54,17 +54,18 @@ export function useFocusSession({
     const activeSubtask = subtasks.find(s => !s.completed) ?? null
 
     const now = Date.now()
+    const shouldEnterMainTask = source === 'skip' && !ENABLE_STEP_BY_STEP
     const newSession: FocusSession = {
       sessionId: sid,
       taskId: task.id,
       taskTitle: task.title,
-      currentMicroTask: microTask,
+      currentMicroTask: shouldEnterMainTask ? task.title : microTask,
       startTime: now,
       sessionStartTime: now,
-      isFlowMode: false,
+      isFlowMode: shouldEnterMainTask,
       phase: 'executing',
       microHistory: [],
-      firstStepHint: microTask,
+      firstStepHint: shouldEnterMainTask ? undefined : microTask,
       currentSubtaskId: activeSubtask?.id,
       currentSubtaskTitle: activeSubtask?.title,
     }
@@ -186,17 +187,18 @@ export function useFocusSession({
     const activeSubtask = subtasks.find(s => !s.completed) ?? null
 
     const now = Date.now()
+    const shouldEnterMainTask = source === 'skip' && !ENABLE_STEP_BY_STEP
     const newSession: FocusSession = {
       sessionId: sid,
       taskId: task.id,
       taskTitle: task.title,
-      currentMicroTask: microTask,
+      currentMicroTask: shouldEnterMainTask ? task.title : microTask,
       startTime: now,
       sessionStartTime: now,
-      isFlowMode: false,
+      isFlowMode: shouldEnterMainTask,
       phase: 'executing',
       microHistory: [],
-      firstStepHint: microTask,
+      firstStepHint: shouldEnterMainTask ? undefined : microTask,
       currentSubtaskId: activeSubtask?.id,
       currentSubtaskTitle: activeSubtask?.title,
     }

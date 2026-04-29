@@ -662,6 +662,82 @@ export async function chatReflection(
   }
 }
 
+// ===================== 卡住急救对话 =====================
+
+export interface StuckChatMessage {
+  role: 'user' | 'assistant'
+  content: string
+}
+
+export interface StuckChatTaskSummary {
+  title: string
+  completed: boolean
+  priority: 'high' | 'medium' | 'low'
+}
+
+export interface StuckChatContext {
+  taskTitle: string
+  currentStep: string
+  currentSubtaskTitle?: string
+  stuckReason: string
+  todayTasks: StuckChatTaskSummary[]
+  memoryHint?: string
+}
+
+function formatStuckTaskList(tasks: StuckChatTaskSummary[]): string {
+  if (!tasks.length) return '今天任务列表：暂时没有读取到其他任务。'
+
+  const priorityLabel: Record<StuckChatTaskSummary['priority'], string> = {
+    high: '高',
+    medium: '中',
+    low: '低',
+  }
+
+  return '今天任务列表：\n' + tasks.slice(0, 8).map((task, index) => {
+    const status = task.completed ? '已完成' : '未完成'
+    return `${index + 1}. ${task.title}（${status}，${priorityLabel[task.priority]}优先级）`
+  }).join('\n')
+}
+
+function buildStuckChatSystemPrompt(context: StuckChatContext): string {
+  const subtaskLine = context.currentSubtaskTitle
+    ? `当前子任务：${context.currentSubtaskTitle}\n`
+    : ''
+
+  return (
+    '你是一个 ADHD 友好的专注急救聊天助手。用户正在任务中卡住，需要先被接住，再重新开始一个很小的动作。\n\n' +
+    '你的目标：\n' +
+    '1. 先承认困难，语气像朋友，不评判、不说教。\n' +
+    '2. 给 1 个 30 秒内可以开始的具体动作，再给 1 个可选替代动作。\n' +
+    '3. 如果用户说“这个不行/没力气/不是这个问题”，要换方向，不要重复原建议。\n' +
+    '4. 不要长篇分析，不要要求用户解释太多。\n\n' +
+    '回复格式：\n' +
+    '- 最多 3 小段，每段 1 句。\n' +
+    '- 总字数尽量控制在 120 字以内。\n' +
+    '- 可以用“第一步：”“备选：”这样的短标签，但不要写成正式报告。\n' +
+    '- 不要输出 JSON、Markdown 表格或隐藏控制文本。\n\n' +
+    '当前上下文：\n' +
+    `大任务：${context.taskTitle}\n` +
+    subtaskLine +
+    `当前正在做：${context.currentStep}\n` +
+    `用户卡住原因：${context.stuckReason}\n` +
+    `${formatStuckTaskList(context.todayTasks)}\n` +
+    (context.memoryHint || '')
+  )
+}
+
+export async function chatStuckSupport(
+  messages: StuckChatMessage[],
+  context: StuckChatContext,
+  config: AIConfig,
+): Promise<{ content: string; error?: string }> {
+  const systemPrompt = buildStuckChatSystemPrompt(context)
+  return chatReflection([
+    { role: 'system', content: systemPrompt },
+    ...messages,
+  ], config)
+}
+
 /**
  * 多轮反思对话 —— 流式版本（SSE）
  *
