@@ -31,13 +31,13 @@ const CHART_ID_MAP: Record<string, { domId: string; label: string }> = {
   'metrics':         { domId: 'chart-key-metrics',     label: '指标卡片' },
   'task-duration':   { domId: 'chart-task-duration',   label: '任务用时' },
   'activity':        { domId: 'chart-activity-heatmap', label: '活动分布' },
-  'rhythm':          { domId: 'chart-rhythm',           label: '节奏曲线' },
+  'rhythm':          { domId: 'chart-rhythm',           label: '电脑活动' },
   // 周视图图表
   'week-completion': { domId: 'chart-week-completion', label: '每日任务完成率' },
   'week-metrics':    { domId: 'chart-week-metrics',    label: '周汇总指标' },
   'week-ranking':    { domId: 'chart-week-ranking',    label: '任务排行' },
   'week-heatmap':    { domId: 'chart-week-heatmap',    label: '活动热力图' },
-  'week-rhythm':     { domId: 'chart-week-rhythm',     label: '节奏曲线' },
+  'week-rhythm':     { domId: 'chart-week-rhythm',     label: '电脑活动' },
 }
 
 /** 轻量解析 Markdown 加粗：只支持 **重点文本**，避免引入完整 Markdown 渲染器 */
@@ -610,7 +610,7 @@ const ReflectionChat = forwardRef<ReflectionChatHandle, ReflectionChatProps>(fun
       const dateLabel = dateIsToday ? '今天' : (selectedDate ?? todayStr)
       const multimodalContent: MessageContentPart[] = [
         { type: 'image_url', image_url: { url: screenshotBase64 } },
-        { type: 'text', text: `上面是我${dateLabel}的数据仪表板截图，包含${dateIsToday ? '任务完成率、' : ''}核心指标卡片、任务用时条形图、活动热力图和使用节奏曲线。请结合这些可视化数据，开始我们的反思对话吧。` },
+        { type: 'text', text: `上面是我${dateLabel}的数据仪表板截图，包含${dateIsToday ? '任务完成率、' : ''}核心指标卡片、任务用时条形图、活动热力图和电脑活动图。请结合这些可视化数据，开始我们的反思对话吧。` },
       ]
       initMessages.push({ role: 'user', content: multimodalContent })
     }

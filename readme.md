@@ -166,6 +166,9 @@ C:\Users\{用户名}\AppData\Roaming\task-manager\tasks.json
   - 卡住急救回复支持轻量 Markdown 加粗，prompt 要求围绕具体卡住原因分流建议，例如“不知道去哪找信息”优先给找入口动作，“太复杂”优先给降复杂度动作，减少泛泛安慰。
   - 反思 AI 不再只复述图表：新增可用洞察线索，会按需结合当天内部模式、任务延续、卡顿恢复、用户画像、记忆或历史对比；历史对比不是必选，数据不足时不会强行讲长期规律。
   - 反思对话改为“先讲当前图表事实，再问开放小问题，再按用户上下文给低压力建议”，避免过早替用户下判断；开场会用空行拆成“问候 / 图表事实 / 观察到的模式 / 轻问题”四段，减少文字挤在一起的压力。
+  - 反思 AI 进一步改为“图表引导的情境化反思”：每轮只锚定一个主图表，指出一个同主线的行为模式，再问一个轻问题获取用户上下文；用户回答后，AI 才结合数据和解释给策略建议与鼓励。
+  - 反思聊天底部探索卡片收敛为单个“换一个角度看看”，作为切换反思方向的低压力出口；点击后 AI 会换到另一个有图表证据支持的行为模式，而不是继续追问当前话题。
+  - 反思聊天中的 `chart:rhythm` 和 `chart:week-rhythm` 图表引用显示名从“节奏曲线”调整为“电脑活动”，减少用户理解成本；内部图表 ID 保持不变。
   - 涉及文件：`src/renderer/src/services/startup-memory.ts`、`src/renderer/src/components/StandbyWidget.tsx`、`src/renderer/src/components/FocusFlow.tsx`、`src/renderer/src/hooks/useFocusSession.ts`、`src/renderer/src/components/WidgetView.tsx`、`src/renderer/src/components/ReflectionView.tsx`、`src/renderer/src/services/ai.ts`、`src/main/storage.ts`。
 
 - **2026-04-28**：

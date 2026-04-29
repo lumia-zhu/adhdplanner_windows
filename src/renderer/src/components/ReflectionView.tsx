@@ -462,6 +462,8 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
         const lines: string[] = [
           '## 可用洞察线索（供 AI 选择，不要求全部使用）',
           '- 使用顺序：先讲当前图表事实，再按需选择当天内部模式、任务延续、卡顿恢复、用户画像、记忆或历史对比。',
+          '- 主线对齐：选择洞察时必须和当前引用的图表接得上；电脑活动图优先讲时段/进入状态，任务用时或活动分布图再讲任务推进、卡顿和恢复。',
+          '- 交互方式：每次只展开一个值得注意的行为模式；如果用户点击“换一个角度看看”，再换到另一个有图表证据支持的方向。',
           '- 历史对比只是可选证据；数据不足或不相关时不要强行对比。',
         ]
 
@@ -475,11 +477,11 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
               .map(event => event.reason)
               .filter(Boolean)
               .slice(0, 3)
-            lines.push(`- 当天内部模式：卡顿主要和 ${stuckReasons.join('、') || '执行过程'} 有关。适合问开放小问题，例如“当时最先让你停下来的可能是什么？不用想得很完整，大概说说也可以。”`)
+            lines.push(`- 可选任务过程线索（适合配合任务用时图或活动分布图）：卡顿主要和 ${stuckReasons.join('、') || '执行过程'} 有关。适合问开放小问题，例如“当时最先让你停下来的可能是什么？不用想得很完整，大概说说也可以。”`)
           }
           if (current.summary.flowEvents.length > 0) {
             const flowTasks = current.summary.flowEvents.map(event => event.taskTitle).filter(Boolean).slice(0, 3)
-            lines.push(`- 当天内部模式：出现过心流推进，相关任务：${flowTasks.join('、')}。可以用来做事实型鼓励。`)
+            lines.push(`- 可选任务推进线索（适合配合任务用时图、活动分布图或电脑活动高峰桥接）：出现过心流推进，相关任务：${flowTasks.join('、')}。可以用来做事实型鼓励。`)
           }
         }
 
@@ -499,7 +501,7 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
           .sort((a, b) => b.days.length - a.days.length)
           .slice(0, 3)
         if (longPending.length > 0) {
-          lines.push(`- 任务延续线索：这些任务在多个记录日仍未完成：${longPending.map(item => `「${item.title}」${item.days.length}天`).join('、')}。适合问“最挡在前面的一小步是什么”，不要直接下结论。`)
+          lines.push(`- 可选任务延续线索（适合配合任务用时图）：这些任务在多个记录日仍未完成：${longPending.map(item => `「${item.title}」${item.days.length}天`).join('、')}。适合问“最挡在前面的一小步是什么”，不要直接下结论。`)
         }
 
         const reasonCounts = new Map<string, number>()
@@ -515,10 +517,10 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
           .sort((a, b) => b[1] - a[1])
           .slice(0, 3)
         if (repeatedReasons.length > 0) {
-          lines.push(`- 反复卡点线索：${repeatedReasons.map(([reason, count]) => `「${reason}」${count}次`).join('、')}。适合围绕用户自己的上下文继续问。`)
+          lines.push(`- 可选反复卡点线索（适合配合任务过程图表）：${repeatedReasons.map(([reason, count]) => `「${reason}」${count}次`).join('、')}。适合围绕用户自己的上下文继续问。`)
         }
         if (successfulRescues > 0) {
-          lines.push(`- 恢复线索：记录中有 ${successfulRescues} 次卡住后继续推进，可用于事实型鼓励。`)
+          lines.push(`- 可选恢复线索（适合配合任务用时图或活动分布图）：记录中有 ${successfulRescues} 次卡住后继续推进，可用于事实型鼓励。`)
         }
 
         const historySummaries = historyRows.map(row => row.summary).filter((s): s is DailySummary => !!s)
