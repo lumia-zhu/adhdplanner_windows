@@ -16,10 +16,11 @@
 
 import { useState, useEffect, useRef } from 'react'
 import type { Task } from '../types'
-import type { AIConfig, MicroActionChip, StuckChatContext, StuckChatMessage } from '../services/ai'
+import type { AIConfig, MicroActionChip, StuckChatContext, StuckChatMessage, StuckProductivityContext } from '../services/ai'
 import { generateStuckChips, chatStuckSupport, buildStuckHint } from '../services/ai'
 import { aiCache } from '../services/ai-cache'
 import { tracker } from '../services/tracker'
+import { buildDailySummary, type TrackEvent } from '../services/tracker'
 import { triggerEffect } from '../effects'
 import AILoadingTips from './AILoadingTips'
 import { getToday } from '../hooks/useDateNavigation'
@@ -360,16 +361,125 @@ function FocusDynamicBar({
       .slice(0, 8)
   }
 
+  const getRecentDateStrings = (days: number): string[] => {
+    const [year, month, day] = getToday().split('-').map(Number)
+    const base = new Date(year, month - 1, day)
+    return Array.from({ length: days }, (_, index) => {
+      const date = new Date(base)
+      date.setDate(base.getDate() - index)
+      const y = date.getFullYear()
+      const m = String(date.getMonth() + 1).padStart(2, '0')
+      const d = String(date.getDate()).padStart(2, '0')
+      return `${y}-${m}-${d}`
+    })
+  }
+
+  const buildProductivityContext = async (reason: string): Promise<StuckProductivityContext> => {
+    const todayTotalTasks = todayTasks.length
+    const todayCompletedTasks = todayTasks.filter(task => task.completed).length
+    const todayPendingTasks = todayTotalTasks - todayCompletedTasks
+    const todayHighPriorityPending = todayTasks.filter(task => !task.completed && task.priority === 'high').length
+    const currentTask = todayTasks.find(task => task.id === taskId || task.title === taskTitle)
+    const completedSubtasks = taskSubtasks.filter(subtask => subtask.completed).length
+    const currentSubtaskProgress = taskSubtasks.length > 0
+      ? `${completedSubtasks}/${taskSubtasks.length} 个子任务已完成`
+      : undefined
+    const sessionElapsedMinutes = Math.max(
+      1,
+      Math.round(((Date.now() - session.sessionStartTime) / 1000 + (session.elapsedOffset || 0)) / 60),
+    )
+
+    const dates = getRecentDateStrings(7)
+    const [taskGroups, eventGroups] = await Promise.all([
+      Promise.all(dates.map(date => window.electronAPI.loadTasks(date).catch(() => []))),
+      Promise.all(dates.map(date => window.electronAPI.loadTrackerEvents(date).catch(() => []))),
+    ])
+
+    let recentCompletedTasks = 0
+    let recentCompletedMicroSteps = 0
+    let recentStuckCount = 0
+    let recentSimilarStuckCount = 0
+    let recentSuccessfulRescues = 0
+    let recentFlowMinutes = 0
+    const normalizedReason = reason.trim().toLowerCase()
+
+    taskGroups.forEach(group => {
+      const tasks = Array.isArray(group) ? (group as Task[]) : []
+      recentCompletedTasks += tasks.filter(task => task.completed).length
+    })
+
+    eventGroups.forEach((group, index) => {
+      const events = Array.isArray(group) ? (group as TrackEvent[]) : []
+      if (events.length === 0) return
+      try {
+        const summary = buildDailySummary(dates[index], events)
+        recentCompletedMicroSteps += summary.stats.completedMicroSteps
+        recentStuckCount += summary.stats.totalStuckCount
+        recentFlowMinutes += summary.stats.totalFlowMinutes
+        recentSuccessfulRescues += summary.stuckEvents.filter(event => event.rescueSucceeded).length
+        recentSimilarStuckCount += summary.stuckEvents.filter(event => {
+          const eventReason = event.reason.trim().toLowerCase()
+          return !!normalizedReason && (
+            eventReason === normalizedReason ||
+            eventReason.includes(normalizedReason) ||
+            normalizedReason.includes(eventReason)
+          )
+        }).length
+      } catch {
+        // 某天事件格式异常时跳过，不影响卡住急救主流程。
+      }
+    })
+
+    return {
+      todayTotalTasks,
+      todayCompletedTasks,
+      todayPendingTasks,
+      todayHighPriorityPending,
+      currentTaskPriority: currentTask?.priority,
+      currentSubtaskProgress,
+      sessionElapsedMinutes,
+      completedMicroSteps: session.microHistory.length,
+      recentCompletedTasks,
+      recentCompletedMicroSteps,
+      recentStuckCount,
+      recentSimilarStuckCount,
+      recentSuccessfulRescues,
+      recentFlowMinutes,
+    }
+  }
+
   const fallbackStuckReply = (reason: string): string => {
     const cleanReason = reason.trim()
     return cleanReason
-      ? `先不用急着解决全部。你刚才卡在「${cleanReason}」，这已经是一个很有用的信号。\n\n第一步：先把当前步骤缩小到一个 30 秒动作，比如只打开需要的页面或文件。`
-      : '先不用急着解决全部。\n\n第一步：把当前步骤缩小到一个 30 秒动作，比如只打开需要的页面或文件。'
+      ? `你卡在「${cleanReason}」，这不是失败，只是入口还需要再小一点。\n\n先做 **30 秒**：打开当前任务需要的页面或文件。\n\n如果还是卡，就只写下 **1 个最小子步骤**。`
+      : '先不用急着解决全部，可能只是入口还不够小。\n\n先做 **30 秒**：打开当前任务需要的页面或文件。'
+  }
+
+  const renderStuckMessageContent = (text: string) => {
+    const paragraphs = text.split(/\n{2,}/).map(part => part.trim()).filter(Boolean)
+    return (
+      <div className="space-y-2">
+        {paragraphs.map((paragraph, paragraphIndex) => {
+          const parts = paragraph.split(/(\*\*[^*]+\*\*)/g)
+          return (
+            <p key={paragraphIndex}>
+              {parts.map((part, index) => {
+                if (part.startsWith('**') && part.endsWith('**')) {
+                  return <strong key={index} className="font-semibold text-gray-900">{part.slice(2, -2)}</strong>
+                }
+                return <span key={index}>{part}</span>
+              })}
+            </p>
+          )
+        })}
+      </div>
+    )
   }
 
   const requestStuckChatReply = async (
     messages: StuckChatMessage[],
     context: StuckChatContext,
+    visibleMessages: StuckChatMessage[] = messages,
   ) => {
     setLoadingStuckChat(true)
     setStuckChatError('')
@@ -378,7 +488,7 @@ function FocusDynamicBar({
       role: 'assistant',
       content: result.content?.trim() || fallbackStuckReply(context.stuckReason),
     }
-    setStuckMessages([...messages, assistantMessage])
+    setStuckMessages([...visibleMessages, assistantMessage])
     setStuckChatError(result.error ?? '')
     setLoadingStuckChat(false)
   }
@@ -444,14 +554,16 @@ function FocusDynamicBar({
     setStuckReason(trimmedReason)
     setStuckChatInput('')
     setStuckChatError('')
-    const initialMessages: StuckChatMessage[] = [{ role: 'user', content: trimmedReason }]
-    setStuckMessages(initialMessages)
+    setStuckMessages([])
 
-    window.electronAPI.loadMemoryStore()
-      .then(raw => {
+    Promise.all([
+      window.electronAPI.loadMemoryStore().catch(() => null),
+      buildProductivityContext(trimmedReason).catch(() => undefined),
+    ])
+      .then(([raw, productivityContext]) => {
         const hints = buildStuckHint(
-          (raw as any).stuckReasons ?? [],
-          (raw as any).hintFeedback ?? [],
+          (raw as any)?.stuckReasons ?? [],
+          (raw as any)?.hintFeedback ?? [],
         )
         const context: StuckChatContext = {
           taskTitle,
@@ -459,10 +571,15 @@ function FocusDynamicBar({
           currentSubtaskTitle,
           stuckReason: trimmedReason,
           todayTasks: buildTodayTaskSnapshot(),
+          productivityContext,
           memoryHint: `${hints.forChips}${hints.forReflection}`,
         }
+        const initialMessages: StuckChatMessage[] = [{
+          role: 'user',
+          content: `用户刚才选择/输入的卡住原因是：「${trimmedReason}」。请你主动发起第一条急救对话，围绕这个原因给出自然分段的支持和具体下一步，不要使用 emoji 编号或固定短标签。`,
+        }]
         setStuckChatContext(context)
-        return requestStuckChatReply(initialMessages, context)
+        return requestStuckChatReply(initialMessages, context, [])
       })
       .catch(() => {
         const context: StuckChatContext = {
@@ -472,10 +589,13 @@ function FocusDynamicBar({
           stuckReason: trimmedReason,
           todayTasks: buildTodayTaskSnapshot(),
         }
+        const initialMessages: StuckChatMessage[] = [{
+          role: 'user',
+          content: `用户刚才选择/输入的卡住原因是：「${trimmedReason}」。请你主动发起第一条急救对话。`,
+        }]
         setStuckChatContext(context)
-        requestStuckChatReply(initialMessages, context).catch(() => {
+        requestStuckChatReply(initialMessages, context, []).catch(() => {
           setStuckMessages([
-            ...initialMessages,
             { role: 'assistant', content: fallbackStuckReply(trimmedReason) },
           ])
           setStuckChatError('AI 暂时没有回复，先给你一个备用小步骤。')
@@ -931,7 +1051,12 @@ function FocusDynamicBar({
 
         <div className="no-drag flex-1 px-4 py-3 flex flex-col gap-2.5 min-h-0">
           <div className="text-xxs text-gray-500 bg-amber-50/70 border border-amber-100 rounded-xl px-3 py-2 leading-relaxed">
-            你刚才卡在：<span className="text-amber-700">{stuckReason || '这个步骤'}</span>
+            <span className="block truncate">
+              任务：<span className="text-amber-700 font-medium">{taskTitle}</span>
+            </span>
+            <span className="block truncate mt-0.5">
+              卡住原因：<span className="text-amber-700">{stuckReason || '这个步骤'}</span>
+            </span>
           </div>
 
           <div className="flex-1 overflow-y-auto pr-1 flex flex-col gap-2.5">
@@ -941,13 +1066,13 @@ function FocusDynamicBar({
                 className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
               >
                 <div
-                  className={`max-w-[86%] rounded-2xl px-3 py-2 text-xs leading-relaxed whitespace-pre-wrap ${
+                  className={`max-w-[92%] rounded-2xl px-3.5 py-2.5 text-[13px] leading-[1.65] ${
                     message.role === 'user'
                       ? 'bg-orange-500 text-white rounded-br-md'
                       : 'bg-gray-50 text-gray-700 border border-gray-100 rounded-bl-md'
                   }`}
                 >
-                  {message.content}
+                  {renderStuckMessageContent(message.content)}
                 </div>
               </div>
             ))}
@@ -957,7 +1082,7 @@ function FocusDynamicBar({
                 <div className="bg-gray-50 border border-gray-100 rounded-2xl rounded-bl-md px-3 py-2">
                   <AILoadingTips
                     variant="stuck"
-                    title="AI 正在想一个更小的下一步…"
+                    title="AI 正在结合你的计划想一个可回去的下一步…"
                     compact
                   />
                 </div>
@@ -973,7 +1098,7 @@ function FocusDynamicBar({
             </div>
           )}
 
-          <div className="flex items-end gap-2">
+          <div className="flex items-stretch gap-2">
             <textarea
               ref={stuckChatInputRef}
               value={stuckChatInput}
@@ -984,10 +1109,10 @@ function FocusDynamicBar({
                   handleSendStuckChat()
                 }
               }}
-              placeholder="可以说：这个建议不适合 / 我现在没力气 / 换个更小的"
+              placeholder="如果回复不满意或需要调整，可以在这里提出你的要求"
               rows={2}
               disabled={loadingStuckChat}
-              className="flex-1 resize-none rounded-xl border border-gray-200 bg-white px-3 py-2
+              className="h-16 flex-1 resize-none rounded-xl border border-gray-200 bg-white px-3 py-2
                          text-xs text-gray-700 placeholder:text-gray-300 outline-none
                          focus:border-orange-300 focus:ring-2 focus:ring-orange-100
                          disabled:bg-gray-50 disabled:text-gray-400 transition-all"
@@ -995,7 +1120,7 @@ function FocusDynamicBar({
             <button
               onClick={handleSendStuckChat}
               disabled={!stuckChatInput.trim() || loadingStuckChat || !stuckChatContext}
-              className="px-3 py-2 rounded-xl bg-orange-500 text-white text-xs font-semibold
+              className="h-16 px-3 rounded-xl bg-orange-500 text-white text-xs font-semibold
                          hover:bg-orange-600 active:scale-95 disabled:opacity-40
                          disabled:cursor-not-allowed transition-all"
             >
@@ -1004,7 +1129,7 @@ function FocusDynamicBar({
           </div>
 
           <div className="flex items-center justify-between pt-1 border-t border-gray-100/80">
-            <span className="text-xxs text-gray-400">先聊两句也可以，准备好了再回去。</span>
+            <span className="text-xxs text-gray-400">找到一个能做的小动作就回去试试吧。</span>
             <button
               onClick={() => onResume(currentMicroTask)}
               className="px-4 py-1.5 rounded-xl bg-emerald-500 text-white text-xs font-semibold

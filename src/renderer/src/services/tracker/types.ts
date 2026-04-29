@@ -505,7 +505,7 @@ export interface DailySummary {
     brainDumpTasks: string[]          // 原始任务列表（标题）
     focusTaskTitle: string | null     // 今日主焦点
     firstMicroAction: string | null   // 破冰第一步
-    scaffoldSource: 'self' | 'ai_chip' | null // 脚手架依赖度
+    scaffoldSource: 'self' | 'ai_chip' | 'memory_chip' | 'skip' | null // 脚手架依赖度
   }
 
   /** 微步轨迹 */
@@ -531,7 +531,7 @@ export interface DailySummary {
     triggeredAt: string               // 卡顿发生时间（HH:MM 格式）
     microAction: string               // 卡在哪
     reason: string                    // 为什么卡
-    reasonSource: 'ai_chip' | 'self'
+    reasonSource: 'ai_chip' | 'self' | 'common_chip'
     pivotChosen: string               // 怎么绕的
     pivotSource: 'ai_chip' | 'self' | 'resume_original'
     rescueSucceeded: boolean | null   // 绕路后是否完成

@@ -162,7 +162,11 @@ C:\Users\{用户名}\AppData\Roaming\task-manager\tasks.json
   - 启动第一步新增本地记忆推荐：用户反复输入或采用过的第一步会被保存，之后遇到相似任务时优先混入原有建议按钮中。
   - UI 不拆成“记忆推荐 / AI 推荐”两个区域，仍保持原来的第一步建议列表；记忆建议只在内部排序上更靠前，避免增加用户理解负担。
   - 记忆采用“最近 30 条或最近两周短期记录 + 稳定记忆”结构，重复出现的相似任务第一步会长期保留，并按最近使用时间、使用次数和接受次数衰减排序。
-  - 涉及文件：`src/renderer/src/services/startup-memory.ts`、`src/renderer/src/components/StandbyWidget.tsx`、`src/renderer/src/components/FocusFlow.tsx`、`src/renderer/src/hooks/useFocusSession.ts`、`src/main/storage.ts`。
+  - Widget「卡住了」对话升级为生产力导向的情绪支持：用户选择/输入原因后，AI 会主动开场，结合当前任务、当天计划、当前会话进度和近 7 天完成/卡顿数据，用自然短段落给出安抚、数据定位、30 秒下一步和备选计划调整。
+  - 卡住急救回复支持轻量 Markdown 加粗，prompt 要求围绕具体卡住原因分流建议，例如“不知道去哪找信息”优先给找入口动作，“太复杂”优先给降复杂度动作，减少泛泛安慰。
+  - 反思 AI 不再只复述图表：新增可用洞察线索，会按需结合当天内部模式、任务延续、卡顿恢复、用户画像、记忆或历史对比；历史对比不是必选，数据不足时不会强行讲长期规律。
+  - 反思对话改为“先讲当前图表事实，再问开放小问题，再按用户上下文给低压力建议”，避免过早替用户下判断；开场会用空行拆成“问候 / 图表事实 / 观察到的模式 / 轻问题”四段，减少文字挤在一起的压力。
+  - 涉及文件：`src/renderer/src/services/startup-memory.ts`、`src/renderer/src/components/StandbyWidget.tsx`、`src/renderer/src/components/FocusFlow.tsx`、`src/renderer/src/hooks/useFocusSession.ts`、`src/renderer/src/components/WidgetView.tsx`、`src/renderer/src/components/ReflectionView.tsx`、`src/renderer/src/services/ai.ts`、`src/main/storage.ts`。
 
 - **2026-04-28**：
   - Widget「卡住了」第一阶段改造：用户输入卡住原因后，不再只看到一次性建议卡片，而是进入一个小型 AI 急救对话面板；AI 会先安抚情绪，再结合当前任务、当前步骤、当天任务列表和历史记忆给出更小的下一步，用户也可以继续追问“这个不适合”“换个更小的”等。

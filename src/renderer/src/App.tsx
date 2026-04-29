@@ -436,6 +436,7 @@ export default function App() {
         <ReflectionView
           tasks={tasks}
           aiConfig={aiConfig}
+          userProfile={userProfile}
           onClose={() => widgetMode.setShowReflection(false)}
         />
       </div>

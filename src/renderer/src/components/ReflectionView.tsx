@@ -7,7 +7,7 @@
  */
 
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
-import type { Task } from '../types'
+import type { Task, UserProfile } from '../types'
 import type { AIConfig } from '../services/ai'
 import { buildReflectionSystemPrompt, buildWeeklyReflectionSystemPrompt, extractMemoryFromChat } from '../services/ai'
 import type { TrackEvent, DailySummary } from '../services/tracker'
@@ -35,6 +35,7 @@ import { tracker } from '../services/tracker'
 interface ReflectionViewProps {
   tasks: Task[]
   aiConfig: AIConfig
+  userProfile: UserProfile
   onClose: () => void
 }
 
@@ -144,6 +145,41 @@ function shiftDate(dateStr: string, days: number): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
+function normalizeTaskTitle(title: string): string {
+  return title
+    .toLowerCase()
+    .replace(/[0-9０-９]+/g, ' ')
+    .replace(/[（(].*?[）)]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function compareLevel(current: number, average: number): 'higher' | 'lower' | 'similar' {
+  if (average <= 0) return 'similar'
+  if (current >= average * 1.25) return 'higher'
+  if (current <= average * 0.75) return 'lower'
+  return 'similar'
+}
+
+function buildProfileContext(profile: UserProfile): string {
+  const lines: string[] = []
+  if (profile.major || profile.grade) {
+    lines.push(`- 背景：${[profile.grade, profile.major].filter(Boolean).join('，')}`)
+  }
+  if (profile.challenges.length > 0) {
+    lines.push(`- 用户自述挑战：${profile.challenges.join('、')}`)
+  }
+  if (profile.workplaces.length > 0) {
+    lines.push(`- 常用学习/工作场景：${profile.workplaces.join('、')}`)
+  }
+  if (lines.length === 0) return ''
+  return [
+    '## 用户画像（只作温和理解，不要贴标签）',
+    ...lines,
+    '- 使用原则：只有和当前数据自然相关时才提，不要说“你就是……”。',
+  ].join('\n')
+}
+
 /** 把 YYYY-MM-DD 格式化为友好显示，如 "3月12日 周四" */
 const WEEKDAYS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
 function formatDateFriendly(dateStr: string): string {
@@ -153,12 +189,14 @@ function formatDateFriendly(dateStr: string): string {
 
 // ===================== 主组件 =====================
 
-export default function ReflectionView({ tasks: propTasks, aiConfig, onClose }: ReflectionViewProps) {
+export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile, onClose }: ReflectionViewProps) {
   const [events, setEvents] = useState<TrackEvent[]>([])
   const [summary, setSummary] = useState<DailySummary | null>(null)
   const [activityData, setActivityData] = useState<ActivityRecord[]>([])
   const [memoryContext, setMemoryContext] = useState('')
   const [memoryLoaded, setMemoryLoaded] = useState(false)
+  const [insightContext, setInsightContext] = useState('')
+  const [insightLoaded, setInsightLoaded] = useState(false)
   const [loadingData, setLoadingData] = useState(true)
   const [localTasks, setLocalTasks] = useState<Task[]>(propTasks)
 
@@ -397,7 +435,117 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, onClose }: 
     })()
   }, [selectedDate])
 
-  
+  // 加载可用洞察线索：按证据选择当天模式、任务延续、卡顿恢复、用户画像或历史对比。
+  useEffect(() => {
+    let cancelled = false
+    setInsightLoaded(false)
+
+    async function loadInsightContext() {
+      try {
+        const dates = Array.from({ length: 14 }, (_, index) => shiftDate(selectedDate, -index))
+        const rows = await Promise.all(dates.map(async date => {
+          const [rawTasks, rawEvents] = await Promise.all([
+            window.electronAPI.loadTasks(date).catch(() => []),
+            window.electronAPI.loadTrackerEvents(date).catch(() => []),
+          ])
+          const tasks = Array.isArray(rawTasks) ? (rawTasks as Task[]) : []
+          const dayEvents = Array.isArray(rawEvents) ? (rawEvents as TrackEvent[]) : []
+          const hasData = tasks.length > 0 || dayEvents.length > 0
+          const daySummary = dayEvents.length > 0 ? buildDailySummary(date, dayEvents) : null
+          return { date, tasks, summary: daySummary, hasData }
+        }))
+
+        if (cancelled) return
+
+        const current = rows.find(row => row.date === selectedDate)
+        const historyRows = rows.filter(row => row.date !== selectedDate && row.hasData)
+        const lines: string[] = [
+          '## 可用洞察线索（供 AI 选择，不要求全部使用）',
+          '- 使用顺序：先讲当前图表事实，再按需选择当天内部模式、任务延续、卡顿恢复、用户画像、记忆或历史对比。',
+          '- 历史对比只是可选证据；数据不足或不相关时不要强行对比。',
+        ]
+
+        if (current?.summary) {
+          const s = current.summary.stats
+          const completedTasks = current.tasks.filter(task => task.completed).length
+          const pendingTasks = current.tasks.filter(task => !task.completed).length
+          lines.push(`- 当前日期概况：完成任务 ${completedTasks} 个，未完成任务 ${pendingTasks} 个，专注 ${s.totalFocusMinutes} 分钟，卡顿 ${s.totalStuckCount} 次。`)
+          if (s.totalStuckCount > 0) {
+            const stuckReasons = current.summary.stuckEvents
+              .map(event => event.reason)
+              .filter(Boolean)
+              .slice(0, 3)
+            lines.push(`- 当天内部模式：卡顿主要和 ${stuckReasons.join('、') || '执行过程'} 有关。适合问开放小问题，例如“当时最先让你停下来的可能是什么？不用想得很完整，大概说说也可以。”`)
+          }
+          if (current.summary.flowEvents.length > 0) {
+            const flowTasks = current.summary.flowEvents.map(event => event.taskTitle).filter(Boolean).slice(0, 3)
+            lines.push(`- 当天内部模式：出现过心流推进，相关任务：${flowTasks.join('、')}。可以用来做事实型鼓励。`)
+          }
+        }
+
+        const repeatedPending = new Map<string, { title: string; days: string[] }>()
+        for (const row of rows.filter(row => row.hasData)) {
+          for (const task of row.tasks) {
+            if (task.completed) continue
+            const key = normalizeTaskTitle(task.title)
+            if (!key) continue
+            const existing = repeatedPending.get(key) ?? { title: task.title, days: [] }
+            existing.days.push(row.date)
+            repeatedPending.set(key, existing)
+          }
+        }
+        const longPending = [...repeatedPending.values()]
+          .filter(item => item.days.length >= 2)
+          .sort((a, b) => b.days.length - a.days.length)
+          .slice(0, 3)
+        if (longPending.length > 0) {
+          lines.push(`- 任务延续线索：这些任务在多个记录日仍未完成：${longPending.map(item => `「${item.title}」${item.days.length}天`).join('、')}。适合问“最挡在前面的一小步是什么”，不要直接下结论。`)
+        }
+
+        const reasonCounts = new Map<string, number>()
+        let successfulRescues = 0
+        for (const row of rows) {
+          for (const event of row.summary?.stuckEvents ?? []) {
+            if (event.reason) reasonCounts.set(event.reason, (reasonCounts.get(event.reason) ?? 0) + 1)
+            if (event.rescueSucceeded) successfulRescues += 1
+          }
+        }
+        const repeatedReasons = [...reasonCounts.entries()]
+          .filter(([, count]) => count >= 2)
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 3)
+        if (repeatedReasons.length > 0) {
+          lines.push(`- 反复卡点线索：${repeatedReasons.map(([reason, count]) => `「${reason}」${count}次`).join('、')}。适合围绕用户自己的上下文继续问。`)
+        }
+        if (successfulRescues > 0) {
+          lines.push(`- 恢复线索：记录中有 ${successfulRescues} 次卡住后继续推进，可用于事实型鼓励。`)
+        }
+
+        const historySummaries = historyRows.map(row => row.summary).filter((s): s is DailySummary => !!s)
+        if (historySummaries.length >= 2 && current?.summary) {
+          const avgFocus = Math.round(historySummaries.reduce((sum, s) => sum + s.stats.totalFocusMinutes, 0) / historySummaries.length)
+          const avgStuck = historySummaries.reduce((sum, s) => sum + s.stats.totalStuckCount, 0) / historySummaries.length
+          const focusLevel = compareLevel(current.summary.stats.totalFocusMinutes, avgFocus)
+          const stuckLevel = compareLevel(current.summary.stats.totalStuckCount, avgStuck)
+          lines.push(`- 可选历史对比：可用历史 ${historySummaries.length} 天；当前专注时长相对前几次为 ${focusLevel}，当前卡顿次数相对前几次为 ${stuckLevel}。只有和当前话题相关时才使用。`)
+        } else {
+          lines.push('- 历史对比限制：可用历史不足 2 天时，不要做跨天对比，也不要说长期规律。')
+        }
+
+        const profileContext = buildProfileContext(userProfile)
+        setInsightContext(profileContext ? `${lines.join('\n')}\n\n${profileContext}` : lines.join('\n'))
+      } catch (e) {
+        console.warn('[Reflection Insight] 加载洞察线索失败:', e)
+        if (!cancelled) setInsightContext('')
+      } finally {
+        if (!cancelled) setInsightLoaded(true)
+      }
+    }
+
+    loadInsightContext()
+    return () => { cancelled = true }
+  }, [selectedDate, userProfile])
+
 
   // 气泡提示：打开 1.2 秒后显示，5 秒后自动隐藏
   useEffect(() => {
@@ -637,7 +785,7 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, onClose }: 
 
   // 构建 AI system prompt
   const systemPrompt = useMemo(() => {
-    if (!summary || !memoryLoaded) return ''
+    if (!summary || !memoryLoaded || !insightLoaded) return ''
     const context = summaryToLLMContext(summary, events)
     const taskInfo = `\n\n额外信息：\n- 当前任务总数：${localTasks.length}\n- 已完成任务：${localTasks.filter(t => t.completed).length}\n- 完成率：${completionRate}%\n- 待办任务：${localTasks.filter(t => !t.completed).map(t => t.title).join('、') || '无'}`
     const productivityInfo = `\n\n生产力指标：\n- 电脑使用时长：${totalUsageMinutes}分钟\n- 专注时长：${summary.stats.totalFocusMinutes}分钟\n- 生产力比率：${productivityRatio}%（专注/使用）\n- 心流占比：${flowRatio}%（心流/专注）`
@@ -659,10 +807,11 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, onClose }: 
       taskDurationInfo = `\n\n任务实际用时排行（按时长降序，对应【chart:task-duration】条形图）：\n${lines.join('\n')}`
     }
 
-    const prompt = buildReflectionSystemPrompt(context + taskInfo + productivityInfo + activityInfo + taskDurationInfo, false, isToday, memoryContext, selectedDate)
+    const insightInfo = insightContext ? `\n\n${insightContext}` : ''
+    const prompt = buildReflectionSystemPrompt(context + taskInfo + productivityInfo + activityInfo + taskDurationInfo + insightInfo, false, isToday, memoryContext, selectedDate)
     console.log('[Memory Debug] systemPrompt 构建完成, 包含记忆:', prompt.includes('对话记忆'), ', memoryContext长度:', memoryContext.length)
     return prompt
-  }, [summary, events, localTasks, completionRate, totalUsageMinutes, productivityRatio, flowRatio, activityTimeDistribution, taskDurations, isToday, memoryContext, memoryLoaded, selectedDate])
+  }, [summary, events, localTasks, completionRate, totalUsageMinutes, productivityRatio, flowRatio, activityTimeDistribution, taskDurations, isToday, memoryContext, memoryLoaded, insightContext, insightLoaded, selectedDate])
 
   // ---- 周视图数据回调 ----
   const handleWeekDataReady = useCallback((data: WeekDayData[]) => {
@@ -675,8 +824,9 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, onClose }: 
     const context = buildWeeklyLLMContext(weekDayData)
     const dates = getWeekDates(weekEndDate)
     const weekLabel = `${formatDateFriendly(dates[0]).replace(/ .+/, '')} – ${formatDateFriendly(dates[6]).replace(/ .+/, '')}`
-    return buildWeeklyReflectionSystemPrompt(context, false, weekLabel, memoryContext)
-  }, [weekDayData, weekEndDate, memoryContext])
+    const insightInfo = insightContext ? `\n\n${insightContext}` : ''
+    return buildWeeklyReflectionSystemPrompt(context + insightInfo, false, weekLabel, memoryContext)
+  }, [weekDayData, weekEndDate, memoryContext, insightContext])
 
   // 根据当前视图模式选择对应的 system prompt
   const activeSystemPrompt = viewMode === 'week' ? weekSystemPrompt : systemPrompt
