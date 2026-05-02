@@ -9,7 +9,7 @@
  *   flow       – 心流模式：只显示宏观任务名 + 计时 + [✓完成]
  *
  * 窗口尺寸：
- *   executing / flow → 380×48（薄条）
+ *   executing / flow → 560×56（低干扰横向薄条）
  *   relay            → 380×232（展开）
  *   stuck_a / stuck_b→ 380×304/460（急救面板）
  */
@@ -27,12 +27,13 @@ import { getToday } from '../hooks/useDateNavigation'
 
 // ===================== 常量 =====================
 
-const BAR_W = 620
+const BAR_W_PANEL = 620
+const BAR_W_EXECUTING = 560
 const BAR_H_THIN = 66
 const BAR_H_RELAY = 280
 const BAR_H_STUCK = 340
 const BAR_H_STUCK_CHAT = 460
-const BAR_H_FIRST_STEP = 64  // 简化模式：横向低干扰任务条
+const BAR_H_FIRST_STEP = 56  // 简化模式：横向低干扰任务条
 
 // ★ Feature Flag：关闭逐步拆解（relay 循环），简化为"理解 → 第一步 → 完成 → 退出"
 // 设为 true 可恢复完整的 step-by-step 接力模式
@@ -258,7 +259,7 @@ function FocusDynamicBar({
     if (phase === 'relay') {
       // 全部完成时矮一些，其余统一高度
       const h = allSubtasksDone ? 180 : BAR_H_RELAY
-      window.electronAPI.resizeWidget(BAR_W, h)
+      window.electronAPI.resizeWidget(BAR_W_PANEL, h)
       if (!allSubtasksDone) inputRef.current?.focus()
       // 请求 AI 接力建议（优先缓存，秒出）
       if (aiConfig.apiKey && aiConfig.modelId && !allSubtasksDone) {
@@ -283,7 +284,7 @@ function FocusDynamicBar({
           .finally(() => setLoadingChips(false))
       }
     } else if (phase === 'stuck_a') {
-      window.electronAPI.resizeWidget(BAR_W, BAR_H_STUCK)
+      window.electronAPI.resizeWidget(BAR_W_PANEL, BAR_H_STUCK)
       stuckInputRef.current?.focus()
       // 请求 AI 卡点预测
       setStuckChips([])
@@ -299,7 +300,7 @@ function FocusDynamicBar({
           .finally(() => setLoadingStuck(false))
       }
     } else if (phase === 'stuck_b') {
-      window.electronAPI.resizeWidget(BAR_W, BAR_H_STUCK_CHAT)
+      window.electronAPI.resizeWidget(BAR_W_PANEL, BAR_H_STUCK_CHAT)
       stuckChatInputRef.current?.focus()
     } else {
       // executing / flow
@@ -307,7 +308,7 @@ function FocusDynamicBar({
       if (!ENABLE_STEP_BY_STEP) {
         if (isFlowMode) {
           if (taskSubtasks.length === 0 && !session.firstStepHint) {
-            execHeight = BAR_H_THIN
+            execHeight = BAR_H_FIRST_STEP
           } else {
             // 任务结构视图：基础高度 + 每个子任务 36px + 可选第一步提示行，上限 300px
             const hintH = session.firstStepHint ? 24 : 0
@@ -319,7 +320,12 @@ function FocusDynamicBar({
           execHeight = BAR_H_FIRST_STEP
         }
       }
-      window.electronAPI.resizeWidget(BAR_W, execHeight)
+      const execWidth = !ENABLE_STEP_BY_STEP
+        && phase === 'executing'
+        && (!isFlowMode || (taskSubtasks.length === 0 && !session.firstStepHint))
+        ? BAR_W_EXECUTING
+        : BAR_W_PANEL
+      window.electronAPI.resizeWidget(execWidth, execHeight)
       setNextMicro('')
       setChips([])
       setStuckChips([])
@@ -343,7 +349,7 @@ function FocusDynamicBar({
     const frameId = requestAnimationFrame(() => {
       if (relayPanelRef.current) {
         const h = Math.max(relayPanelRef.current.scrollHeight, 200)
-        window.electronAPI.resizeWidget(BAR_W, h)
+        window.electronAPI.resizeWidget(BAR_W_PANEL, h)
       }
     })
     return () => cancelAnimationFrame(frameId)
@@ -629,20 +635,20 @@ function FocusDynamicBar({
       // —— 状态 A：正在执行第一步 ——
       if (!isFlowMode) {
         return (
-          <div className="drag-region w-full h-full flex items-center gap-3 bg-white/80 backdrop-blur-md
-                          border border-gray-200/50 rounded-2xl shadow-[0_3px_18px_rgba(0,0,0,0.06)]
-                          px-3.5 py-2 select-none overflow-hidden">
+          <div className="drag-region w-full h-full flex items-center gap-2.5 bg-white/80 backdrop-blur-md
+                          border border-gray-200/50 rounded-xl shadow-[0_3px_18px_rgba(0,0,0,0.06)]
+                          px-3 py-1.5 select-none overflow-hidden">
             <div className="flex-1 min-w-0 flex items-center gap-2">
-              <span className="text-xs text-gray-500 truncate max-w-[150px]" title={taskTitle}>{taskTitle}</span>
+              <span className="text-xs text-gray-500 truncate max-w-[96px]" title={taskTitle}>{taskTitle}</span>
               <span className="text-gray-300 flex-shrink-0">·</span>
-              <span className="text-sm text-gray-800 font-semibold truncate max-w-[240px]" title={currentMicroTask}>
+              <span className="text-sm text-gray-800 font-semibold truncate max-w-[230px]" title={currentMicroTask}>
                 🎯 {currentMicroTask}
               </span>
             </div>
 
-            <div className="no-drag flex items-center gap-3 flex-shrink-0">
+            <div className="no-drag flex items-center gap-2.5 flex-shrink-0">
               <span className="text-xxs text-gray-400 font-mono
-                               bg-gray-100/70 px-2 py-1 rounded-lg">{timeStr}</span>
+                               bg-gray-100/70 px-2 py-0.5 rounded-lg">{timeStr}</span>
               <button
                 onClick={onPause}
                 className="flex items-center gap-1 text-xs text-gray-400
@@ -657,7 +663,7 @@ function FocusDynamicBar({
               <button
                 onClick={handleMicroDoneClick}
                 disabled={showMicroDone}
-                className={`px-4 py-2 rounded-full text-xs font-semibold transition-all
+                className={`px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all
                            ${showMicroDone
                              ? 'bg-teal-400 text-white shadow-sm shadow-teal-200/50'
                              : 'bg-teal-500 text-white shadow-sm shadow-teal-200/50 hover:bg-teal-600 hover:shadow-md hover:shadow-teal-200/60 active:scale-95'
@@ -685,20 +691,20 @@ function FocusDynamicBar({
       // —— 状态 B：第一步完成后进入主任务（无子任务时保持横向低干扰条） ——
       if (taskSubtasks.length === 0 && !session.firstStepHint) {
         return (
-          <div className="drag-region w-full h-full flex items-center gap-3 bg-white/80 backdrop-blur-md
-                          border border-gray-200/50 rounded-2xl shadow-[0_3px_18px_rgba(0,0,0,0.06)]
-                          px-3.5 py-2 select-none overflow-hidden">
+          <div className="drag-region w-full h-full flex items-center gap-2.5 bg-white/80 backdrop-blur-md
+                          border border-gray-200/50 rounded-xl shadow-[0_3px_18px_rgba(0,0,0,0.06)]
+                          px-3 py-1.5 select-none overflow-hidden">
             <div className="flex-1 min-w-0 flex items-center gap-2">
               <span className="text-xs text-gray-500 flex-shrink-0">当前任务</span>
               <span className="text-gray-300 flex-shrink-0">·</span>
-              <span className="text-sm text-gray-800 font-semibold truncate max-w-[340px]" title={taskTitle}>
+              <span className="text-sm text-gray-800 font-semibold truncate max-w-[260px]" title={taskTitle}>
                 {taskTitle}
               </span>
             </div>
 
-            <div className="no-drag flex items-center gap-3 flex-shrink-0">
+            <div className="no-drag flex items-center gap-2.5 flex-shrink-0">
               <span className="text-xxs text-gray-400 font-mono
-                               bg-gray-100/70 px-2 py-1 rounded-lg">{timeStr}</span>
+                               bg-gray-100/70 px-2 py-0.5 rounded-lg">{timeStr}</span>
               <button
                 onClick={onPause}
                 className="flex items-center gap-1 text-xs text-gray-400
@@ -715,7 +721,7 @@ function FocusDynamicBar({
                   triggerEffect(e.currentTarget)
                   onTaskDone()
                 }}
-                className="px-4 py-2 rounded-full bg-emerald-500 text-white text-xs font-semibold
+                className="px-3.5 py-1.5 rounded-full bg-emerald-500 text-white text-xs font-semibold
                            shadow-sm shadow-emerald-200/50
                            hover:bg-emerald-600 hover:shadow-md hover:shadow-emerald-200/60
                            active:scale-95 transition-all"

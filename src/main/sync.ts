@@ -37,6 +37,11 @@ function isMissingAppUsageColumn(error: unknown): boolean {
   return msg.includes('app_usage') && msg.includes('schema cache')
 }
 
+function isMissingPlanTimeColumn(error: unknown): boolean {
+  const msg = getErrorMessage(error)
+  return msg.includes('plan_time') && msg.includes('schema cache')
+}
+
 /** 标记某个实体有变更，需要同步到云端。不阻塞调用方。 */
 export function markDirty(entity: string, key: string = ''): void {
   if (!dirtySet.has(entity)) dirtySet.set(entity, new Set())
@@ -141,7 +146,7 @@ async function pushToCloud(userId: string, entity: string, key: string): Promise
 
     case 'profile': {
       const profile = loadProfile()
-      const { error } = await sb.from('profiles').upsert({
+      const row = {
         user_id: userId,
         major: String(profile.major || ''),
         grade: String(profile.grade || ''),
@@ -150,8 +155,18 @@ async function pushToCloud(userId: string, entity: string, key: string): Promise
         plan_time: profile.planTime ? String(profile.planTime) : null,
         reflection_time: profile.reflectionTime ? String(profile.reflectionTime) : null,
         updated_at: new Date().toISOString(),
-      })
-      if (error) throw error
+      }
+      const { error } = await sb.from('profiles').upsert(row)
+      if (error) {
+        if (!isMissingPlanTimeColumn(error)) throw error
+
+        // 线上库还没执行 plan_time migration 时，先同步其他个人资料字段。
+        // 等数据库列补上后，新版本会自动恢复上传 planTime。
+        console.warn('[Sync] profile: plan_time column unavailable, retrying without plan time')
+        const { plan_time: _planTime, ...rowWithoutPlanTime } = row
+        const { error: retryError } = await sb.from('profiles').upsert(rowWithoutPlanTime)
+        if (retryError) throw retryError
+      }
       console.log('[Sync] profile synced')
       break
     }

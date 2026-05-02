@@ -28,6 +28,8 @@ interface AuthUser {
   email: string
 }
 
+const REFLECTION_REMINDER_STORAGE_KEY = 'reflectionReminderPendingDate'
+
 export default function App() {
   const [tasks, setTasks] = useState<Task[]>([])
   const [loading, setLoading] = useState(true)
@@ -56,6 +58,15 @@ export default function App() {
   // -------- 主窗口 → 小组件的任务传递 --------
   const [pendingStandbyTaskId, setPendingStandbyTaskId] = useState<string | null>(null)
 
+  // -------- 每日反思提醒红点 --------
+  const [reflectionReminderPending, setReflectionReminderPending] = useState(() => {
+    try {
+      return localStorage.getItem(REFLECTION_REMINDER_STORAGE_KEY) === getToday()
+    } catch {
+      return false
+    }
+  })
+
   // -------- 专注会话 --------
   const focusSession = useFocusSession({
     tasks, setTasks, aiConfig,
@@ -81,6 +92,20 @@ export default function App() {
   // 防止切换日期时用旧 tasks 写入新日期
   const tasksLoadedForDate = useRef<string | null>(null)
 
+  const clearReflectionReminder = useCallback(() => {
+    setReflectionReminderPending(false)
+    try {
+      localStorage.removeItem(REFLECTION_REMINDER_STORAGE_KEY)
+    } catch {
+      // 忽略 localStorage 不可用的情况，红点状态只影响 UI 提醒。
+    }
+  }, [])
+
+  const openReflection = useCallback(() => {
+    clearReflectionReminder()
+    widgetMode.setShowReflection(true)
+  }, [clearReflectionReminder, widgetMode])
+
   // -------- 初始化追踪器 --------
   const trackerInited = useRef(false)
   useEffect(() => {
@@ -90,6 +115,22 @@ export default function App() {
     tracker.track('app.launched', {})
     return () => tracker.destroy()
   }, [])
+
+  // -------- 监听每日反思提醒：到点后显示红点，直到用户打开反思 --------
+  useEffect(() => {
+    window.electronAPI.onReflectionReminderPending((date) => {
+      setReflectionReminderPending(date === getToday())
+      try {
+        localStorage.setItem(REFLECTION_REMINDER_STORAGE_KEY, date)
+      } catch {
+        // 忽略 localStorage 不可用的情况，本次运行仍会显示红点。
+      }
+    })
+  }, [])
+
+  useEffect(() => {
+    if (widgetMode.showReflection) clearReflectionReminder()
+  }, [clearReflectionReminder, widgetMode.showReflection])
 
   // -------- 启动初始化：认证 + 配置/资料/记忆 并行加载 --------
   useEffect(() => {
@@ -451,7 +492,7 @@ export default function App() {
         onOpenProfile={() => setShowProfile(true)}
         onOpenAISettings={() => setShowAISettings(true)}
         onOpenMemory={() => { tracker.track('memory.opened', {}); setShowMemory(true) }}
-        onOpenReflection={() => widgetMode.setShowReflection(true)}
+        onOpenReflection={openReflection}
         onEnterStandby={widgetMode.handleEnterStandby}
         onLogout={handleLogout}
         hasProfile={hasProfile}
@@ -497,8 +538,8 @@ export default function App() {
             </button>
           )}
           <button
-            onClick={() => widgetMode.setShowReflection(true)}
-            className="flex items-center gap-1.5 px-5 py-2 rounded-full
+            onClick={openReflection}
+            className="relative flex items-center gap-1.5 px-5 py-2 rounded-full
                        bg-emerald-500 hover:bg-emerald-600
                        active:scale-95
                        text-white
@@ -512,6 +553,12 @@ export default function App() {
               />
             </svg>
             开启反思
+            {reflectionReminderPending && (
+              <span
+                className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-red-500 ring-2 ring-white"
+                aria-label="反思提醒"
+              />
+            )}
           </button>
         </div>
 

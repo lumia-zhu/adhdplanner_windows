@@ -27,7 +27,7 @@ import {
   createMainWindow, createTray, updateTrayMenu,
   enterWidget, exitWidget,
   startWidgetHeartbeat, stopWidgetHeartbeat,
-  validateWidgetBounds, refreshDragRegion,
+  validateWidgetBounds, refreshDragRegion, centerWidgetWindow,
   startReflectionTimer,
   startPlanTimer,
 } from './window'
@@ -174,7 +174,7 @@ function setupIPC(): void {
     safeWinOp('resizeWidget', (win) => {
       win.setMinimumSize(1, 1)
       win.setMaximumSize(9999, 9999)
-      win.setSize(sw, sh)
+      centerWidgetWindow(win, sw, sh)
       win.setMinimumSize(sw, sh)
       win.setMaximumSize(sw, sh)
       win.setAlwaysOnTop(true, 'screen-saver')

@@ -25,6 +25,8 @@ interface Window {
     onModeSync: (cb: (data: { isWidgetMode: boolean }) => void) => void
     /** 主进程通知打开每日反思页面 */
     onNavigateReflection: (cb: () => void) => void
+    /** 主进程通知每日反思时间已到，主界面按钮显示提醒红点 */
+    onReflectionReminderPending: (cb: (date: string) => void) => void
     // 用户个人资料
     loadProfile: () => Promise<Record<string, unknown>>
     saveProfile: (profile: Record<string, unknown>) => Promise<boolean>

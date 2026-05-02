@@ -50,6 +50,24 @@ export function refreshDragRegion(): void {
   }, 80)
 }
 
+/**
+ * 原子化把悬浮窗居中到当前屏幕。
+ *
+ * 关键点：必须用传入的目标宽度计算居中，不要用 getBounds()/getContentBounds()，
+ * 因为 setSize 在 Windows 上是异步的，紧接着读 getBounds 仍是旧尺寸，会导致按旧宽度居中。
+ *
+ * 使用 setBounds 一次性设置 x / y / width / height，避免“先 setSize 再 setPosition”
+ * 之间出现尺寸/位置不一致的过渡帧。
+ */
+export function centerWidgetWindow(win: BrowserWindow, width: number, height: number): { x: number; y: number } {
+  const { workArea } = screen.getDisplayMatching(win.getBounds())
+  const x = workArea.x + Math.round((workArea.width - width) / 2)
+  const y = workArea.y + 8
+  win.setBounds({ x, y, width, height })
+  console.log(`[CenterWidget] workArea=${workArea.x},${workArea.y} ${workArea.width}x${workArea.height} → bar ${width}x${height} @ ${x},${y}`)
+  return { x, y }
+}
+
 // ===================== Widget 心跳守护 =====================
 
 export function startWidgetHeartbeat(): void {
@@ -95,16 +113,18 @@ export function validateWidgetBounds(): void {
   if (!S.mainWindow || S.mainWindow.isDestroyed() || !S.isWidgetMode) return
 
   try {
-    const { width: sw, height: sh } = screen.getPrimaryDisplay().workAreaSize
-    const [x, y] = S.mainWindow.getPosition()
-    const [w] = S.mainWindow.getSize()
+    const bounds = S.mainWindow.getBounds()
+    const { workArea } = screen.getDisplayMatching(bounds)
 
-    const halfW = Math.round(w / 2)
-    if (x < -halfW || x > sw - halfW || y < -10 || y > sh - 10) {
-      const defaultX = Math.round((sw - w) / 2)
-      const defaultY = 8
-      console.log(`[BoundsCheck] Widget out of screen (${x},${y}), resetting to (${defaultX},${defaultY})`)
-      S.mainWindow.setPosition(defaultX, defaultY)
+    const halfW = Math.round(bounds.width / 2)
+    if (
+      bounds.x < workArea.x - halfW
+      || bounds.x > workArea.x + workArea.width - halfW
+      || bounds.y < workArea.y - 10
+      || bounds.y > workArea.y + workArea.height - 10
+    ) {
+      console.log(`[BoundsCheck] Widget out of screen (${bounds.x},${bounds.y}), recentering`)
+      centerWidgetWindow(S.mainWindow, bounds.width, bounds.height)
     }
   } catch (e) {
     console.error('[BoundsCheck] Error:', e)
@@ -154,21 +174,17 @@ export function enterWidget(): void {
   // 每次进入小组件都强制放到顶部中间（不再使用"位置记忆"）：
   // 用户反馈"任务开始时悬浮窗不在顶部中间"——是因为之前拖动过的位置被记住了。
   // 去掉记忆后，每次进入位置稳定可预期；后续若想拖动，依然可以，但本次会话外不持久化。
-  const { width: sw } = screen.getPrimaryDisplay().workAreaSize
   const scaledW = scaled(WIDGET_WIDTH)
   const scaledH = scaled(WIDGET_HEIGHT)
-  const x = Math.round((sw - scaledW) / 2)
-  const y = 8
 
   safeWinOp('enterWidget', (win) => {
     win.setMinimumSize(1, 1)
     win.setMaximumSize(9999, 9999)
     win.setAlwaysOnTop(true, 'screen-saver')
     win.setVisibleOnAllWorkspaces(true)
-    win.setSize(scaledW, scaledH)
+    centerWidgetWindow(win, scaledW, scaledH)
     win.setMinimumSize(scaledW, scaledH)
     win.setMaximumSize(scaledW, scaledH)
-    win.setPosition(x, y)
     win.show()
     win.moveTop()
   })
@@ -225,6 +241,9 @@ function checkReflectionTime(): void {
   if (S.lastNotifiedDate === today) return
   if (now === S.cachedReflectionTime) {
     S.lastNotifiedDate = today
+    safeWinOp('reflectionReminderPending', (win) => {
+      win.webContents.send('reflection:reminder-pending', today)
+    })
     const notification = new Notification({
       title: '🌙 该反思了',
       body: '今天辛苦了，花几分钟回顾一下吧',

@@ -123,6 +123,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   /** 主进程通知前端打开每日反思页面（由定时提醒触发） */
   onNavigateReflection: (cb: () => void): void => { ipcRenderer.on('navigate:reflection', cb) },
+  /** 主进程通知前端每日反思时间已到，主界面按钮显示提醒红点 */
+  onReflectionReminderPending: (cb: (date: string) => void): void => {
+    ipcRenderer.on('reflection:reminder-pending', (_, date) => cb(String(date)))
+  },
 
   // -------- 行为追踪 --------
   /** 追加事件到指定日期的日志文件 */

@@ -158,6 +158,14 @@ C:\Users\{用户名}\AppData\Roaming\task-manager\tasks.json
 
 ## 🛠️ 最近修复
 
+- **2026-05-02**：
+  - 每日反思提醒到点后，主界面底部「开启反思」按钮会显示一个小红点；红点会保留到用户点开反思为止，并用当天日期写入本地 `localStorage`，避免重启后当天提醒丢失。
+  - 修复线上 Supabase 尚未添加 `profiles.plan_time` 列时，个人资料同步会反复失败的问题；现在会自动降级为先同步专业、年级、困难、场景和反思提醒时间，计划提醒时间继续保留在本地，等数据库列补齐后自动恢复云同步。
+  - 去掉主界面标题栏的最小化按钮，并把右上角 `X` 改为“关闭界面，后台继续记录”：点击后只隐藏到系统托盘，不退出应用，活动记录、提醒和同步仍会继续运行；真正退出仍通过托盘右键菜单完成。
+  - 优化执行中悬浮窗：开始任务后每次动态调整尺寸都会重新按屏幕宽度居中，避免从待命小组件变宽后视觉偏右；同时把执行态横向条高度从 `64px` 降到 `56px`，宽度从 `620px` 压缩到 `560px`，压缩按钮和间距，减少对正在做任务的打扰。卡住对话、接力面板等需要阅读和输入的状态仍保留 `620px`。
+  - 修复悬浮窗在当前屏幕中没有严格居中的问题：根因是 Windows 上 `setSize` 是异步的，先 `setSize` 再读 `getBounds()` 拿到的还是旧尺寸，导致按旧宽度居中。现在改为新增 `centerWidgetWindow(win, width, height)`，统一用传入的目标宽高、当前显示器 `workArea` 和原子化 `setBounds` 一次性设置位置和尺寸；进入小组件、动态调整尺寸和越界校验都共用这一套逻辑。
+  - 涉及文件：`src/main/window.ts`、`src/main/index.ts`、`src/preload/index.ts`、`src/renderer/src/App.tsx`、`src/renderer/src/env.d.ts`、`src/main/sync.ts`、`src/renderer/src/components/TitleBar.tsx`、`src/renderer/src/components/WidgetView.tsx`。
+
 - **2026-05-01**：
   - 修复反思页任务用时 hover 联动电脑活动分布时，未闭合 session 会被拉到当前时间、导致短任务高亮几乎覆盖全天的问题；现在高亮分布统一使用 `session.ended.totalDurationSeconds` 反推时间段，和上方任务用时保持一致。
   - Widget 执行态改为低干扰横向任务条：窗口更宽但高度更低，任务与当前步骤在左侧成组展示，右侧集中放置计时、`暂停`、主按钮和 `卡住了?`；长任务名或第一步会截断但可通过 hover 查看完整内容。`完成这一步` / `完成主任务` 保持主按钮权重，执行态背景透明度和阴影也进一步降低，减少做任务时的视觉打扰。

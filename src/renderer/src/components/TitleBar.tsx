@@ -1,11 +1,10 @@
 /**
  * 自定义标题栏组件
  * 因为我们用了无边框窗口，所以需要自己做标题栏
- * 包含：拖动区域、设置菜单（个人资料 + AI 配置）、反思、最小化、隐藏到托盘、退出按钮
+ * 包含：拖动区域、设置菜单（个人资料 + AI 配置）、反思、收起为小组件、隐藏到托盘
  */
 
 import { useState, useRef, useEffect } from 'react'
-import { tracker } from '../services/tracker'
 
 interface TitleBarProps {
   taskCount: number         // 未完成的任务数量，显示在标题旁边
@@ -191,17 +190,6 @@ export default function TitleBar({
         {/* 分割线 */}
         <div className="w-px h-4 bg-gray-200 mx-0.5" />
 
-        {/* 最小化按钮 */}
-        <button
-          onClick={() => window.electronAPI.minimizeWindow()}
-          className="w-7 h-7 rounded-md hover:bg-gray-100 flex items-center justify-center text-gray-500 hover:text-gray-700 transition-colors"
-          title="最小化"
-        >
-          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
-          </svg>
-        </button>
-
         {/* 收起为待命 widget */}
         {onEnterStandby && (
           <button
@@ -217,11 +205,11 @@ export default function TitleBar({
           </button>
         )}
 
-        {/* 退出按钮 */}
+        {/* 关闭界面：隐藏到托盘，应用继续在后台记录 */}
         <button
-          onClick={() => { tracker.track('app.quit', {}); window.electronAPI.quitApp() }}
+          onClick={() => window.electronAPI.hideWindow()}
           className="w-7 h-7 rounded-md hover:bg-red-50 flex items-center justify-center text-gray-500 hover:text-red-500 transition-colors"
-          title="退出应用"
+          title="关闭界面，后台继续记录"
         >
           <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
