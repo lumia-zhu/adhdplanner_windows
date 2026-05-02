@@ -164,7 +164,8 @@ C:\Users\{用户名}\AppData\Roaming\task-manager\tasks.json
   - 去掉主界面标题栏的最小化按钮，并把右上角 `X` 改为“关闭界面，后台继续记录”：点击后只隐藏到系统托盘，不退出应用，活动记录、提醒和同步仍会继续运行；真正退出仍通过托盘右键菜单完成。
   - 优化执行中悬浮窗：开始任务后每次动态调整尺寸都会重新按屏幕宽度居中，避免从待命小组件变宽后视觉偏右；同时把执行态横向条高度从 `64px` 降到 `56px`，宽度从 `620px` 压缩到 `560px`，压缩按钮和间距，减少对正在做任务的打扰。卡住对话、接力面板等需要阅读和输入的状态仍保留 `620px`。
   - 修复悬浮窗在当前屏幕中没有严格居中的问题：根因是 Windows 上 `setSize` 是异步的，先 `setSize` 再读 `getBounds()` 拿到的还是旧尺寸，导致按旧宽度居中。现在改为新增 `centerWidgetWindow(win, width, height)`，统一用传入的目标宽高、当前显示器 `workArea` 和原子化 `setBounds` 一次性设置位置和尺寸；进入小组件、动态调整尺寸和越界校验都共用这一套逻辑。
-  - 涉及文件：`src/main/window.ts`、`src/main/index.ts`、`src/preload/index.ts`、`src/renderer/src/App.tsx`、`src/renderer/src/env.d.ts`、`src/main/sync.ts`、`src/renderer/src/components/TitleBar.tsx`、`src/renderer/src/components/WidgetView.tsx`。
+  - Widget「卡住了」AI 对话改为两轮式反思支持：先根据卡住原因粗分为任务理解、任务负荷、注意力、情绪/动力、情境事务冲突五类，首轮结合当前任务/当天计划/近期行为中的一个线索问白话开放问题，用户回复后再给简短反馈和低压力选择。
+  - 涉及文件：`src/main/window.ts`、`src/main/index.ts`、`src/preload/index.ts`、`src/renderer/src/App.tsx`、`src/renderer/src/env.d.ts`、`src/main/sync.ts`、`src/renderer/src/services/ai.ts`、`src/renderer/src/services/tracker/types.ts`、`src/renderer/src/components/TitleBar.tsx`、`src/renderer/src/components/WidgetView.tsx`。
 
 - **2026-05-01**：
   - 修复反思页任务用时 hover 联动电脑活动分布时，未闭合 session 会被拉到当前时间、导致短任务高亮几乎覆盖全天的问题；现在高亮分布统一使用 `session.ended.totalDurationSeconds` 反推时间段，和上方任务用时保持一致。

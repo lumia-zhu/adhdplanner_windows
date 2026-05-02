@@ -670,6 +670,64 @@ export interface StuckChatMessage {
   content: string
 }
 
+export type StuckCategory = 'task_understanding' | 'task_load' | 'attention' | 'emotion_motivation' | 'context_conflict'
+
+export const STUCK_CATEGORY_LABELS: Record<StuckCategory, string> = {
+  task_understanding: '任务理解',
+  task_load: '任务负荷',
+  attention: '注意力',
+  emotion_motivation: '情绪/动力',
+  context_conflict: '情境事务冲突',
+}
+
+export function classifyStuckReason(reason: string): StuckCategory {
+  const text = reason.trim().toLowerCase()
+  if (
+    text.includes('不想')
+    || text.includes('厌学')
+    || text.includes('没兴趣')
+    || text.includes('抗拒')
+    || text.includes('累')
+    || text.includes('困')
+    || text.includes('没力气')
+    || text.includes('启动不了')
+  ) {
+    return 'emotion_motivation'
+  }
+  if (
+    text.includes('分心')
+    || text.includes('小红书')
+    || text.includes('手机')
+    || text.includes('消息')
+    || text.includes('微信')
+    || text.includes('刷')
+  ) {
+    return 'attention'
+  }
+  if (
+    text.includes('并行')
+    || text.includes('饭点')
+    || text.includes('外卖')
+    || text.includes('文件不在')
+    || text.includes('找不到文件')
+    || text.includes('打不开')
+    || text.includes('软件')
+    || text.includes('网页')
+  ) {
+    return 'context_conflict'
+  }
+  if (
+    text.includes('太难')
+    || text.includes('复杂')
+    || text.includes('太多')
+    || text.includes('从哪开始')
+    || text.includes('处理哪')
+  ) {
+    return 'task_load'
+  }
+  return 'task_understanding'
+}
+
 export interface StuckChatTaskSummary {
   title: string
   completed: boolean
@@ -698,6 +756,7 @@ export interface StuckChatContext {
   currentStep: string
   currentSubtaskTitle?: string
   stuckReason: string
+  stuckCategory: StuckCategory
   todayTasks: StuckChatTaskSummary[]
   productivityContext?: StuckProductivityContext
   memoryHint?: string
@@ -739,37 +798,52 @@ function formatStuckProductivityContext(context?: StuckProductivityContext): str
   return lines.join('\n')
 }
 
+function formatStuckCategoryGuide(category: StuckCategory): string {
+  switch (category) {
+    case 'task_understanding':
+      return '分类方向：任务理解。首轮帮用户说出任务里不清楚的点，例如标准、材料来源、下一步或完成判断。可问：“刚才你看着这个任务时，脑子里第一个冒出来的疑问是什么？”'
+    case 'task_load':
+      return '分类方向：任务负荷。首轮帮用户回看任务是哪里开始变大、变复杂。可问：“刚才你觉得它很复杂的时候，最先冒出来的那一部分是什么？”'
+    case 'attention':
+      return '分类方向：注意力。首轮不要责备分心，帮用户回看注意力被带走前发生了什么。可问：“刚才你被带走前，手上这一步或你的状态发生了什么？”'
+    case 'emotion_motivation':
+      return '分类方向：情绪/动力。首轮先接住不想做、累、烦、抗拒，不急着拉回原任务。可问：“刚才那种不想做，你会怎么形容它？”'
+    case 'context_conflict':
+      return '分类方向：情境事务冲突。首轮承认现实事务会占用注意力，帮用户说出还有什么事在抢位置。可问：“刚才除了这个任务，还有什么事情一直在你脑子里冒出来？”'
+  }
+}
+
 function buildStuckChatSystemPrompt(context: StuckChatContext): string {
   const subtaskLine = context.currentSubtaskTitle
     ? `当前子任务：${context.currentSubtaskTitle}\n`
     : ''
 
   return (
-    '你是一个 ADHD 友好的专注急救聊天助手。用户正在任务中卡住，需要先被接住，再用任务数据帮 TA 回到一个很小、可执行的动作。\n\n' +
+    '你是一个 ADHD 友好的卡住反思助手。用户正在任务中卡住，你要先帮助 TA 看见刚才为什么卡住，再把反思转成低压力选择。\n\n' +
     '你的目标：\n' +
-    '1. 必须围绕“用户卡住原因”回应，先承认困难，语气像朋友，不评判、不说教。\n' +
-    '2. 只结合当天计划、当前任务或近期完成数据中的 1 个事实，不要堆数据。\n' +
-    '3. 只给 1 个 30 秒内可以开始的具体动作；备选方案只有在很自然时才轻轻补一句。\n' +
-    '4. 如果用户说“这个不行/没力气/不是这个问题”，要换方向，不要重复原建议。\n' +
-    '5. 不要长篇分析，不要要求用户解释太多。\n\n' +
-    '原因到建议的映射：\n' +
-    '- 不确定下一步：给“下一步选择”建议，例如打开文件、定位标题、写占位句。\n' +
-    '- 太难/复杂：给“降复杂度”建议，例如只做草稿版、只列 3 个子问题。\n' +
-    '- 不知道去哪找信息：给“找入口”建议，例如打开资料源、搜索 1 个关键词。\n' +
-    '- 容易分心：给“环境和边界”建议，例如关掉 1 个干扰窗口、设置 5 分钟小目标。\n' +
-    '- 没力气/情绪上来：给“低压力恢复”建议，例如做 20-30 秒准备动作，或先保留返回入口。\n\n' +
+    '1. 这是两轮式支持：首轮只做反思提问，不急着给解决方案；用户回复后，第二轮再给简短反馈和低压力选择。\n' +
+    '2. 分类只决定回复方向，不要机械套模板；从当前任务、当天计划、当前会话或近期行为中挑 1 个最贴近情境的数据事实即可。\n' +
+    '3. 问题必须白话、具体到“刚才那一刻”、开放式，不能是二选一/是或不是/多选题。\n' +
+    '4. 不要要求用户分析原因，可以说“按刚才脑子里的真实想法说就行”。\n' +
+    '5. 第二轮最多给 2 个选择：回到当前任务的最小接触动作，或在合适时换到今天另一个阻力更小的任务/先处理现实事务。\n' +
+    '6. 如果用户说“这个不行/没力气/不是这个问题”，要承认并换方向，不要重复原建议。\n\n' +
+    '轮次规则：\n' +
+    '- 如果用户消息包含“【首轮卡住反思】”：输出首轮回复。首轮结构是 1 句接住/定位 + 可选 1 个数据锚点 + 1 个开放式问题；不要给具体建议。\n' +
+    '- 如果用户已经回复了你的问题：输出第二轮回复。先用 1 句复述你听到的模式，再给 1-2 个低压力选择；可以结合当天任务名或历史记录，但最多引用 1 个事实。\n\n' +
+    `${formatStuckCategoryGuide(context.stuckCategory)}\n\n` +
     '回复格式：\n' +
-    '- 首条回复用 2-3 个自然短段落，用空行分开；不要用 1️⃣/2️⃣/3️⃣，也不要固定写“先接住/下一步/备选”这类标签。\n' +
-    '- 每段只写 1 句，首条总字数控制在 80-110 个中文字左右。\n' +
+    '- 每轮最多 2 个自然短段落，用空行分开；不要用 1️⃣/2️⃣/3️⃣，也不要固定写“先接住/下一步/备选”这类标签。\n' +
+    '- 每段只写 1 句，首轮总字数控制在 70-100 个中文字左右，第二轮控制在 90-130 个中文字左右。\n' +
     '- 关键数据、当前动作、时间长度最多加粗 1-2 处，例如 **30 秒**、**只打开资料页**。\n' +
     '- 语气要像自然对话，不要像报告、清单或教学卡片；可以有温度，但不要鸡汤。\n' +
-    '- 不解释策略为什么有效，直接帮用户看到眼前能做的一小步。\n' +
+    '- 首轮不输出建议；第二轮也不要长篇解释策略为什么有效。\n' +
     '- 不要输出 JSON、Markdown 表格或隐藏控制文本。\n\n' +
     '当前上下文：\n' +
     `大任务：${context.taskTitle}\n` +
     subtaskLine +
     `当前正在做：${context.currentStep}\n` +
     `用户卡住原因：${context.stuckReason}\n` +
+    `卡住分类：${STUCK_CATEGORY_LABELS[context.stuckCategory]}\n` +
     `${formatStuckTaskList(context.todayTasks)}\n` +
     `${formatStuckProductivityContext(context.productivityContext)}\n` +
     (context.memoryHint || '')

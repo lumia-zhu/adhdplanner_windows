@@ -104,6 +104,7 @@ export interface StuckReasonPayload {
   microAction: string
   reason: string            // 具体原因
   reasonSource: 'ai_chip' | 'self' | 'common_chip' // 点了 AI 预测 / 自己输入 / 点了常见原因标签
+  stuckCategory?: 'task_understanding' | 'task_load' | 'attention' | 'emotion_motivation' | 'context_conflict'
 }
 
 /** AI 生成了反思提示（新版 stuck 流程） */

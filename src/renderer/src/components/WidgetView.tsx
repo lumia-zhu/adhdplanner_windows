@@ -17,7 +17,7 @@
 import { useState, useEffect, useRef } from 'react'
 import type { Task } from '../types'
 import type { AIConfig, MicroActionChip, StuckChatContext, StuckChatMessage, StuckProductivityContext } from '../services/ai'
-import { generateStuckChips, chatStuckSupport, buildStuckHint } from '../services/ai'
+import { generateStuckChips, chatStuckSupport, buildStuckHint, classifyStuckReason } from '../services/ai'
 import { aiCache } from '../services/ai-cache'
 import { tracker } from '../services/tracker'
 import { buildDailySummary, type TrackEvent } from '../services/tracker'
@@ -458,11 +458,26 @@ function FocusDynamicBar({
     }
   }
 
-  const fallbackStuckReply = (reason: string): string => {
+  const fallbackStuckFirstReply = (reason: string, category: StuckChatContext['stuckCategory']): string => {
     const cleanReason = reason.trim()
+    const questionByCategory: Record<StuckChatContext['stuckCategory'], string> = {
+      task_understanding: '刚才你看着这个任务时，脑子里第一个冒出来的疑问是什么？',
+      task_load: '刚才你觉得它很复杂的时候，最先冒出来的那一部分是什么？',
+      attention: '刚才你被带走前，手上这一步或你的状态发生了什么？',
+      emotion_motivation: '刚才那种不想做，你会怎么形容它？',
+      context_conflict: '刚才除了这个任务，还有什么事情一直在你脑子里冒出来？',
+    }
     return cleanReason
-      ? `你卡在「${cleanReason}」，这不是失败，只是入口还需要再小一点。\n\n先做 **30 秒**：打开当前任务需要的页面或文件。\n\n如果还是卡，就只写下 **1 个最小子步骤**。`
-      : '先不用急着解决全部，可能只是入口还不够小。\n\n先做 **30 秒**：打开当前任务需要的页面或文件。'
+      ? `你卡在「${cleanReason}」，先不用急着马上解决。\n\n不用分析原因，按刚才脑子里的真实想法说就行：${questionByCategory[category]}`
+      : `先不用急着马上解决。\n\n不用分析原因，按刚才脑子里的真实想法说就行：${questionByCategory[category]}`
+  }
+
+  const fallbackStuckSecondReply = (context: StuckChatContext): string => {
+    const pendingTask = context.todayTasks.find(task => !task.completed && task.title !== context.taskTitle)
+    const switchTaskText = pendingTask
+      ? `，或者先换到「${pendingTask.title}」做 **5 分钟**`
+      : ''
+    return `听起来这里需要先把压力降下来，而不是硬推完整任务。\n\n可以先和「${context.taskTitle}」接触 **1 分钟**，只打开或看一眼材料${switchTaskText}。`
   }
 
   const renderStuckMessageContent = (text: string) => {
@@ -494,9 +509,12 @@ function FocusDynamicBar({
     setLoadingStuckChat(true)
     setStuckChatError('')
     const result = await chatStuckSupport(messages, context, aiConfig)
+    const isFirstRound = messages.some(message => message.role === 'user' && message.content.includes('【首轮卡住反思】'))
     const assistantMessage: StuckChatMessage = {
       role: 'assistant',
-      content: result.content?.trim() || fallbackStuckReply(context.stuckReason),
+      content: result.content?.trim() || (isFirstRound
+        ? fallbackStuckFirstReply(context.stuckReason, context.stuckCategory)
+        : fallbackStuckSecondReply(context)),
     }
     setStuckMessages([...visibleMessages, assistantMessage])
     setStuckChatError(result.error ?? '')
@@ -515,7 +533,7 @@ function FocusDynamicBar({
     requestStuckChatReply(nextMessages, stuckChatContext).catch(() => {
       setStuckMessages([
         ...nextMessages,
-        { role: 'assistant', content: fallbackStuckReply(stuckChatContext.stuckReason) },
+        { role: 'assistant', content: fallbackStuckSecondReply(stuckChatContext) },
       ])
       setStuckChatError('AI 暂时没有回复，先给你一个备用小步骤。')
       setLoadingStuckChat(false)
@@ -534,6 +552,7 @@ function FocusDynamicBar({
   const handleSubmitStuckReason = (reason: string, reasonSource: 'common_chip' | 'self') => {
     const trimmedReason = reason.trim()
     if (!trimmedReason) return
+    const stuckCategory = classifyStuckReason(trimmedReason)
 
     // 📊 埋点：卡顿归因
     tracker.track('stuck.reason', {
@@ -542,6 +561,7 @@ function FocusDynamicBar({
       microAction: currentMicroTask,
       reason: trimmedReason,
       reasonSource,
+      stuckCategory,
     })
 
     // 行为学习：记录卡住原因到 MemoryStore
@@ -580,13 +600,14 @@ function FocusDynamicBar({
           currentStep: currentMicroTask,
           currentSubtaskTitle,
           stuckReason: trimmedReason,
+          stuckCategory,
           todayTasks: buildTodayTaskSnapshot(),
           productivityContext,
           memoryHint: `${hints.forChips}${hints.forReflection}`,
         }
         const initialMessages: StuckChatMessage[] = [{
           role: 'user',
-          content: `用户刚才选择/输入的卡住原因是：「${trimmedReason}」。请你主动发起第一条急救对话，围绕这个原因给出自然分段的支持和具体下一步，不要使用 emoji 编号或固定短标签。`,
+          content: `【首轮卡住反思】用户刚才选择/输入的卡住原因是：「${trimmedReason}」。请你主动发起第一条反思对话，先帮助用户回看刚才发生了什么，只问一个白话开放问题，不要直接给建议。`,
         }]
         setStuckChatContext(context)
         return requestStuckChatReply(initialMessages, context, [])
@@ -597,16 +618,17 @@ function FocusDynamicBar({
           currentStep: currentMicroTask,
           currentSubtaskTitle,
           stuckReason: trimmedReason,
+          stuckCategory,
           todayTasks: buildTodayTaskSnapshot(),
         }
         const initialMessages: StuckChatMessage[] = [{
           role: 'user',
-          content: `用户刚才选择/输入的卡住原因是：「${trimmedReason}」。请你主动发起第一条急救对话。`,
+          content: `【首轮卡住反思】用户刚才选择/输入的卡住原因是：「${trimmedReason}」。请你主动发起第一条反思对话，只问一个白话开放问题，不要直接给建议。`,
         }]
         setStuckChatContext(context)
         requestStuckChatReply(initialMessages, context, []).catch(() => {
           setStuckMessages([
-            { role: 'assistant', content: fallbackStuckReply(trimmedReason) },
+            { role: 'assistant', content: fallbackStuckFirstReply(trimmedReason, stuckCategory) },
           ])
           setStuckChatError('AI 暂时没有回复，先给你一个备用小步骤。')
           setLoadingStuckChat(false)
