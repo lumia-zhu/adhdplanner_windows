@@ -175,7 +175,13 @@ async function pushToCloud(userId: string, entity: string, key: string): Promise
       try {
         const filePath = getReflectionChatPath(chatKey)
         if (!fs.existsSync(filePath)) break
-        const data = JSON.parse(fs.readFileSync(filePath, 'utf-8'))
+        const parsed = JSON.parse(fs.readFileSync(filePath, 'utf-8'))
+        const data = parsed && typeof parsed === 'object' ? parsed as {
+          bubbles?: unknown[]
+          messages?: unknown[]
+          step?: unknown
+          savedAt?: unknown
+        } : {}
         const { error } = await sb.from('reflection_chats').upsert({
           user_id: userId,
           chat_key: chatKey,

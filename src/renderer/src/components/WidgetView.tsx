@@ -27,12 +27,12 @@ import { getToday } from '../hooks/useDateNavigation'
 
 // ===================== 常量 =====================
 
-const BAR_W = 380
+const BAR_W = 620
 const BAR_H_THIN = 66
 const BAR_H_RELAY = 280
 const BAR_H_STUCK = 340
 const BAR_H_STUCK_CHAT = 460
-const BAR_H_FIRST_STEP = 102  // 简化模式：父任务 + 当前步骤 + 按钮行
+const BAR_H_FIRST_STEP = 64  // 简化模式：横向低干扰任务条
 
 // ★ Feature Flag：关闭逐步拆解（relay 循环），简化为"理解 → 第一步 → 完成 → 退出"
 // 设为 true 可恢复完整的 step-by-step 接力模式
@@ -306,11 +306,15 @@ function FocusDynamicBar({
       let execHeight = BAR_H_THIN
       if (!ENABLE_STEP_BY_STEP) {
         if (isFlowMode) {
-          // 任务结构视图：基础高度 + 每个子任务 36px + 可选第一步提示行，上限 300px
-          const hintH = session.firstStepHint ? 24 : 0
-          const baseH = 106 + hintH  // 顶部任务名 + 底部按钮行
-          const subsH = taskSubtasks.length * 36
-          execHeight = Math.min(baseH + subsH, 300)
+          if (taskSubtasks.length === 0 && !session.firstStepHint) {
+            execHeight = BAR_H_THIN
+          } else {
+            // 任务结构视图：基础高度 + 每个子任务 36px + 可选第一步提示行，上限 300px
+            const hintH = session.firstStepHint ? 24 : 0
+            const baseH = 106 + hintH  // 顶部任务名 + 底部按钮行
+            const subsH = taskSubtasks.length * 36
+            execHeight = Math.min(baseH + subsH, 300)
+          }
         } else {
           execHeight = BAR_H_FIRST_STEP
         }
@@ -625,66 +629,111 @@ function FocusDynamicBar({
       // —— 状态 A：正在执行第一步 ——
       if (!isFlowMode) {
         return (
-          <div className="drag-region w-full h-full flex flex-col justify-center bg-white/95 backdrop-blur-sm
-                          border border-gray-200/60 rounded-2xl shadow-[0_4px_24px_rgba(0,0,0,0.08)]
-                          px-4 py-2 select-none overflow-hidden">
-
-            {/* Row 1: 父任务名（居中）+ 计时器 */}
-            <div className="flex items-center">
-              <div className="w-[48px] flex-shrink-0" />
-              <p className="flex-1 text-xs text-gray-500 text-center truncate">{taskTitle}</p>
-              <span className="w-[48px] text-xxs text-gray-400 font-mono text-right flex-shrink-0
-                               bg-gray-100/80 px-1.5 py-0.5 rounded-md">{timeStr}</span>
+          <div className="drag-region w-full h-full flex items-center gap-3 bg-white/80 backdrop-blur-md
+                          border border-gray-200/50 rounded-2xl shadow-[0_3px_18px_rgba(0,0,0,0.06)]
+                          px-3.5 py-2 select-none overflow-hidden">
+            <div className="flex-1 min-w-0 flex items-center gap-2">
+              <span className="text-xs text-gray-500 truncate max-w-[150px]" title={taskTitle}>{taskTitle}</span>
+              <span className="text-gray-300 flex-shrink-0">·</span>
+              <span className="text-sm text-gray-800 font-semibold truncate max-w-[240px]" title={currentMicroTask}>
+                🎯 {currentMicroTask}
+              </span>
             </div>
 
-            {/* Row 2: 当前步骤（居中，加粗，行动焦点） */}
-            <p className="text-sm text-gray-800 font-semibold text-center mt-1 leading-snug">
-              🎯 {currentMicroTask}
-            </p>
+            <div className="no-drag flex items-center gap-3 flex-shrink-0">
+              <span className="text-xxs text-gray-400 font-mono
+                               bg-gray-100/70 px-2 py-1 rounded-lg">{timeStr}</span>
+              <button
+                onClick={onPause}
+                className="flex items-center gap-1 text-xs text-gray-400
+                           hover:text-blue-500 active:scale-95 transition-colors whitespace-nowrap"
+                title="暂停，去处理别的事"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M10 9v6m4-6v6" />
+                </svg>
+                暂停
+              </button>
+              <button
+                onClick={handleMicroDoneClick}
+                disabled={showMicroDone}
+                className={`px-4 py-2 rounded-full text-xs font-semibold transition-all
+                           ${showMicroDone
+                             ? 'bg-teal-400 text-white shadow-sm shadow-teal-200/50'
+                             : 'bg-teal-500 text-white shadow-sm shadow-teal-200/50 hover:bg-teal-600 hover:shadow-md hover:shadow-teal-200/60 active:scale-95'
+                           }`}
+              >
+                {showMicroDone ? '已完成' : '完成这一步'}
+              </button>
+              <button
+                onClick={onStuck}
+                className="flex items-center gap-1 text-xs text-gray-400
+                           hover:text-amber-500 active:scale-95 transition-colors whitespace-nowrap"
+                title="卡住了？让AI帮你换条路"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                    d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                </svg>
+                卡住了?
+              </button>
+            </div>
+          </div>
+        )
+      }
 
-            {/* Row 3: 暂停 | 完成这一步 | 卡住了? */}
-            <div className="flex items-center mt-2.5">
-              <div className="w-[72px] flex items-center flex-shrink-0">
-                <button
-                  onClick={onPause}
-                  className="no-drag flex items-center gap-1 text-xs text-gray-400
-                             hover:text-blue-500 active:scale-95 transition-colors whitespace-nowrap"
-                  title="暂停，去处理别的事"
-                >
-                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M10 9v6m4-6v6" />
-                  </svg>
-                  暂停
-                </button>
-              </div>
-              <div className="flex-1 flex justify-center">
-                <button
-                  onClick={handleMicroDoneClick}
-                  disabled={showMicroDone}
-                  className={`no-drag px-5 py-1.5 rounded-xl
-                             text-xs font-semibold transition-all
-                             ${showMicroDone
-                               ? 'bg-teal-400 text-white scale-110 shadow-md shadow-teal-200/60'
-                               : 'bg-teal-500 text-white shadow-sm shadow-teal-200/50 hover:bg-teal-600 active:scale-95'
-                             }`}
-                >
-                  {showMicroDone ? '✅' : '完成这一步'}
-                </button>
-              </div>
-              <div className="w-[72px] flex items-center justify-end flex-shrink-0">
-                <button
-                  onClick={onStuck}
-                  className="no-drag flex items-center gap-1 text-xs text-gray-400
-                             hover:text-amber-500 active:scale-95 transition-colors whitespace-nowrap"
-                  title="卡住了？让AI帮你换条路"
-                >
-                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                      d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-                  </svg>
-                  卡住了?
-                </button>
-              </div>
+      // —— 状态 B：第一步完成后进入主任务（无子任务时保持横向低干扰条） ——
+      if (taskSubtasks.length === 0 && !session.firstStepHint) {
+        return (
+          <div className="drag-region w-full h-full flex items-center gap-3 bg-white/80 backdrop-blur-md
+                          border border-gray-200/50 rounded-2xl shadow-[0_3px_18px_rgba(0,0,0,0.06)]
+                          px-3.5 py-2 select-none overflow-hidden">
+            <div className="flex-1 min-w-0 flex items-center gap-2">
+              <span className="text-xs text-gray-500 flex-shrink-0">当前任务</span>
+              <span className="text-gray-300 flex-shrink-0">·</span>
+              <span className="text-sm text-gray-800 font-semibold truncate max-w-[340px]" title={taskTitle}>
+                {taskTitle}
+              </span>
+            </div>
+
+            <div className="no-drag flex items-center gap-3 flex-shrink-0">
+              <span className="text-xxs text-gray-400 font-mono
+                               bg-gray-100/70 px-2 py-1 rounded-lg">{timeStr}</span>
+              <button
+                onClick={onPause}
+                className="flex items-center gap-1 text-xs text-gray-400
+                           hover:text-blue-500 active:scale-95 transition-colors whitespace-nowrap"
+                title="暂停，去处理别的事"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M10 9v6m4-6v6" />
+                </svg>
+                暂停
+              </button>
+              <button
+                onClick={(e) => {
+                  triggerEffect(e.currentTarget)
+                  onTaskDone()
+                }}
+                className="px-4 py-2 rounded-full bg-emerald-500 text-white text-xs font-semibold
+                           shadow-sm shadow-emerald-200/50
+                           hover:bg-emerald-600 hover:shadow-md hover:shadow-emerald-200/60
+                           active:scale-95 transition-all"
+              >
+                完成主任务
+              </button>
+              <button
+                onClick={onStuck}
+                className="flex items-center gap-1 text-xs text-gray-400
+                           hover:text-amber-500 active:scale-95 transition-colors whitespace-nowrap"
+                title="卡住了？让AI帮你换条路"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                    d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                </svg>
+                卡住了?
+              </button>
             </div>
           </div>
         )
@@ -694,9 +743,9 @@ function FocusDynamicBar({
       const taskStructureRef = taskStructurePanelRef
       return (
         <div ref={taskStructureRef}
-             className="drag-region w-full h-full flex flex-col bg-white/95 backdrop-blur-sm
+             className="drag-region w-full h-full flex flex-col bg-white/85 backdrop-blur-md
                         border border-gray-200/60 rounded-2xl
-                        shadow-[0_4px_24px_rgba(0,0,0,0.08)] select-none overflow-hidden">
+                        shadow-[0_3px_18px_rgba(0,0,0,0.06)] select-none overflow-hidden">
 
           {/* 顶部：主任务名 + 计时器 —— ★ 这是拖拽手柄区域，不加 no-drag */}
           <div className="px-4 pt-3 pb-2">
@@ -771,7 +820,7 @@ function FocusDynamicBar({
                   triggerEffect(e.currentTarget)
                   onTaskDone()
                 }}
-                className="px-5 py-1.5 rounded-2xl bg-emerald-500 text-white text-xs font-semibold
+                className="px-5 py-1.5 rounded-full bg-emerald-500 text-white text-xs font-semibold
                            shadow-sm shadow-emerald-200/50
                            hover:bg-emerald-600 hover:shadow-md hover:shadow-emerald-200/60
                            active:scale-95 transition-all"
@@ -802,8 +851,8 @@ function FocusDynamicBar({
     const displayTask = isFlowMode ? taskTitle : currentMicroTask
 
     return (
-      <div className="drag-region w-full h-full flex flex-col justify-center bg-white/95 backdrop-blur-sm
-                      border border-gray-200/60 rounded-2xl shadow-[0_4px_24px_rgba(0,0,0,0.08)]
+      <div className="drag-region w-full h-full flex flex-col justify-center bg-white/85 backdrop-blur-md
+                      border border-gray-200/60 rounded-2xl shadow-[0_3px_18px_rgba(0,0,0,0.06)]
                       px-3.5 py-1 select-none overflow-hidden">
 
         {/* 上行：三栏布局 — 左区（图标）| 中区（任务名）| 右区（计时+关闭），中区绝对居中 */}
@@ -872,10 +921,10 @@ function FocusDynamicBar({
                 }
               }}
               disabled={showMicroDone}
-              className={`no-drag px-5 py-1.5 rounded-xl
+              className={`no-drag px-5 py-1.5 rounded-full
                          text-xs font-semibold transition-all
                          ${showMicroDone
-                           ? 'bg-teal-400 text-white scale-110 shadow-md shadow-teal-200/60'
+                           ? 'bg-teal-400 text-white shadow-sm shadow-teal-200/50'
                            : 'bg-teal-500 text-white shadow-sm shadow-teal-200/50 hover:bg-teal-600 active:scale-95'
                          }`}
             >
