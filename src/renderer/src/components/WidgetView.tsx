@@ -9,7 +9,7 @@
  *   flow       – 心流模式：只显示宏观任务名 + 计时 + [✓完成]
  *
  * 窗口尺寸：
- *   executing / flow → 560×56（低干扰横向薄条）
+ *   executing / quick → 560×56（低干扰横向薄条）
  *   relay            → 380×232（展开）
  *   stuck_a / stuck_b→ 380×304/460（急救面板）
  */
@@ -73,7 +73,7 @@ export interface FocusSession {
 }
 
 /** 快速专注模式下的薄条高度 */
-const BAR_H_QUICK = 66
+const BAR_H_QUICK = 56
 
 interface WidgetViewProps {
   tasks: Task[]
@@ -1518,41 +1518,31 @@ function QuickFocusWidget({ session, onTaskDone, onExit }: QuickFocusWidgetProps
   const timeStr = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
 
   return (
-    <div className="drag-region w-full h-full flex flex-col justify-center bg-white/95 backdrop-blur-sm
-                    border border-gray-200/60 rounded-2xl shadow-[0_4px_24px_rgba(0,0,0,0.08)]
-                    px-4 py-2 select-none overflow-hidden">
-      {/* 第一行：专注中 + 计时器 */}
-      <div className="flex items-center">
-        <div className="w-[48px] flex-shrink-0" />
-        <p className="flex-1 text-sm text-emerald-600 font-semibold text-center leading-snug">
-          🟢 专注中...
-        </p>
-        <span className="w-[48px] text-xxs text-gray-400 font-mono text-right flex-shrink-0
-                         bg-gray-100/80 px-1.5 py-0.5 rounded-md">{timeStr}</span>
+    <div className="drag-region w-full h-full flex items-center gap-2.5 bg-white/80 backdrop-blur-md
+                    border border-gray-200/50 rounded-xl shadow-[0_3px_18px_rgba(0,0,0,0.06)]
+                    px-3 py-1.5 select-none overflow-hidden">
+      <div className="flex-1 min-w-0 flex items-center gap-2">
+        <span className="text-sm text-emerald-600 font-semibold truncate">专注中</span>
       </div>
-      {/* 第二行：做完了 + 退出 */}
-      <div className="flex items-center mt-2">
-        <div className="w-[60px] flex-shrink-0" />
-        <div className="flex-1 flex justify-center">
-          <button
-            onClick={onTaskDone}
-            className="no-drag px-6 py-1.5 rounded-xl
-                       text-xs font-semibold transition-all
-                       bg-emerald-500 text-white shadow-sm shadow-emerald-200/50 hover:bg-emerald-600 active:scale-95"
-          >
-            做完了
-          </button>
-        </div>
-        <div className="w-[60px] flex items-center justify-end flex-shrink-0">
-          <button
-            onClick={onExit}
-            className="no-drag text-xxs text-gray-400
-                       hover:text-red-500 active:scale-95 transition-all whitespace-nowrap"
-            title="退出专注"
-          >
-            退出
-          </button>
-        </div>
+
+      <div className="no-drag flex items-center gap-2.5 flex-shrink-0">
+        <span className="text-xxs text-gray-400 font-mono
+                         bg-gray-100/70 px-2 py-0.5 rounded-lg">{timeStr}</span>
+        <button
+          onClick={onTaskDone}
+          className="px-4 py-1.5 rounded-full bg-emerald-500 text-white text-xs font-semibold
+                     shadow-sm shadow-emerald-200/50 hover:bg-emerald-600
+                     hover:shadow-md hover:shadow-emerald-200/60 active:scale-95 transition-all"
+        >
+          做完了
+        </button>
+        <button
+          onClick={onExit}
+          className="text-xs text-gray-400 hover:text-red-500 active:scale-95 transition-all whitespace-nowrap"
+          title="退出专注"
+        >
+          退出
+        </button>
       </div>
     </div>
   )

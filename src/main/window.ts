@@ -11,8 +11,8 @@ import { loadProfile, getTodayStr, getNowHHMM } from './storage'
 
 export const MAIN_WIDTH  = 480
 export const MAIN_HEIGHT = 680
-export const WIDGET_WIDTH  = 380
-export const WIDGET_HEIGHT = 66
+export const WIDGET_WIDTH  = 560
+export const WIDGET_HEIGHT = 56
 
 // ===================== 屏幕自适应缩放 =====================
 

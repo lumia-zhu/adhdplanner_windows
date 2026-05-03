@@ -2,8 +2,8 @@
  * StandbyWidget —— 常驻待命入口
  *
  * 两种状态：
- *   1. 待命条（80px）—— 任务名下拉选择 + 开始/继续 + 展开主界面
- *   2. 第一步面板（280px）—— 点击"开始"后内嵌展开，确认第一步后直接进入执行
+ *   1. 待命条（56px）—— 任务名下拉选择 + 开始/继续 + 展开主界面
+ *   2. 第一步面板（330px）—— 点击"开始"后内嵌展开，确认第一步后直接进入执行
  *
  * 色彩规范：
  *   绿色（emerald）= 开始 / 启动
@@ -19,8 +19,8 @@ import { aiCache } from '../services/ai-cache'
 import { findStartupMemoryMatches, mergeStartupSuggestions } from '../services/startup-memory'
 import AILoadingTips from './AILoadingTips'
 
-const BAR_W = 380
-const BAR_H = 80
+const BAR_W = 560
+const BAR_H = 56
 const PANEL_H = 330
 const DROPDOWN_MAX_H = 180  // 4.5 行，最后一行只露半截，暗示可滚动
 const TASK_ROW_H = 40
@@ -404,38 +404,33 @@ export default function StandbyWidget({
 
   // ---- 正常待命条 ----
   return (
-    <div className="w-full h-full flex flex-col bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden select-none">
+    <div className="w-full h-full flex flex-col bg-white/95 backdrop-blur-md rounded-xl shadow-[0_3px_18px_rgba(0,0,0,0.06)] border border-gray-200/60 overflow-hidden select-none">
 
       {/* ---- 主条 ---- */}
-      <div className="drag-region flex items-center gap-2 px-4" style={{ height: BAR_H }}>
+      <div className="drag-region flex items-center gap-2.5 px-3" style={{ height: BAR_H }}>
 
         {/* 区域1：任务名下拉选择器 */}
         <button
           ref={triggerRef}
           onClick={() => incompleteTasks.length > 0 && setDropdownOpen(v => !v)}
-          className={`no-drag flex-1 min-w-0 flex items-center gap-1.5 text-left rounded-lg px-2 py-1.5 transition-colors ${
+          title={currentTask
+            ? `${currentTask.title}${isPaused ? `\n上次停在：${currentTask.pausedSession?.currentMicroTask}` : ''}`
+            : '还没有任务'}
+          className={`no-drag flex-1 min-w-0 flex items-center gap-2 text-left rounded-lg px-2 py-1.5 transition-colors ${
             incompleteTasks.length > 0 ? 'hover:bg-gray-50 cursor-pointer' : 'cursor-default'
           } ${dropdownOpen ? 'bg-gray-50' : ''}`}
         >
-          <div className="flex-1 min-w-0">
-            {currentTask ? (
-              <>
-                <div className="text-s font-semibold text-gray-800 truncate">
-                  {currentTask.title}
-                </div>
-                {isPaused && (
-                  <div className="text-xxs text-gray-400 truncate mt-0.5">
-                    上次停在：{currentTask.pausedSession?.currentMicroTask}
-                  </div>
-                )}
-              </>
-            ) : (
-              <div className="text-s text-gray-400">还没有任务</div>
-            )}
-          </div>
+          {isPaused && (
+            <span className="text-xxs text-amber-600 bg-amber-50 border border-amber-100 px-1.5 py-0.5 rounded-full flex-shrink-0">
+              暂停
+            </span>
+          )}
+          <span className={`flex-1 min-w-0 truncate ${currentTask ? 'text-sm font-semibold text-gray-800' : 'text-sm text-gray-400'}`}>
+            {currentTask?.title ?? '还没有任务'}
+          </span>
           {/* 下拉箭头（有多个任务时才显示） */}
           {incompleteTasks.length > 1 && (
-            <svg className={`w-3 h-3 text-gray-400 flex-shrink-0 transition-transform ${dropdownOpen ? 'rotate-180' : ''}`}
+            <svg className={`w-3.5 h-3.5 text-gray-400 flex-shrink-0 transition-transform ${dropdownOpen ? 'rotate-180' : ''}`}
               fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
             </svg>
@@ -446,7 +441,7 @@ export default function StandbyWidget({
         {currentTask && (
           <button
             onClick={() => handleStart(currentTask)}
-            className={`no-drag flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-white text-xs font-semibold transition-all active:scale-95 shadow-sm ${
+            className={`no-drag flex items-center gap-1.5 px-4 py-1.5 rounded-full text-white text-sm font-semibold transition-all active:scale-95 shadow-sm ${
               isPaused
                 ? 'bg-amber-500 hover:bg-amber-600 shadow-amber-200/50'
                 : 'bg-emerald-500 hover:bg-emerald-600 shadow-emerald-200/50'
@@ -460,28 +455,28 @@ export default function StandbyWidget({
         )}
 
         {/* 区域3：快速添加 + 展开主界面 */}
-        <div className="no-drag flex items-center gap-0.5 flex-shrink-0">
+        <div className="no-drag flex items-center gap-1 flex-shrink-0">
           {onQuickAddTask && (
             <button
               onClick={quickAddMode ? closeQuickAdd : openQuickAdd}
-              className={`w-7 h-7 flex items-center justify-center rounded-lg transition-all ${
+              className={`w-8 h-8 flex items-center justify-center rounded-lg transition-all ${
                 quickAddMode
                   ? 'text-indigo-500 bg-indigo-50 rotate-45'
                   : 'text-gray-400 hover:text-emerald-500 hover:bg-emerald-50'
               }`}
               title={quickAddMode ? '取消添加' : '快速添加任务'}
             >
-              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
               </svg>
             </button>
           )}
           <button
             onClick={onExpand}
-            className="w-7 h-7 flex items-center justify-center text-gray-400 hover:text-indigo-500 hover:bg-indigo-50 rounded-lg transition-colors"
+            className="w-8 h-8 flex items-center justify-center text-gray-400 hover:text-indigo-500 hover:bg-indigo-50 rounded-lg transition-colors"
             title="展开主界面"
           >
-            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
             </svg>
           </button>
