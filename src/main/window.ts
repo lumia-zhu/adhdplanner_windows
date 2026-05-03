@@ -180,6 +180,7 @@ export function enterWidget(): void {
   safeWinOp('enterWidget', (win) => {
     win.setMinimumSize(1, 1)
     win.setMaximumSize(9999, 9999)
+    win.setBackgroundColor('#00000000')
     win.setAlwaysOnTop(true, 'screen-saver')
     win.setVisibleOnAllWorkspaces(true)
     centerWidgetWindow(win, scaledW, scaledH)
@@ -210,6 +211,7 @@ export function exitWidget(): void {
   safeWinOp('exitWidget', (win) => {
     win.setMinimumSize(1, 1)
     win.setMaximumSize(0, 0)
+    win.setBackgroundColor('#ffffff')
     win.setAlwaysOnTop(true, 'screen-saver')
     win.setVisibleOnAllWorkspaces(false)
     win.setSize(scaled(MAIN_WIDTH), scaled(MAIN_HEIGHT))
@@ -346,7 +348,7 @@ export function createMainWindow(): void {
     show: false,
     frame: false,
     resizable: true,
-    transparent: false,
+    transparent: true,
     backgroundColor: '#ffffff',
     autoHideMenuBar: true,
     alwaysOnTop: true,

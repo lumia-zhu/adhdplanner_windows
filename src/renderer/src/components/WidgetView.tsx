@@ -463,23 +463,23 @@ function FocusDynamicBar({
     const promptByCategory: Record<StuckChatContext['stuckCategory'], { question: string; examples: string }> = {
       task_understanding: {
         question: '刚才你看着这个任务时，脑子里第一个冒出来的 **疑问** 是什么？',
-        examples: '比如不知道标准，或不知道下一步从哪进。',
+        examples: '比如不知道要先确认哪条标准。',
       },
       task_load: {
         question: '刚才你觉得它变复杂的时候，最先冒出来的是 **哪一块**？',
-        examples: '比如材料太多，或要同时想的东西太多。',
+        examples: '比如材料太多，一下子不知道从哪里开始看。',
       },
       attention: {
         question: '刚才注意力被带走前，手上这一步发生了 **什么变化**？',
-        examples: '比如已经有点停住，或旁边有东西一直吸引你。',
+        examples: '比如刚才其实已经在任务里停住了一会儿。',
       },
       emotion_motivation: {
         question: '刚才那种 **不想做**，你会怎么形容它？',
-        examples: '比如累、烦，或说不太出来的一团抗拒。',
+        examples: '比如一想到这个任务就觉得有点抗拒。',
       },
       context_conflict: {
         question: '刚才除了这个任务，还有什么事情一直在你脑子里 **占位置**？',
-        examples: '比如现实事务，或另一个更急的任务。',
+        examples: '比如还有一件现实里的事一直没处理完。',
       },
     }
     const categoryPrompt = promptByCategory[category]
@@ -694,13 +694,14 @@ function FocusDynamicBar({
       // —— 状态 A：正在执行第一步 ——
       if (!isFlowMode) {
         return (
-          <div className="drag-region w-full h-full flex items-center gap-2.5 bg-white/80 backdrop-blur-md
-                          border border-gray-200/50 rounded-xl shadow-[0_3px_18px_rgba(0,0,0,0.06)]
-                          px-3 py-1.5 select-none overflow-hidden">
+          <div className="drag-region w-full h-full flex items-center gap-2.5 bg-white/75 hover:bg-white/95 backdrop-blur-md
+                          border border-gray-200/35 hover:border-gray-200/60 rounded-xl
+                          shadow-[0_2px_12px_rgba(0,0,0,0.035)] hover:shadow-[0_4px_18px_rgba(0,0,0,0.08)]
+                          px-3 py-1.5 select-none overflow-hidden transition-all duration-200">
             <div className="flex-1 min-w-0 flex items-center gap-2">
-              <span className="text-xs text-gray-500 truncate max-w-[96px]" title={taskTitle}>{taskTitle}</span>
-              <span className="text-gray-300 flex-shrink-0">·</span>
-              <span className="text-sm text-gray-800 font-semibold truncate max-w-[230px]" title={currentMicroTask}>
+              <span className="text-xs text-gray-800 truncate max-w-[96px]" title={taskTitle}>{taskTitle}</span>
+              <span className="text-gray-400 flex-shrink-0">·</span>
+              <span className="text-sm text-gray-950 font-semibold truncate max-w-[230px]" title={currentMicroTask}>
                 🎯 {currentMicroTask}
               </span>
             </div>
@@ -710,8 +711,8 @@ function FocusDynamicBar({
                                bg-gray-100/70 px-2 py-0.5 rounded-lg">{timeStr}</span>
               <button
                 onClick={onPause}
-                className="flex items-center gap-1 text-xs text-gray-400
-                           hover:text-blue-500 active:scale-95 transition-colors whitespace-nowrap"
+                className="flex items-center gap-1 text-xs text-gray-800
+                           hover:text-blue-600 active:scale-95 transition-colors whitespace-nowrap"
                 title="暂停，去处理别的事"
               >
                 <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -732,8 +733,8 @@ function FocusDynamicBar({
               </button>
               <button
                 onClick={onStuck}
-                className="flex items-center gap-1 text-xs text-gray-400
-                           hover:text-amber-500 active:scale-95 transition-colors whitespace-nowrap"
+                className="flex items-center gap-1 text-xs text-gray-800
+                           hover:text-amber-600 active:scale-95 transition-colors whitespace-nowrap"
                 title="卡住了？让AI帮你换条路"
               >
                 <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -750,13 +751,14 @@ function FocusDynamicBar({
       // —— 状态 B：第一步完成后进入主任务（无子任务时保持横向低干扰条） ——
       if (taskSubtasks.length === 0 && !session.firstStepHint) {
         return (
-          <div className="drag-region w-full h-full flex items-center gap-2.5 bg-white/80 backdrop-blur-md
-                          border border-gray-200/50 rounded-xl shadow-[0_3px_18px_rgba(0,0,0,0.06)]
-                          px-3 py-1.5 select-none overflow-hidden">
+          <div className="drag-region w-full h-full flex items-center gap-2.5 bg-white/75 hover:bg-white/95 backdrop-blur-md
+                          border border-gray-200/35 hover:border-gray-200/60 rounded-xl
+                          shadow-[0_2px_12px_rgba(0,0,0,0.035)] hover:shadow-[0_4px_18px_rgba(0,0,0,0.08)]
+                          px-3 py-1.5 select-none overflow-hidden transition-all duration-200">
             <div className="flex-1 min-w-0 flex items-center gap-2">
-              <span className="text-xs text-gray-500 flex-shrink-0">当前任务</span>
-              <span className="text-gray-300 flex-shrink-0">·</span>
-              <span className="text-sm text-gray-800 font-semibold truncate max-w-[260px]" title={taskTitle}>
+              <span className="text-xs text-gray-800 flex-shrink-0">当前任务</span>
+              <span className="text-gray-400 flex-shrink-0">·</span>
+              <span className="text-sm text-gray-950 font-semibold truncate max-w-[260px]" title={taskTitle}>
                 {taskTitle}
               </span>
             </div>
@@ -766,8 +768,8 @@ function FocusDynamicBar({
                                bg-gray-100/70 px-2 py-0.5 rounded-lg">{timeStr}</span>
               <button
                 onClick={onPause}
-                className="flex items-center gap-1 text-xs text-gray-400
-                           hover:text-blue-500 active:scale-95 transition-colors whitespace-nowrap"
+                className="flex items-center gap-1 text-xs text-gray-800
+                           hover:text-blue-600 active:scale-95 transition-colors whitespace-nowrap"
                 title="暂停，去处理别的事"
               >
                 <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -789,8 +791,8 @@ function FocusDynamicBar({
               </button>
               <button
                 onClick={onStuck}
-                className="flex items-center gap-1 text-xs text-gray-400
-                           hover:text-amber-500 active:scale-95 transition-colors whitespace-nowrap"
+                className="flex items-center gap-1 text-xs text-gray-800
+                           hover:text-amber-600 active:scale-95 transition-colors whitespace-nowrap"
                 title="卡住了？让AI帮你换条路"
               >
                 <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -1213,7 +1215,7 @@ function FocusDynamicBar({
             </div>
           )}
 
-          <div className="flex items-stretch gap-2">
+          <div className="flex items-center gap-2">
             <textarea
               ref={stuckChatInputRef}
               value={stuckChatInput}
@@ -1224,10 +1226,10 @@ function FocusDynamicBar({
                   handleSendStuckChat()
                 }
               }}
-              placeholder="如果回复不满意或需要调整，可以在这里提出你的要求"
-              rows={2}
+              placeholder="想调整回复，可以在这里说"
+              rows={1}
               disabled={loadingStuckChat}
-              className="h-16 flex-1 resize-none rounded-xl border border-gray-200 bg-white px-3 py-2
+              className="h-11 flex-1 resize-none rounded-xl border border-gray-200 bg-white px-3 py-2.5
                          text-xs text-gray-700 placeholder:text-gray-300 outline-none
                          focus:border-orange-300 focus:ring-2 focus:ring-orange-100
                          disabled:bg-gray-50 disabled:text-gray-400 transition-all"
@@ -1235,7 +1237,7 @@ function FocusDynamicBar({
             <button
               onClick={handleSendStuckChat}
               disabled={!stuckChatInput.trim() || loadingStuckChat || !stuckChatContext}
-              className="h-16 px-3 rounded-xl bg-orange-500 text-white text-xs font-semibold
+              className="h-11 px-3.5 rounded-xl bg-orange-500 text-white text-xs font-semibold
                          hover:bg-orange-600 active:scale-95 disabled:opacity-40
                          disabled:cursor-not-allowed transition-all"
             >
@@ -1243,7 +1245,7 @@ function FocusDynamicBar({
             </button>
           </div>
 
-          <div className="flex items-center justify-between pt-1 border-t border-gray-100/80">
+          <div className="flex items-center justify-between pt-1.5 border-t border-gray-100/80">
             <span className="text-xxs text-gray-400">找到一个能做的小动作就回去试试吧。</span>
             <button
               onClick={() => onResume(currentMicroTask)}
@@ -1518,11 +1520,12 @@ function QuickFocusWidget({ session, onTaskDone, onExit }: QuickFocusWidgetProps
   const timeStr = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
 
   return (
-    <div className="drag-region w-full h-full flex items-center gap-2.5 bg-white/80 backdrop-blur-md
-                    border border-gray-200/50 rounded-xl shadow-[0_3px_18px_rgba(0,0,0,0.06)]
-                    px-3 py-1.5 select-none overflow-hidden">
+    <div className="drag-region w-full h-full flex items-center gap-2.5 bg-white/75 hover:bg-white/95 backdrop-blur-md
+                    border border-gray-200/35 hover:border-gray-200/60 rounded-xl
+                    shadow-[0_2px_12px_rgba(0,0,0,0.035)] hover:shadow-[0_4px_18px_rgba(0,0,0,0.08)]
+                    px-3 py-1.5 select-none overflow-hidden transition-all duration-200">
       <div className="flex-1 min-w-0 flex items-center gap-2">
-        <span className="text-sm text-emerald-600 font-semibold truncate">专注中</span>
+        <span className="text-sm text-gray-950 font-semibold truncate">专注中</span>
       </div>
 
       <div className="no-drag flex items-center gap-2.5 flex-shrink-0">
@@ -1538,7 +1541,7 @@ function QuickFocusWidget({ session, onTaskDone, onExit }: QuickFocusWidgetProps
         </button>
         <button
           onClick={onExit}
-          className="text-xs text-gray-400 hover:text-red-500 active:scale-95 transition-all whitespace-nowrap"
+          className="text-xs text-gray-800 hover:text-red-600 active:scale-95 transition-all whitespace-nowrap"
           title="退出专注"
         >
           退出

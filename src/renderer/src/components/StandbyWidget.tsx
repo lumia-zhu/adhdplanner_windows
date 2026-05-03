@@ -404,7 +404,10 @@ export default function StandbyWidget({
 
   // ---- 正常待命条 ----
   return (
-    <div className="w-full h-full flex flex-col bg-white/95 backdrop-blur-md rounded-xl shadow-[0_3px_18px_rgba(0,0,0,0.06)] border border-gray-200/60 overflow-hidden select-none">
+    <div className="w-full h-full flex flex-col bg-white/75 hover:bg-white/95 backdrop-blur-md rounded-xl
+                    shadow-[0_2px_12px_rgba(0,0,0,0.035)] hover:shadow-[0_4px_18px_rgba(0,0,0,0.08)]
+                    border border-gray-200/35 hover:border-gray-200/60
+                    overflow-hidden select-none transition-all duration-200">
 
       {/* ---- 主条 ---- */}
       <div className="drag-region flex items-center gap-2.5 px-3" style={{ height: BAR_H }}>
@@ -425,7 +428,7 @@ export default function StandbyWidget({
               暂停
             </span>
           )}
-          <span className={`flex-1 min-w-0 truncate ${currentTask ? 'text-sm font-semibold text-gray-800' : 'text-sm text-gray-400'}`}>
+          <span className={`flex-1 min-w-0 truncate ${currentTask ? 'text-sm font-semibold text-gray-950' : 'text-sm text-gray-600'}`}>
             {currentTask?.title ?? '还没有任务'}
           </span>
           {/* 下拉箭头（有多个任务时才显示） */}
@@ -462,7 +465,7 @@ export default function StandbyWidget({
               className={`w-8 h-8 flex items-center justify-center rounded-lg transition-all ${
                 quickAddMode
                   ? 'text-indigo-500 bg-indigo-50 rotate-45'
-                  : 'text-gray-400 hover:text-emerald-500 hover:bg-emerald-50'
+                  : 'text-gray-700 hover:text-emerald-600 hover:bg-emerald-50'
               }`}
               title={quickAddMode ? '取消添加' : '快速添加任务'}
             >
@@ -473,7 +476,7 @@ export default function StandbyWidget({
           )}
           <button
             onClick={onExpand}
-            className="w-8 h-8 flex items-center justify-center text-gray-400 hover:text-indigo-500 hover:bg-indigo-50 rounded-lg transition-colors"
+            className="w-8 h-8 flex items-center justify-center text-gray-700 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
             title="展开主界面"
           >
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">

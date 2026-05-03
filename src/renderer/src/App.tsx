@@ -428,7 +428,7 @@ export default function App() {
   // -------- 待命 widget --------
   if (isWidgetMode && widgetMode.isStandbyMode) {
     return (
-      <div className="w-full h-full overflow-hidden">
+      <div className="w-full h-full overflow-hidden bg-transparent">
         <StandbyWidget
           tasks={tasks}
           aiConfig={aiConfig}
@@ -447,7 +447,7 @@ export default function App() {
   // -------- 执行 widget --------
   if (isWidgetMode) {
     return (
-      <div className="w-full h-full bg-white overflow-hidden">
+      <div className="w-full h-full bg-transparent overflow-hidden">
         <WidgetView
           tasks={tasks}
           session={focusSession.session}
