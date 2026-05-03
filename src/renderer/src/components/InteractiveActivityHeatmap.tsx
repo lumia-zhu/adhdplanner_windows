@@ -18,6 +18,7 @@ import { computeActiveTimeRange } from '../utils/activity-time-range'
 // ===================== 常量 =====================
 
 const TOTAL_BLOCKS = 24
+const EXPECTED_RECORDS_PER_BLOCK = 120
 function ratioToLevel(usageRatio: number): number {
   if (usageRatio <= 0) return 0
   if (usageRatio <= 0.25) return 1

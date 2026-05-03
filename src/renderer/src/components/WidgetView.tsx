@@ -460,40 +460,77 @@ function FocusDynamicBar({
 
   const fallbackStuckFirstReply = (reason: string, category: StuckChatContext['stuckCategory']): string => {
     const cleanReason = reason.trim()
-    const questionByCategory: Record<StuckChatContext['stuckCategory'], string> = {
-      task_understanding: '刚才你看着这个任务时，脑子里第一个冒出来的疑问是什么？',
-      task_load: '刚才你觉得它很复杂的时候，最先冒出来的那一部分是什么？',
-      attention: '刚才你被带走前，手上这一步或你的状态发生了什么？',
-      emotion_motivation: '刚才那种不想做，你会怎么形容它？',
-      context_conflict: '刚才除了这个任务，还有什么事情一直在你脑子里冒出来？',
+    const promptByCategory: Record<StuckChatContext['stuckCategory'], { question: string; examples: string }> = {
+      task_understanding: {
+        question: '刚才你看着这个任务时，脑子里第一个冒出来的 **疑问** 是什么？',
+        examples: '比如不知道标准，或不知道下一步从哪进。',
+      },
+      task_load: {
+        question: '刚才你觉得它变复杂的时候，最先冒出来的是 **哪一块**？',
+        examples: '比如材料太多，或要同时想的东西太多。',
+      },
+      attention: {
+        question: '刚才注意力被带走前，手上这一步发生了 **什么变化**？',
+        examples: '比如已经有点停住，或旁边有东西一直吸引你。',
+      },
+      emotion_motivation: {
+        question: '刚才那种 **不想做**，你会怎么形容它？',
+        examples: '比如累、烦，或说不太出来的一团抗拒。',
+      },
+      context_conflict: {
+        question: '刚才除了这个任务，还有什么事情一直在你脑子里 **占位置**？',
+        examples: '比如现实事务，或另一个更急的任务。',
+      },
     }
-    return cleanReason
-      ? `你卡在「${cleanReason}」，先不用急着马上解决。\n\n不用分析原因，按刚才脑子里的真实想法说就行：${questionByCategory[category]}`
-      : `先不用急着马上解决。\n\n不用分析原因，按刚才脑子里的真实想法说就行：${questionByCategory[category]}`
+    const categoryPrompt = promptByCategory[category]
+    const anchor = cleanReason
+      ? `你卡在「${cleanReason}」，先不用急着马上解决。`
+      : '先不用急着马上解决。'
+    return `${anchor}\n\n不用分析原因，按刚才脑子里的真实想法说就行：${categoryPrompt.question}\n\n${categoryPrompt.examples}`
   }
 
   const fallbackStuckSecondReply = (context: StuckChatContext): string => {
-    const pendingTask = context.todayTasks.find(task => !task.completed && task.title !== context.taskTitle)
-    const switchTaskText = pendingTask
-      ? `，或者先换到「${pendingTask.title}」做 **5 分钟**`
-      : ''
-    return `听起来这里需要先把压力降下来，而不是硬推完整任务。\n\n可以先和「${context.taskTitle}」接触 **1 分钟**，只打开或看一眼材料${switchTaskText}。`
+    if (context.stuckCategory === 'emotion_motivation') {
+      const pendingTask = context.todayTasks.find(task => !task.completed && task.title !== context.taskTitle)
+      const switchTaskText = pendingTask
+        ? `> 可以先这样试试：把「${context.taskTitle}」停在现在这个位置，换到「${pendingTask.title}」试 **5 分钟**。`
+        : `> 可以先这样试试：把「${context.taskTitle}」停在现在这个位置，离开屏幕 **3 分钟**。`
+      return `听起来现在更需要先把阻力降下来，而不是硬推完整任务。\n\n${switchTaskText}\n\n目的只是让自己不要完全断掉，不需要马上恢复满格状态。`
+    }
+    return `听起来真正卡住的是进入方式还不够小，不是你不努力。\n\n> 可以先这样试试：回到「${context.taskTitle}」，做一个 **1 分钟** 动作。\n\n打开当前材料或任务页，停在最容易继续的那个位置就可以。`
   }
 
   const renderStuckMessageContent = (text: string) => {
     const paragraphs = text.split(/\n{2,}/).map(part => part.trim()).filter(Boolean)
+    const renderInlineContent = (paragraph: string) => {
+      const parts = paragraph.split(/(\*\*[^*]+\*\*)/g)
+      return parts.map((part, index) => {
+        if (part.startsWith('**') && part.endsWith('**')) {
+          return <strong key={index} className="font-semibold text-gray-900">{part.slice(2, -2)}</strong>
+        }
+        return <span key={index}>{part}</span>
+      })
+    }
+
     return (
-      <div className="space-y-2">
+      <div className="space-y-3">
         {paragraphs.map((paragraph, paragraphIndex) => {
-          const parts = paragraph.split(/(\*\*[^*]+\*\*)/g)
+          const isCallout = paragraph.startsWith('>')
+          const cleanParagraph = isCallout ? paragraph.replace(/^>\s*/, '') : paragraph
+          if (isCallout) {
+            return (
+              <div
+                key={paragraphIndex}
+                className="rounded-xl border border-gray-200 bg-gray-50/80 px-3 py-2 text-gray-700 leading-relaxed"
+              >
+                {renderInlineContent(cleanParagraph)}
+              </div>
+            )
+          }
+
           return (
-            <p key={paragraphIndex}>
-              {parts.map((part, index) => {
-                if (part.startsWith('**') && part.endsWith('**')) {
-                  return <strong key={index} className="font-semibold text-gray-900">{part.slice(2, -2)}</strong>
-                }
-                return <span key={index}>{part}</span>
-              })}
+            <p key={paragraphIndex} className="leading-relaxed">
+              {renderInlineContent(cleanParagraph)}
             </p>
           )
         })}
@@ -1077,7 +1114,7 @@ function FocusDynamicBar({
                          disabled:opacity-40 disabled:cursor-not-allowed disabled:shadow-none
                          transition-all"
             >
-              获取建议
+              聊一下吧
             </button>
           </div>
 
@@ -1109,7 +1146,7 @@ function FocusDynamicBar({
             <span className="text-white text-2xs">AI</span>
           </div>
           <span className="text-xs text-amber-700 font-medium flex-1 truncate">
-            卡住急救对话
+            聊一聊吧
           </span>
           <span className="text-xs text-gray-500 font-mono flex-shrink-0
                            bg-gray-100/80 px-2 py-0.5 rounded-md">{timeStr}</span>
@@ -1143,11 +1180,12 @@ function FocusDynamicBar({
                 className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
               >
                 <div
-                  className={`max-w-[92%] rounded-2xl px-3.5 py-2.5 text-[13px] leading-[1.65] ${
+                  className={`no-drag select-text cursor-text max-w-[92%] rounded-2xl px-3.5 py-2.5 text-[13px] leading-[1.65] ${
                     message.role === 'user'
                       ? 'bg-orange-500 text-white rounded-br-md'
                       : 'bg-gray-50 text-gray-700 border border-gray-100 rounded-bl-md'
                   }`}
+                  style={{ userSelect: 'text', WebkitUserSelect: 'text' }}
                 >
                   {renderStuckMessageContent(message.content)}
                 </div>
