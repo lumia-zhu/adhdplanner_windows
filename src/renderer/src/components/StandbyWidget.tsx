@@ -2,7 +2,7 @@
  * StandbyWidget —— 常驻待命入口
  *
  * 两种状态：
- *   1. 待命条（56px）—— 任务名下拉选择 + 开始/继续 + 展开主界面
+ *   1. 待命条（52px）—— 任务名下拉选择 + 开始/继续 + 展开主界面
  *   2. 第一步面板（330px）—— 点击"开始"后内嵌展开，确认第一步后直接进入执行
  *
  * 色彩规范：
@@ -20,7 +20,7 @@ import { findStartupMemoryMatches, mergeStartupSuggestions } from '../services/s
 import AILoadingTips from './AILoadingTips'
 
 const BAR_W = 560
-const BAR_H = 56
+const BAR_H = 52
 const PANEL_H = 330
 const DROPDOWN_MAX_H = 180  // 4.5 行，最后一行只露半截，暗示可滚动
 const TASK_ROW_H = 40
@@ -410,7 +410,7 @@ export default function StandbyWidget({
                     overflow-hidden select-none transition-all duration-200">
 
       {/* ---- 主条 ---- */}
-      <div className="drag-region flex items-center gap-2.5 px-3" style={{ height: BAR_H }}>
+      <div className="drag-region flex items-center gap-2 px-3" style={{ height: BAR_H }}>
 
         {/* 区域1：任务名下拉选择器 */}
         <button
@@ -419,7 +419,7 @@ export default function StandbyWidget({
           title={currentTask
             ? `${currentTask.title}${isPaused ? `\n上次停在：${currentTask.pausedSession?.currentMicroTask}` : ''}`
             : '还没有任务'}
-          className={`no-drag flex-1 min-w-0 flex items-center gap-2 text-left rounded-lg px-2 py-1.5 transition-colors ${
+          className={`no-drag flex-1 min-w-0 flex items-center gap-2 text-left rounded-lg px-2 py-1 transition-colors ${
             incompleteTasks.length > 0 ? 'hover:bg-gray-50 cursor-pointer' : 'cursor-default'
           } ${dropdownOpen ? 'bg-gray-50' : ''}`}
         >
@@ -444,7 +444,7 @@ export default function StandbyWidget({
         {currentTask && (
           <button
             onClick={() => handleStart(currentTask)}
-            className={`no-drag flex items-center gap-1.5 px-4 py-1.5 rounded-full text-white text-sm font-semibold transition-all active:scale-95 shadow-sm ${
+            className={`no-drag flex items-center gap-1.5 px-4 py-1 rounded-full text-white text-sm font-semibold transition-all active:scale-95 shadow-sm ${
               isPaused
                 ? 'bg-amber-500 hover:bg-amber-600 shadow-amber-200/50'
                 : 'bg-emerald-500 hover:bg-emerald-600 shadow-emerald-200/50'
@@ -462,24 +462,24 @@ export default function StandbyWidget({
           {onQuickAddTask && (
             <button
               onClick={quickAddMode ? closeQuickAdd : openQuickAdd}
-              className={`w-8 h-8 flex items-center justify-center rounded-lg transition-all ${
+              className={`w-7 h-7 flex items-center justify-center rounded-lg transition-all ${
                 quickAddMode
                   ? 'text-indigo-500 bg-indigo-50 rotate-45'
                   : 'text-gray-700 hover:text-emerald-600 hover:bg-emerald-50'
               }`}
               title={quickAddMode ? '取消添加' : '快速添加任务'}
             >
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
               </svg>
             </button>
           )}
           <button
             onClick={onExpand}
-            className="w-8 h-8 flex items-center justify-center text-gray-700 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+            className="w-7 h-7 flex items-center justify-center text-gray-700 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
             title="展开主界面"
           >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
             </svg>
           </button>

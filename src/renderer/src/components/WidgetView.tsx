@@ -9,7 +9,7 @@
  *   flow       – 心流模式：只显示宏观任务名 + 计时 + [✓完成]
  *
  * 窗口尺寸：
- *   executing / quick → 560×56（低干扰横向薄条）
+ *   executing / quick → 560×52（低干扰横向薄条）
  *   relay            → 380×232（展开）
  *   stuck_a / stuck_b→ 380×304/460（急救面板）
  */
@@ -33,7 +33,7 @@ const BAR_H_THIN = 66
 const BAR_H_RELAY = 280
 const BAR_H_STUCK = 340
 const BAR_H_STUCK_CHAT = 460
-const BAR_H_FIRST_STEP = 56  // 简化模式：横向低干扰任务条
+const BAR_H_FIRST_STEP = 52  // 简化模式：横向低干扰任务条
 
 // ★ Feature Flag：关闭逐步拆解（relay 循环），简化为"理解 → 第一步 → 完成 → 退出"
 // 设为 true 可恢复完整的 step-by-step 接力模式
@@ -73,7 +73,7 @@ export interface FocusSession {
 }
 
 /** 快速专注模式下的薄条高度 */
-const BAR_H_QUICK = 56
+const BAR_H_QUICK = 52
 
 interface WidgetViewProps {
   tasks: Task[]
@@ -697,7 +697,7 @@ function FocusDynamicBar({
           <div className="drag-region w-full h-full flex items-center gap-2.5 bg-white/75 hover:bg-white/95 backdrop-blur-md
                           border border-gray-200/35 hover:border-gray-200/60 rounded-xl
                           shadow-[0_2px_12px_rgba(0,0,0,0.035)] hover:shadow-[0_4px_18px_rgba(0,0,0,0.08)]
-                          px-3 py-1.5 select-none overflow-hidden transition-all duration-200">
+                          px-3 py-1 select-none overflow-hidden transition-all duration-200">
             <div className="flex-1 min-w-0 flex items-center gap-2">
               <span className="text-xs text-gray-800 truncate max-w-[96px]" title={taskTitle}>{taskTitle}</span>
               <span className="text-gray-400 flex-shrink-0">·</span>
@@ -723,7 +723,7 @@ function FocusDynamicBar({
               <button
                 onClick={handleMicroDoneClick}
                 disabled={showMicroDone}
-                className={`px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all
+                className={`px-3.5 py-1 rounded-full text-xs font-semibold transition-all
                            ${showMicroDone
                              ? 'bg-teal-400 text-white shadow-sm shadow-teal-200/50'
                              : 'bg-teal-500 text-white shadow-sm shadow-teal-200/50 hover:bg-teal-600 hover:shadow-md hover:shadow-teal-200/60 active:scale-95'
@@ -754,7 +754,7 @@ function FocusDynamicBar({
           <div className="drag-region w-full h-full flex items-center gap-2.5 bg-white/75 hover:bg-white/95 backdrop-blur-md
                           border border-gray-200/35 hover:border-gray-200/60 rounded-xl
                           shadow-[0_2px_12px_rgba(0,0,0,0.035)] hover:shadow-[0_4px_18px_rgba(0,0,0,0.08)]
-                          px-3 py-1.5 select-none overflow-hidden transition-all duration-200">
+                          px-3 py-1 select-none overflow-hidden transition-all duration-200">
             <div className="flex-1 min-w-0 flex items-center gap-2">
               <span className="text-xs text-gray-800 flex-shrink-0">当前任务</span>
               <span className="text-gray-400 flex-shrink-0">·</span>
@@ -782,7 +782,7 @@ function FocusDynamicBar({
                   triggerEffect(e.currentTarget)
                   onTaskDone()
                 }}
-                className="px-3.5 py-1.5 rounded-full bg-emerald-500 text-white text-xs font-semibold
+                className="px-3.5 py-1 rounded-full bg-emerald-500 text-white text-xs font-semibold
                            shadow-sm shadow-emerald-200/50
                            hover:bg-emerald-600 hover:shadow-md hover:shadow-emerald-200/60
                            active:scale-95 transition-all"
@@ -1523,7 +1523,7 @@ function QuickFocusWidget({ session, onTaskDone, onExit }: QuickFocusWidgetProps
     <div className="drag-region w-full h-full flex items-center gap-2.5 bg-white/75 hover:bg-white/95 backdrop-blur-md
                     border border-gray-200/35 hover:border-gray-200/60 rounded-xl
                     shadow-[0_2px_12px_rgba(0,0,0,0.035)] hover:shadow-[0_4px_18px_rgba(0,0,0,0.08)]
-                    px-3 py-1.5 select-none overflow-hidden transition-all duration-200">
+                    px-3 py-1 select-none overflow-hidden transition-all duration-200">
       <div className="flex-1 min-w-0 flex items-center gap-2">
         <span className="text-sm text-gray-950 font-semibold truncate">专注中</span>
       </div>
@@ -1533,7 +1533,7 @@ function QuickFocusWidget({ session, onTaskDone, onExit }: QuickFocusWidgetProps
                          bg-gray-100/70 px-2 py-0.5 rounded-lg">{timeStr}</span>
         <button
           onClick={onTaskDone}
-          className="px-4 py-1.5 rounded-full bg-emerald-500 text-white text-xs font-semibold
+          className="px-4 py-1 rounded-full bg-emerald-500 text-white text-xs font-semibold
                      shadow-sm shadow-emerald-200/50 hover:bg-emerald-600
                      hover:shadow-md hover:shadow-emerald-200/60 active:scale-95 transition-all"
         >
