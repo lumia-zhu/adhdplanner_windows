@@ -188,6 +188,132 @@ function formatDateFriendly(dateStr: string): string {
   return `${d.getMonth() + 1}月${d.getDate()}日 ${WEEKDAYS[d.getDay()]}`
 }
 
+const APP_USAGE_SAMPLE_INTERVAL_SEC = 2
+const PROMPT_EXCLUDED_APP_NAMES = new Set([
+  'electron',
+  'metaplan',
+  'task-manager',
+  '任务管理器',
+  'explorer',
+  'windows explorer',
+  'file explorer',
+  '资源管理器',
+  'windows terminal',
+  'terminal',
+  'powershell',
+  'windows powershell',
+  'command prompt',
+  'cmd',
+  'conhost',
+  'openconsole',
+])
+
+function formatClockTime(ts: number): string {
+  return new Date(ts).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+}
+
+function formatDurationForPrompt(seconds: number): string {
+  if (seconds < 60) return `${Math.max(Math.round(seconds), 1)}秒`
+  const minutes = Math.round(seconds / 60)
+  if (minutes < 60) return `${minutes}分钟`
+  return `${(minutes / 60).toFixed(1)}小时`
+}
+
+function shouldIncludePromptAppName(name: string): boolean {
+  return !PROMPT_EXCLUDED_APP_NAMES.has(name.trim().toLowerCase())
+}
+
+function buildTaskSessionPromptContext(events: TrackEvent[]): string {
+  const lines: string[] = []
+
+  for (const event of events) {
+    if (event.type !== 'session.ended') continue
+    const payload = event.payload as {
+      taskTitle?: string
+      totalDurationSeconds?: number
+      endReason?: string
+      source?: string
+    }
+    if (!payload.taskTitle || !payload.totalDurationSeconds || payload.totalDurationSeconds <= 0) continue
+
+    const endTs = event.timestamp
+    const startTs = endTs - payload.totalDurationSeconds * 1000
+    const sourceLabel = payload.source === 'manual' ? '补记' : '实时记录'
+    const statusLabel = payload.endReason === 'task_done'
+      ? '完成'
+      : payload.endReason === 'manual_entry'
+        ? '补记'
+        : payload.endReason === 'pause'
+          ? '暂停'
+          : '结束'
+
+    lines.push(
+      `- ${payload.taskTitle}：${formatClockTime(startTs)}-${formatClockTime(endTs)}，${formatDurationForPrompt(payload.totalDurationSeconds)}，${statusLabel}（${sourceLabel}）`
+    )
+  }
+
+  if (lines.length === 0) return ''
+
+  return [
+    '任务真实发生时间段（严格来自 session.ended 的结束时间和用时反推；不要用电脑活跃高峰推断任务完成时间）：',
+    ...lines.slice(-12),
+  ].join('\n')
+}
+
+function buildAppUsagePromptContext(records: ActivityRecord[]): string {
+  const totalByApp = new Map<string, number>()
+  const hourlyByApp = new Map<number, Map<string, number>>()
+
+  for (const record of records) {
+    if (!record.appUsage) continue
+    const hour = new Date(record.ts).getHours()
+    let hourMap = hourlyByApp.get(hour)
+    if (!hourMap) {
+      hourMap = new Map<string, number>()
+      hourlyByApp.set(hour, hourMap)
+    }
+
+    for (const [appName, count] of Object.entries(record.appUsage)) {
+      if (typeof count !== 'number' || count <= 0) continue
+      if (!shouldIncludePromptAppName(appName)) continue
+
+      const seconds = count * APP_USAGE_SAMPLE_INTERVAL_SEC
+      totalByApp.set(appName, (totalByApp.get(appName) || 0) + seconds)
+      hourMap.set(appName, (hourMap.get(appName) || 0) + seconds)
+    }
+  }
+
+  const totalApps = [...totalByApp.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 6)
+    .map(([name, seconds]) => `${name} ${formatDurationForPrompt(seconds)}`)
+
+  const hourlyLines = [...hourlyByApp.entries()]
+    .map(([hour, apps]) => {
+      const topApps = [...apps.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 3)
+      const totalSeconds = topApps.reduce((sum, [, seconds]) => sum + seconds, 0)
+      return {
+        hour,
+        totalSeconds,
+        text: `${hour}:00-${hour + 1}:00：${topApps.map(([name, seconds]) => `${name} ${formatDurationForPrompt(seconds)}`).join('、')}`,
+      }
+    })
+    .filter(item => item.totalSeconds > 0)
+    .sort((a, b) => b.totalSeconds - a.totalSeconds)
+    .slice(0, 5)
+    .map(item => item.text)
+
+  if (totalApps.length === 0 && hourlyLines.length === 0) return ''
+
+  return [
+    '应用使用时长（仅记录应用名，不记录窗口标题/网址；可用于解释电脑活跃时段在做什么）：',
+    totalApps.length > 0 ? `- 总排行：${totalApps.join('、')}` : '',
+    hourlyLines.length > 0 ? `- 分时段 Top 应用：${hourlyLines.join('；')}` : '',
+  ].filter(Boolean).join('\n')
+}
+
 // ===================== 主组件 =====================
 
 export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile, onClose }: ReflectionViewProps) {
@@ -795,6 +921,8 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
     const activityInfo = activityTimeDistribution
       ? `\n\n精力时间分布（每小时电脑活跃度）：\n${activityTimeDistribution}`
       : ''
+    const taskSessionInfo = buildTaskSessionPromptContext(events)
+    const appUsageInfo = buildAppUsagePromptContext(activityData)
 
     // 任务用时排行（对齐条形图数据）
     let taskDurationInfo = ''
@@ -811,10 +939,12 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
     }
 
     const insightInfo = insightContext ? `\n\n${insightContext}` : ''
-    const prompt = buildReflectionSystemPrompt(context + taskInfo + productivityInfo + activityInfo + taskDurationInfo + insightInfo, false, isToday, memoryContext, selectedDate)
+    const taskSessionContext = taskSessionInfo ? `\n\n${taskSessionInfo}` : ''
+    const appUsageContext = appUsageInfo ? `\n\n${appUsageInfo}` : ''
+    const prompt = buildReflectionSystemPrompt(context + taskInfo + productivityInfo + activityInfo + taskSessionContext + appUsageContext + taskDurationInfo + insightInfo, false, isToday, memoryContext, selectedDate)
     console.log('[Memory Debug] systemPrompt 构建完成, 包含记忆:', prompt.includes('对话记忆'), ', memoryContext长度:', memoryContext.length)
     return prompt
-  }, [summary, events, localTasks, completionRate, totalUsageMinutes, productivityRatio, flowRatio, activityTimeDistribution, taskDurations, isToday, memoryContext, memoryLoaded, insightContext, insightLoaded, selectedDate])
+  }, [summary, events, localTasks, completionRate, totalUsageMinutes, productivityRatio, flowRatio, activityTimeDistribution, activityData, taskDurations, isToday, memoryContext, memoryLoaded, insightContext, insightLoaded, selectedDate])
 
   // ---- 周视图数据回调 ----
   const handleWeekDataReady = useCallback((data: WeekDayData[]) => {

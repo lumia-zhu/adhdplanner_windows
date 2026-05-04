@@ -630,8 +630,13 @@ const ReflectionChat = forwardRef<ReflectionChatHandle, ReflectionChatProps>(fun
   const isBusy = loading || streaming
   const canSend = chatActive && !isBusy
 
-  // 发送一条用户消息（文本来自输入框或备选问题点击）
-  const sendUserMessage = useCallback(async (text: string) => {
+  // 发送一条用户消息；displayText 给用户看，aiText 可以携带不展示的流程语义
+  const sendUserMessage = useCallback(async (
+    displayText: string,
+    aiText = displayText,
+    source: 'input' | 'suggestion' = 'input',
+  ) => {
+    const text = displayText.trim()
     if (!text || !canSend) return
 
     const msgIdx = bubbles.filter(b => b.role === 'user').length
@@ -640,6 +645,7 @@ const ReflectionChat = forwardRef<ReflectionChatHandle, ReflectionChatProps>(fun
       mode: rawSessionRef.current.mode,
       messageIndex: msgIdx,
       charCount: text.length,
+      source,
     })
 
     setSuggestions([])
@@ -649,12 +655,21 @@ const ReflectionChat = forwardRef<ReflectionChatHandle, ReflectionChatProps>(fun
 
     const newMessages: ReflectionMessage[] = [
       ...messagesRef.current,
-      { role: 'user', content: text },
+      { role: 'user', content: aiText },
     ]
 
     await sendToAI(newMessages)
     inputRef.current?.focus()
   }, [canSend, sendToAI, persistRawMessage])
+
+  const sendSuggestionMessage = useCallback((label: string) => {
+    const scopeText = mode === 'weekly' ? '本周行为模式和历史行为记录' : '用户当天行为模式和历史行为记录'
+    const aiText = [
+      `用户选择了分析角度：${label}`,
+      `这是 AI 基于${scopeText}发现的一个任务管理问题入口。请按这个 Tag 进入第二步：先结合相关图表、行为记录或近期记忆解释它背后可能对应的任务管理 pattern；再问 1 个开放式上下文问题，帮助用户觉察自己的任务、状态或策略；不要直接跳到建议，也不要问用户是否想聊这个。`,
+    ].join('\n')
+    sendUserMessage(label, aiText, 'suggestion')
+  }, [mode, sendUserMessage])
 
   const handleSend = () => {
     const text = input.trim()
@@ -766,19 +781,24 @@ const ReflectionChat = forwardRef<ReflectionChatHandle, ReflectionChatProps>(fun
 
         {/* 备选反思问题 */}
         {suggestions.length > 0 && !isBusy && (
-          <div className="flex flex-wrap gap-2 pl-1">
-            {suggestions.map((q, i) => (
-              <button
-                key={i}
-                onClick={() => sendUserMessage(q)}
-                className="text-xs px-3 py-1.5 rounded-full border border-gray-200
-                           bg-white text-gray-600 hover:bg-gray-50 hover:border-gray-300
-                           hover:text-gray-800 transition-all cursor-pointer
-                           leading-snug text-left"
-              >
-                {q}
-              </button>
-            ))}
+          <div className="pl-1 space-y-2">
+            <div className="text-[11px] text-gray-400">
+              几个或许值得探索的方向：
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {suggestions.map((q, i) => (
+                <button
+                  key={i}
+                  onClick={() => sendSuggestionMessage(q)}
+                  className="text-xs px-3 py-1.5 rounded-full border border-gray-200
+                             bg-white text-gray-600 hover:bg-gray-50 hover:border-gray-300
+                             hover:text-gray-800 transition-all cursor-pointer
+                             leading-snug text-left"
+                >
+                  {q}
+                </button>
+              ))}
+            </div>
           </div>
         )}
 
