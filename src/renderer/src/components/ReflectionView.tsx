@@ -75,12 +75,24 @@ const MAIN_WIDTH = 480
 const MAIN_HEIGHT = 680
 /** 侧边栏展开时窗口总宽度 */
 const EXPANDED_WIDTH = 880
+/** 反思页大窗口模式：尽量接近屏幕尺寸，但图表内容仍用 max-width 防止变形 */
+const REFLECTION_FULLSCREEN_MAX_WIDTH = 1320
+const REFLECTION_FULLSCREEN_MAX_HEIGHT = 900
 /** 侧边栏最小宽度 */
 const MIN_CHAT_WIDTH = 320
 /** 侧边栏最大宽度占比 */
 const MAX_CHAT_RATIO = 0.65
 /** 数据区最小宽度 */
 const MIN_DATA_WIDTH = 300
+
+function getReflectionFullscreenSize(): { width: number; height: number } {
+  const screenWidth = window.screen?.availWidth || REFLECTION_FULLSCREEN_MAX_WIDTH
+  const screenHeight = window.screen?.availHeight || REFLECTION_FULLSCREEN_MAX_HEIGHT
+  return {
+    width: Math.max(EXPANDED_WIDTH, Math.min(REFLECTION_FULLSCREEN_MAX_WIDTH, screenWidth - 48)),
+    height: Math.max(MAIN_HEIGHT, Math.min(REFLECTION_FULLSCREEN_MAX_HEIGHT, screenHeight - 48)),
+  }
+}
 
 // ===================== 辅助函数 =====================
 
@@ -439,6 +451,7 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
   // ---- 侧边栏状态（默认展开，用户无需手动点击机器人图标） ----
   const [chatOpen, setChatOpen] = useState(true)
   const [chatWidth, setChatWidth] = useState(400)
+  const [reflectionFullscreen, setReflectionFullscreen] = useState(false)
   // 截图功能已移除：纯文本数据更精确、可控、可调试，避免视觉误读
   const dataPanelRef = useRef<HTMLDivElement>(null)
   const hasDisplayDataRef = useRef(false)
@@ -1531,18 +1544,42 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
     tracker.track('reflect.chat_opened', { date: selectedDate, mode: viewMode })
     hadChatRef.current = true
     setChatOpen(true)
-    window.electronAPI.resizeMainWindow(EXPANDED_WIDTH, MAIN_HEIGHT)
-  }, [])
+    if (!reflectionFullscreen) {
+      window.electronAPI.resizeMainWindow(EXPANDED_WIDTH, MAIN_HEIGHT)
+    }
+  }, [reflectionFullscreen, selectedDate, viewMode])
 
   const closeChat = useCallback(() => {
     setChatOpen(false)
-    window.electronAPI.resizeMainWindow(MAIN_WIDTH, MAIN_HEIGHT)
-  }, [])
+    if (!reflectionFullscreen) {
+      window.electronAPI.resizeMainWindow(MAIN_WIDTH, MAIN_HEIGHT)
+    }
+  }, [reflectionFullscreen])
+
+  const toggleReflectionFullscreen = useCallback(() => {
+    const nextFullscreen = !reflectionFullscreen
+    setReflectionFullscreen(nextFullscreen)
+
+    if (nextFullscreen) {
+      const { width, height } = getReflectionFullscreenSize()
+      window.electronAPI.resizeMainWindow(width, height)
+    } else {
+      window.electronAPI.resizeMainWindow(chatOpen ? EXPANDED_WIDTH : MAIN_WIDTH, MAIN_HEIGHT)
+    }
+
+    tracker.track('reflect.fullscreen_toggled', {
+      date: selectedDate,
+      mode: viewMode,
+      fullscreen: nextFullscreen,
+    })
+  }, [chatOpen, reflectionFullscreen, selectedDate, viewMode])
 
   const handleChatEndedProperly = useCallback(() => {
     hadEndedProperlyRef.current = true
-    closeChat()
-  }, [closeChat])
+    setReflectionFullscreen(false)
+    window.electronAPI.resizeMainWindow(MAIN_WIDTH, MAIN_HEIGHT)
+    onClose()
+  }, [onClose])
 
   // 关闭反思页面：有对话时先保存记忆再关闭
   const handleClose = useCallback(async () => {
@@ -1551,11 +1588,11 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
       await chatRef.current.triggerEnd()
       hadEndedProperlyRef.current = true
     }
-    if (chatOpen) {
+    if (reflectionFullscreen || chatOpen) {
       window.electronAPI.resizeMainWindow(MAIN_WIDTH, MAIN_HEIGHT)
     }
     onClose()
-  }, [chatOpen, onClose])
+  }, [chatOpen, onClose, reflectionFullscreen])
 
   // ---- 拖拽分隔条逻辑 ----
   const handleDragStart = useCallback((e: React.MouseEvent) => {
@@ -1789,8 +1826,24 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
           </div>
         </div>
 
-        {/* 右侧：关闭按钮 */}
-        <div className="flex-shrink-0 flex justify-end">
+        {/* 右侧：全屏 + 关闭按钮 */}
+        <div className="flex-shrink-0 flex justify-end gap-1">
+          <button
+            onClick={toggleReflectionFullscreen}
+            className="no-drag w-7 h-7 rounded-md hover:bg-gray-100 flex items-center justify-center text-gray-400 hover:text-gray-600 transition-colors"
+            title={reflectionFullscreen ? '退出全屏' : '全屏查看'}
+            aria-label={reflectionFullscreen ? '退出全屏' : '全屏查看'}
+          >
+            {reflectionFullscreen ? (
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 9H5V5m0 0 5 5M15 9h4V5m0 0-5 5M9 15H5v4m0 0 5-5M15 15h4v4m0 0-5-5" />
+              </svg>
+            ) : (
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 3H3v5m0-5 6 6M16 3h5v5m0-5-6 6M8 21H3v-5m0 5 6-6M16 21h5v-5m0 5-6-6" />
+              </svg>
+            )}
+          </button>
           <button
             onClick={handleClose}
             className="no-drag w-7 h-7 rounded-md hover:bg-gray-100 flex items-center justify-center text-gray-400 hover:text-gray-600 transition-colors"
