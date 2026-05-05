@@ -36,6 +36,14 @@ interface TaskDurationChartProps {
   highlightPulseKey?: string
 }
 
+export function formatTaskDuration(durationSec: number): string {
+  if (durationSec < 60) return `${durationSec}s`
+
+  const minutes = Math.floor(durationSec / 60)
+  const seconds = durationSec % 60
+  return seconds > 0 ? `${minutes}m ${seconds}s` : `${minutes}m`
+}
+
 export type { TaskDurationItem, StuckMark }
 
 export default function TaskDurationChart({ data, onTaskHover, highlightTask, highlightPulseKey }: TaskDurationChartProps) {
@@ -76,11 +84,8 @@ export default function TaskDurationChart({ data, onTaskHover, highlightTask, hi
                 />
               </div>
 
-              <span className="text-xxs text-gray-500 w-[44px] flex-shrink-0 text-right font-mono">
-                {item.durationSec >= 60
-                  ? `${item.durationMin} min`
-                  : `${item.durationSec}s`
-                }
+              <span className="text-xxs text-gray-500 w-[56px] flex-shrink-0 text-right font-mono">
+                {formatTaskDuration(item.durationSec)}
               </span>
             </div>
           </div>

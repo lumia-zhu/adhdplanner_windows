@@ -613,7 +613,10 @@ const ReflectionChat = forwardRef<ReflectionChatHandle, ReflectionChatProps>(fun
     return () => { streamCleanupRef.current?.() }
   }, [])
 
-  const sendToAI = useCallback((newMessages: ReflectionMessage[]): Promise<string | null> => {
+  const sendToAI = useCallback((
+    newMessages: ReflectionMessage[],
+    options: { suppressSuggestions?: boolean } = {},
+  ): Promise<string | null> => {
     setLoading(true)
     setStreaming(false)
     setError(null)
@@ -654,7 +657,7 @@ const ReflectionChat = forwardRef<ReflectionChatHandle, ReflectionChatProps>(fun
         const content = sanitizeAssistantDisplayText(rawContent).trim()
         if (!content) return null
 
-        if (source === 'stream') {
+        if (source === 'stream' && !options.suppressSuggestions) {
           const cleanedSuggestions = extractSuggestions(rawContent)
           if (cleanedSuggestions.length > 0) {
             console.log('[ReflectionChat] 内嵌探索方向:', cleanedSuggestions)
@@ -1022,7 +1025,7 @@ const ReflectionChat = forwardRef<ReflectionChatHandle, ReflectionChatProps>(fun
       { role: 'user', content: aiText },
     ]
 
-    await sendToAI(newMessages)
+    await sendToAI(newMessages, { suppressSuggestions: source === 'suggestion' })
     inputRef.current?.focus()
   }, [canSend, sendToAI, persistRawMessage])
 
@@ -1030,7 +1033,7 @@ const ReflectionChat = forwardRef<ReflectionChatHandle, ReflectionChatProps>(fun
     const scopeText = mode === 'weekly' ? '本周行为模式和历史行为记录' : '用户当天行为模式和历史行为记录'
     const aiText = [
       `用户选择了分析角度：${label}`,
-      `这是 AI 基于${scopeText}发现的一个任务管理问题入口。请按这个 Tag 进入第二步：先结合相关图表、行为记录或近期记忆解释它背后可能对应的任务管理 pattern；再问 1 个开放式上下文问题，帮助用户觉察自己的任务、状态或策略；不要直接跳到建议，也不要问用户是否想聊这个。`,
+      `这是 AI 基于${scopeText}发现的一个任务管理问题入口。请按这个 Tag 进入第二步：先结合相关图表、行为记录或近期记忆解释它背后可能对应的任务管理 pattern；再问 1 个开放式上下文问题，帮助用户觉察自己的任务、状态或策略；不要直接跳到建议，也不要问用户是否想聊这个。本轮只等待用户补充上下文，禁止输出 SUGGESTIONS 注释，禁止生成新的探索方向。`,
     ].join('\n')
     sendUserMessage(label, aiText, 'suggestion')
   }, [mode, sendUserMessage])

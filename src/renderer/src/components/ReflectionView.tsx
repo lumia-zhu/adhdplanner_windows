@@ -209,6 +209,7 @@ const PROMPT_EXCLUDED_APP_NAMES = new Set([
 ])
 
 const HIGHLIGHT_DURATION_MS = 5000
+const HIGHLIGHT_START_DELAY_MS = 160
 
 const FOCUS_FALLBACK_CHARTS: Record<VisualFocusType, string> = {
   'activity-hour': 'chart-activity-heatmap',
@@ -452,6 +453,7 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
   // ---- AI 视觉引用高亮：同一时间只保留一个重点位置 ----
   const [activeHighlight, setActiveHighlight] = useState<ActiveHighlight | null>(null)
   const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const highlightStartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const chartHighlightRef = useRef<string | null>(null)
 
   // ---- AI 浮标气泡 ----
@@ -1070,16 +1072,20 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
 
     const panelRect = panel.getBoundingClientRect()
     const elRect = el.getBoundingClientRect()
+    const panelHeight = Math.max(panelRect.height, 1)
+    const elHeight = Math.max(elRect.height, 1)
     const visibleTop = Math.max(elRect.top, panelRect.top)
     const visibleBottom = Math.min(elRect.bottom, panelRect.bottom)
     const visibleHeight = Math.max(visibleBottom - visibleTop, 0)
-    const measuredHeight = Math.min(Math.max(elRect.height, 1), Math.max(panelRect.height, 1))
+    const measuredHeight = Math.min(elHeight, panelHeight)
     const visibleRatio = visibleHeight / measuredHeight
+    const targetCenterRatio = ((elRect.top + measuredHeight / 2) - panelRect.top) / panelHeight
 
-    if (visibleRatio >= 0.6) return true
+    if (visibleRatio >= 0.85 && targetCenterRatio >= 0.32 && targetCenterRatio <= 0.68) return true
 
-    const desiredOffset = Math.max(24, (panelRect.height - measuredHeight) * 0.4)
-    const rawTop = panel.scrollTop + (elRect.top - panelRect.top) - desiredOffset
+    const targetAnchorInElement = Math.min(elHeight * 0.5, panelHeight * 0.42)
+    const desiredAnchorInPanel = panelHeight * 0.46
+    const rawTop = panel.scrollTop + (elRect.top - panelRect.top) + targetAnchorInElement - desiredAnchorInPanel
     const maxTop = Math.max(panel.scrollHeight - panel.clientHeight, 0)
     const targetTop = Math.max(0, Math.min(rawTop, maxTop))
 
@@ -1088,6 +1094,11 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
   }, [])
 
   const handleVisualRef = useCallback((ref: VisualRef) => {
+    if (highlightStartTimerRef.current) {
+      clearTimeout(highlightStartTimerRef.current)
+      highlightStartTimerRef.current = null
+    }
+
     if (highlightTimerRef.current) {
       clearTimeout(highlightTimerRef.current)
       highlightTimerRef.current = null
@@ -1104,12 +1115,15 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
       const el = document.getElementById(chartId)
       if (!el) return false
       scrollChartIntoDataPanel(chartId)
-      el.classList.add('chart-highlight')
-      chartHighlightRef.current = chartId
-      highlightTimerRef.current = setTimeout(() => {
-        el.classList.remove('chart-highlight')
-        if (chartHighlightRef.current === chartId) chartHighlightRef.current = null
-      }, HIGHLIGHT_DURATION_MS)
+      highlightStartTimerRef.current = setTimeout(() => {
+        el.classList.add('chart-highlight')
+        chartHighlightRef.current = chartId
+        highlightStartTimerRef.current = null
+        highlightTimerRef.current = setTimeout(() => {
+          el.classList.remove('chart-highlight')
+          if (chartHighlightRef.current === chartId) chartHighlightRef.current = null
+        }, HIGHLIGHT_DURATION_MS)
+      }, HIGHLIGHT_START_DELAY_MS)
       return true
     }
 
@@ -1158,18 +1172,20 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
         return
       }
 
-      setActiveHighlight({
-        id: `app-usage:multi:${Date.now()}`,
-        type: 'app-usage',
-        value: uniqueApps[0],
-        label: labels.length > 0 ? [...new Set(labels)].join('、') : uniqueApps.join('、'),
-        appNames: uniqueApps,
-      })
-
-      highlightTimerRef.current = setTimeout(() => {
-        setActiveHighlight(null)
-        highlightTimerRef.current = null
-      }, HIGHLIGHT_DURATION_MS)
+      highlightStartTimerRef.current = setTimeout(() => {
+        setActiveHighlight({
+          id: `app-usage:multi:${Date.now()}`,
+          type: 'app-usage',
+          value: uniqueApps[0],
+          label: labels.length > 0 ? [...new Set(labels)].join('、') : uniqueApps.join('、'),
+          appNames: uniqueApps,
+        })
+        highlightStartTimerRef.current = null
+        highlightTimerRef.current = setTimeout(() => {
+          setActiveHighlight(null)
+          highlightTimerRef.current = null
+        }, HIGHLIGHT_DURATION_MS)
+      }, HIGHLIGHT_START_DELAY_MS)
       return
     }
 
@@ -1233,23 +1249,29 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
       return
     }
 
-    setActiveHighlight({
-      id: `${ref.focusType}:${resolvedValue}:${Date.now()}`,
-      type: ref.focusType,
-      value: resolvedValue,
-      label: ref.label,
-      startHour: ref.focusType === 'activity-range' ? Number(resolvedValue.split('-')[0]) : ref.startHour,
-      endHour: ref.focusType === 'activity-range' ? Number(resolvedValue.split('-')[1]) : ref.endHour,
-    })
-
-    highlightTimerRef.current = setTimeout(() => {
-      setActiveHighlight(null)
-      highlightTimerRef.current = null
-    }, HIGHLIGHT_DURATION_MS)
+    highlightStartTimerRef.current = setTimeout(() => {
+      setActiveHighlight({
+        id: `${ref.focusType}:${resolvedValue}:${Date.now()}`,
+        type: ref.focusType,
+        value: resolvedValue,
+        label: ref.label,
+        startHour: ref.focusType === 'activity-range' ? Number(resolvedValue.split('-')[0]) : ref.startHour,
+        endHour: ref.focusType === 'activity-range' ? Number(resolvedValue.split('-')[1]) : ref.endHour,
+      })
+      highlightStartTimerRef.current = null
+      highlightTimerRef.current = setTimeout(() => {
+        setActiveHighlight(null)
+        highlightTimerRef.current = null
+      }, HIGHLIGHT_DURATION_MS)
+    }, HIGHLIGHT_START_DELAY_MS)
   }, [displayActivityData, scrollChartIntoDataPanel, sharedRangeEnd, sharedRangeStart, taskDurations, viewMode])
 
   useEffect(() => {
     setActiveHighlight(null)
+    if (highlightStartTimerRef.current) {
+      clearTimeout(highlightStartTimerRef.current)
+      highlightStartTimerRef.current = null
+    }
     if (highlightTimerRef.current) {
       clearTimeout(highlightTimerRef.current)
       highlightTimerRef.current = null
@@ -1262,6 +1284,7 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
 
   useEffect(() => {
     return () => {
+      if (highlightStartTimerRef.current) clearTimeout(highlightStartTimerRef.current)
       if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current)
       if (chartHighlightRef.current) {
         document.getElementById(chartHighlightRef.current)?.classList.remove('chart-highlight')

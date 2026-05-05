@@ -7,7 +7,7 @@
  */
 
 import { useState, useMemo } from 'react'
-import type { TaskDurationItem } from './TaskDurationChart'
+import { formatTaskDuration, type TaskDurationItem } from './TaskDurationChart'
 import type { WeekDayData } from './WeekView'
 
 /** 带日期信息的任务条目 */
@@ -71,8 +71,8 @@ export default function WeekTaskRanking({ days }: Props) {
                 />
               </div>
 
-              <span className="text-xxs text-gray-500 w-[44px] flex-shrink-0 text-right font-mono">
-                {item.durationSec >= 60 ? `${item.durationMin} min` : `${item.durationSec}s`}
+              <span className="text-xxs text-gray-500 w-[56px] flex-shrink-0 text-right font-mono">
+                {formatTaskDuration(item.durationSec)}
               </span>
 
               <span
