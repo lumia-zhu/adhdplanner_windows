@@ -7,13 +7,14 @@
 
 import { useState, useEffect, useRef, useCallback, useImperativeHandle, forwardRef } from 'react'
 import { tracker } from '../services/tracker'
-import type { AIConfig, ReflectionMessage, MessageContentPart } from '../services/ai'
-import { chatReflectionStream, extractMemoryFromChat } from '../services/ai'
+import type { AIConfig, ReflectionMessage, MessageContentPart, VisualTarget } from '../services/ai'
+import { chatReflectionStream, extractMemoryFromChat, selectReflectionVisualFocus } from '../services/ai'
 
 interface ChatBubble {
   role: 'user' | 'assistant'
   content: string
   timestamp: number
+  visualRef?: VisualRef | null
 }
 
 /**
@@ -32,12 +33,59 @@ const CHART_ID_MAP: Record<string, { domId: string; label: string }> = {
   'task-duration':   { domId: 'chart-task-duration',   label: '任务用时' },
   'activity':        { domId: 'chart-activity-heatmap', label: '活动分布' },
   'rhythm':          { domId: 'chart-rhythm',           label: '电脑活动' },
+  'app-usage':       { domId: 'chart-app-usage',        label: '应用使用时长' },
   // 周视图图表
   'week-completion': { domId: 'chart-week-completion', label: '每日任务完成率' },
   'week-metrics':    { domId: 'chart-week-metrics',    label: '周汇总指标' },
   'week-ranking':    { domId: 'chart-week-ranking',    label: '任务排行' },
   'week-heatmap':    { domId: 'chart-week-heatmap',    label: '活动热力图' },
   'week-rhythm':     { domId: 'chart-week-rhythm',     label: '电脑活动' },
+  'week-app-usage':  { domId: 'chart-week-app-usage',  label: '应用使用时长' },
+}
+
+export type VisualFocusType = 'activity-hour' | 'activity-range' | 'task-duration' | 'metric' | 'app-usage'
+
+export type VisualFocusRef = Extract<VisualRef, { kind: 'focus' }>
+
+export type VisualRef =
+  | { kind: 'chart'; chartId: string; label: string }
+  | { kind: 'focus'; focusType: VisualFocusType; value: string; label: string; chartId?: string; targetId?: string; startHour?: number; endHour?: number }
+  /** 同一图表内多项并列（当前用于多条应用时长） */
+  | { kind: 'multi-focus'; chartId: string; label: string; refs: VisualFocusRef[] }
+
+const FOCUS_TYPE_LABELS: Record<VisualFocusType, string> = {
+  'activity-hour': '电脑活动',
+  'activity-range': '电脑活动',
+  'task-duration': '任务',
+  metric: '指标',
+  'app-usage': '应用',
+}
+
+const METRIC_LABELS: Record<string, string> = {
+  'completed-tasks': '完成任务数',
+  'computer-usage': '电脑使用时长',
+  'focus-minutes': '任务时长',
+}
+
+function chartIdToRef(chartId: string): Extract<VisualRef, { kind: 'chart' }> | null {
+  const normalized = chartId.trim()
+  if (!normalized) return null
+
+  const direct = Object.entries(CHART_ID_MAP).find(([, entry]) => entry.domId === normalized)
+  if (direct) {
+    const [, entry] = direct
+    return { kind: 'chart', chartId: entry.domId, label: entry.label }
+  }
+
+  const byKey = CHART_ID_MAP[normalized.replace(/^chart-/, '')] ?? CHART_ID_MAP[normalized]
+  if (!byKey) return null
+  return { kind: 'chart', chartId: byKey.domId, label: byKey.label }
+}
+
+function visualRefKey(ref: VisualRef): string {
+  if (ref.kind === 'chart') return `chart:${ref.chartId}`
+  if (ref.kind === 'multi-focus') return `multi:${ref.refs.map(r => r.targetId ?? `${r.focusType}:${r.value}`).join('|')}`
+  return `focus:${ref.targetId ?? `${ref.focusType}:${ref.value}`}`
 }
 
 /** 轻量解析 Markdown 加粗：只支持 **重点文本**，避免引入完整 Markdown 渲染器 */
@@ -70,6 +118,13 @@ function normalizeNumberedChartRefs(text: string): string {
 function sanitizeAssistantDisplayText(text: string): string {
   let cleaned = text
 
+  cleaned = cleaned
+    .replace(/<!--\s*VISUAL_REF:[\s\S]*?-->/gi, '')
+    .replace(/<!--\s*VISUAL_REF:[\s\S]*$/gi, '')
+    .replace(/<!--\s*VISUAL_[\s\S]*$/gi, '')
+    .replace(/<!--\s*VIS[\s\S]*$/gi, '')
+    .replace(/<!--\s*V[\s\S]*$/gi, '')
+
   const suggestionStart = cleaned.search(/<!--\s*SUGGESTIONS:/i)
   if (suggestionStart >= 0) {
     cleaned = cleaned.slice(0, suggestionStart)
@@ -78,20 +133,158 @@ function sanitizeAssistantDisplayText(text: string): string {
   cleaned = cleaned
     .replace(/<!--\s*SUGGESTIONS:[\s\S]*?-->/gi, '')
     .replace(/^\s*.*SUGGESTIONS\s*:.*$/gim, '')
+    .replace(/^\s*.*VISUAL_REF\s*:.*$/gim, '')
     .replace(/^\s*【\s*chart(?::[A-Za-z-]*)?\s*$/gim, '')
     .replace(/【\s*chart(?::[A-Za-z-]*)?$/gim, '')
+    .replace(/^\s*【\s*focus(?::[^】]*)?\s*$/gim, '')
+    .replace(/【\s*focus(?::[^】]*)?$/gim, '')
 
   return normalizeNumberedChartRefs(cleaned).trimEnd()
 }
 
+function sanitizeFocusValue(value: string): string | null {
+  const cleaned = value
+    .replace(/\s+/g, ' ')
+    .trim()
+
+  if (!cleaned || cleaned.length > 40) return null
+  if (/[<>【】]/.test(cleaned)) return null
+  return cleaned
+}
+
+function buildFocusLabel(focusType: VisualFocusType, value: string): string {
+  if (focusType === 'activity-hour') {
+    const hour = Number(value)
+    return Number.isInteger(hour) ? `重点位置：电脑活动 ${hour}:00-${hour + 1}:00` : '重点位置：电脑活动'
+  }
+
+  if (focusType === 'activity-range') {
+    const match = value.match(/^(\d{1,2})-(\d{1,2})$/)
+    if (match) return `重点位置：电脑活动 ${Number(match[1])}:00-${Number(match[2])}:00`
+    return '重点位置：电脑活动'
+  }
+
+  if (focusType === 'metric') {
+    return `重点位置：${METRIC_LABELS[value] ?? FOCUS_TYPE_LABELS[focusType]}`
+  }
+
+  return `重点位置：${FOCUS_TYPE_LABELS[focusType]} ${value}`
+}
+
+function visualTargetToRef(target: VisualTarget | null): VisualRef | null {
+  if (!target) return null
+
+  if (target.type === 'activity_hour') {
+    const hour = target.startHour ?? Number(target.value)
+    if (!Number.isInteger(hour)) return null
+    return {
+      kind: 'focus',
+      focusType: 'activity-hour',
+      value: String(hour),
+      label: target.label,
+      chartId: target.chartId,
+      targetId: target.targetId,
+      startHour: hour,
+      endHour: hour + 1,
+    }
+  }
+
+  if (target.type === 'activity_range') {
+    if (!Number.isInteger(target.startHour) || !Number.isInteger(target.endHour)) return null
+    return {
+      kind: 'focus',
+      focusType: 'activity-range',
+      value: `${target.startHour}-${target.endHour}`,
+      label: target.label,
+      chartId: target.chartId,
+      targetId: target.targetId,
+      startHour: target.startHour,
+      endHour: target.endHour,
+    }
+  }
+
+  const focusTypeMap = {
+    task_duration: 'task-duration',
+    metric: 'metric',
+    app_usage: 'app-usage',
+  } as const
+  const focusType = focusTypeMap[target.type as keyof typeof focusTypeMap]
+  if (!focusType) return null
+
+  return {
+    kind: 'focus',
+    focusType,
+    value: target.value ?? target.label,
+    label: target.label,
+    chartId: target.chartId,
+    targetId: target.targetId,
+  }
+}
+
+/** 将结构化解析出的多个 VisualTarget 转为气泡引用（仅并列多条应用时合成 multi-focus） */
+function visualTargetsToVisualRef(targets: VisualTarget[]): VisualRef | null {
+  if (targets.length === 0) return null
+
+  const pairs = targets
+    .map(t => ({ t, ref: visualTargetToRef(t) }))
+    .filter((p): p is { t: VisualTarget; ref: VisualFocusRef } => Boolean(p.ref))
+
+  if (pairs.length === 0) return null
+  if (pairs.length === 1) return pairs[0].ref
+
+  const allApps = pairs.every(p => p.t.type === 'app_usage')
+  if (!allApps) return pairs[0].ref
+
+  const chartId = pairs[0].t.chartId
+  const aligned = pairs.filter(p => p.t.chartId === chartId)
+  if (aligned.length <= 1) return aligned[0]?.ref ?? pairs[0].ref
+
+  return {
+    kind: 'multi-focus',
+    chartId,
+    label: aligned.map(p => p.t.label).join('、'),
+    refs: aligned.map(p => p.ref),
+  }
+}
+
+function parseVisualRefMarkers(text: string, visualTargets: VisualTarget[]): VisualRef[] {
+  const refs: VisualRef[] = []
+  const targetMap = new Map(visualTargets.map(target => [target.targetId, target]))
+  const markerRe = /<!--\s*VISUAL_REF:\s*([\s\S]*?)\s*-->/gi
+
+  for (const match of text.matchAll(markerRe)) {
+    try {
+      const payload = JSON.parse(match[1]) as { targetIds?: unknown; chartId?: unknown }
+      if (Array.isArray(payload.targetIds)) {
+        const targets = payload.targetIds
+          .filter((id): id is string => typeof id === 'string')
+          .map(id => targetMap.get(id))
+          .filter((target): target is VisualTarget => Boolean(target))
+        const ref = visualTargetsToVisualRef(targets)
+        if (ref) refs.push(ref)
+        continue
+      }
+
+      if (typeof payload.chartId === 'string') {
+        const ref = chartIdToRef(payload.chartId)
+        if (ref) refs.push(ref)
+      }
+    } catch (e) {
+      console.warn('[ReflectionChat] VISUAL_REF 标记解析失败:', e, match[1])
+    }
+  }
+
+  return refs
+}
+
 function cleanSuggestionLabel(label: unknown): string | null {
-  const cleaned = String(label)
+  const cleaned = normalizeSuggestionDirection(String(label)
     .replace(/\*\*([^*]+)\*\*/g, '$1')
     .replace(/【\s*chart:[^】]*】/gi, '')
     .replace(/<!--[\s\S]*?-->/g, '')
     .replace(/SUGGESTIONS\s*:.*$/gi, '')
     .replace(/\s+/g, ' ')
-    .trim()
+    .trim())
 
   if (!cleaned) return null
   if (cleaned.length < 4 || cleaned.length > 30) return null
@@ -116,6 +309,58 @@ function extractSuggestions(rawText: string): string[] {
   }
 }
 
+function normalizeSuggestionDirection(label: string): string {
+  let normalized = label
+    .replace(/^和前几天相比$/g, '和前几天的区别')
+    .replace(/^停下来的是哪一步$/g, '分析卡顿情况')
+    .replace(/^卡住后怎么继续的$/g, '分析卡顿情况')
+    .replace(/^类似的一次卡住$/g, '分析卡顿情况')
+    .replace(/(总被留到后面的|被留到后面的|一直没碰的|这几天都没动的|反复出现在计划里的)(学习|论文|英语|数学|课程|作业|复习|考试|编程|代码|项目|阅读|写作|实验|报告|文献|研究|开发|工作|课堂|学校|专业|实习)任务/g, '$1任务')
+    .replace(/(列了但没开始的|计划里没写的|做了但没计划的|很快勾掉的|花最久的|顺手做完的|真正开始的)(学习|论文|英语|数学|课程|作业|复习|考试|编程|代码|项目|阅读|写作|实验|报告|文献|研究|开发|工作|课堂|学校|专业|实习)任务/g, '$1任务')
+    .replace(/^(论文|英语|数学|课程|作业|复习|考试|编程|代码|项目|阅读|写作|实验|报告|文献|研究|开发|学习)任务(一直没开始|没开始|没推进|总被留下|总被留到后面)$/g, '列了但没开始的任务')
+    .replace(/^(Cursor|Edge|Chrome|浏览器|微信|Word|Excel|PowerPoint|VS Code|Visual Studio Code).*(使用|时长|占用)$/i, '电脑开着时在做什么')
+    .replace(/^\d{1,2}[点:：].*(学习|任务|推进).*$/g, '比较集中的推进时间')
+    .replace(/^(上午|中午|下午|晚上|夜里).*(学习|任务|推进).*$/g, '更容易动起来的时间')
+
+  normalized = normalized.replace(/\s+/g, ' ').trim()
+  return normalized
+}
+
+function findFallbackChartRef(text: string): Extract<VisualRef, { kind: 'chart' }> | null {
+  const chartMatch = text.match(/【\s*chart:([^】\s]+)\s*】/i)
+  if (chartMatch) {
+    const ref = chartIdToRef(chartMatch[1].trim().toLowerCase())
+    if (ref) return ref
+  }
+
+  const keywordRules: [string[], string][] = [
+    [['完成率', 'completion'],                       'completion-rate'],
+    [['指标', '卡片', 'metrics'],                    'metrics'],
+    [['用时', '时长', 'duration'],                   'task-duration'],
+    [['应用使用', '应用时长', 'app-usage'],           'app-usage'],
+    [['活动', '热力', '分布', '电脑活动', 'activity', 'heatmap', 'atmap'], 'activity'],
+    [['节奏', '曲线', 'rhythm'],                     'rhythm'],
+    [['week-completion', '每日任务', '日完成'],        'week-completion'],
+    [['week-metrics', '周汇总', '周指标'],            'week-metrics'],
+    [['week-ranking', '排行'],                       'week-ranking'],
+    [['week-heatmap', '周热力', '周活动'],            'week-heatmap'],
+    [['week-rhythm', '周节奏'],                      'week-rhythm'],
+    [['week-app-usage', '周应用', '本周应用'],         'week-app-usage'],
+  ]
+
+  const bracketTexts = [...text.matchAll(/【([^】]+)】/g)].map(match => match[1].toLowerCase())
+  for (const inner of bracketTexts) {
+    for (const [keywords, id] of keywordRules) {
+      if (keywords.some(kw => inner.includes(kw))) {
+        const entry = CHART_ID_MAP[id]
+        if (entry) return { kind: 'chart', chartId: entry.domId, label: entry.label }
+      }
+    }
+  }
+
+  return null
+}
+
 /**
  * 解析 AI 回复中的图表引用标签，返回 React 节点数组
  *
@@ -125,7 +370,9 @@ function extractSuggestions(rawText: string): string[] {
  */
 function parseChartRefs(
   text: string,
-  onRef: (chartId: string) => void,
+  onRef: (ref: VisualRef) => void,
+  focusState: { rendered: boolean },
+  bubbleVisualRef?: VisualRef | null,
 ): React.ReactNode[] {
   // 匹配所有 【xxx】 模式（包括 【chart:xxx】 和 【中文】）
   const parts = text.split(/(【[^】]+】)/g)
@@ -135,27 +382,77 @@ function parseChartRefs(
 
     const inner = match[1]
 
+    const getRefForChartButton = (entry: { domId: string; label: string }): VisualRef => {
+      if (bubbleVisualRef?.kind === 'multi-focus') {
+        if (bubbleVisualRef.chartId === entry.domId) return bubbleVisualRef
+      }
+      if (bubbleVisualRef?.kind === 'focus') {
+        const isExactChart = bubbleVisualRef.chartId === entry.domId
+        const isActivityChart = bubbleVisualRef.chartId === 'chart-activity-heatmap' &&
+          (entry.domId === 'chart-rhythm' || entry.domId === 'chart-activity-heatmap')
+        if (isExactChart || isActivityChart) return bubbleVisualRef
+      }
+      return { kind: 'chart', chartId: entry.domId, label: entry.label }
+    }
+
+    const chartRefTitle = (entry: { label: string }) => {
+      if (bubbleVisualRef?.kind === 'multi-focus') return `点击高亮：${bubbleVisualRef.label}`
+      if (bubbleVisualRef?.kind === 'focus') return `点击高亮${bubbleVisualRef.label}`
+      return `点击查看${entry.label}图表`
+    }
+
     const renderChartButton = (entry: { domId: string; label: string }) => (
       <button
         key={i}
-        onClick={() => onRef(entry.domId)}
+        onClick={() => onRef(getRefForChartButton(entry))}
         className="inline-flex items-center gap-0.5 text-blue-600 hover:text-blue-700
                    underline underline-offset-2 decoration-blue-300 hover:decoration-blue-500
                    transition-colors cursor-pointer font-medium"
-        title={`点击查看${entry.label}图表`}
+        title={chartRefTitle(entry)}
       >
         📊 {entry.label}
       </button>
     )
 
-    // ---- 1. 精确 ID 匹配：【chart:week-heatmap】 ----
+    const renderFocusButton = (ref: Extract<VisualRef, { kind: 'focus' }>) => (
+      <button
+        key={i}
+        onClick={() => onRef(ref)}
+        className="inline-flex items-center gap-1 text-amber-700 hover:text-amber-800
+                   underline underline-offset-2 decoration-amber-300 hover:decoration-amber-500
+                   transition-colors cursor-pointer font-semibold"
+        title={`点击高亮${ref.label}`}
+      >
+        ◉ {ref.label}
+      </button>
+    )
+
+    // ---- 1. 重点局部高亮：【focus:activity-hour:14】 ----
+    const focusMatch = inner.match(/^focus:([^:]+):(.+)$/i)
+    if (focusMatch) {
+      const focusType = focusMatch[1].trim() as VisualFocusType
+      const value = sanitizeFocusValue(focusMatch[2])
+      const isKnownType = Object.prototype.hasOwnProperty.call(FOCUS_TYPE_LABELS, focusType)
+
+      if (isKnownType && value) {
+        const label = buildFocusLabel(focusType, value)
+        if (!focusState.rendered) {
+          focusState.rendered = true
+          return renderFocusButton({ kind: 'focus', focusType, value, label })
+        }
+
+        return <strong key={i} className="text-gray-700 font-semibold">{label.replace(/^重点位置：/, '')}</strong>
+      }
+    }
+
+    // ---- 2. 精确 ID 匹配：【chart:week-heatmap】 ----
     const idMatch = inner.match(/^chart:(.+)$/)
     if (idMatch) {
       const entry = CHART_ID_MAP[idMatch[1]]
       if (entry) return renderChartButton(entry)
     }
 
-    // ---- 2. 模糊 ID 匹配：AI 输出乱码时，在内容中搜索已知 chart ID ----
+    // ---- 3. 模糊 ID 匹配：AI 输出乱码时，在内容中搜索已知 chart ID ----
     const allChartIds = Object.keys(CHART_ID_MAP)
     for (const cid of allChartIds) {
       if (inner.includes(cid)) {
@@ -163,11 +460,12 @@ function parseChartRefs(
       }
     }
 
-    // ---- 3. 中文 + 英文关键词兜底匹配 ----
+    // ---- 4. 中文 + 英文关键词兜底匹配 ----
     const keywordRules: [string[], string][] = [
       [['完成率', 'completion'],                       'completion-rate'],
       [['指标', '卡片', 'metrics'],                    'metrics'],
       [['用时', '时长', 'duration'],                   'task-duration'],
+      [['应用使用', '应用时长', 'app-usage'],           'app-usage'],
       [['活动', '热力', '分布', 'activity', 'heatmap', 'atmap'], 'activity'],
       [['节奏', '曲线', 'rhythm'],                     'rhythm'],
       [['week-completion', '每日任务', '日完成'],        'week-completion'],
@@ -175,6 +473,7 @@ function parseChartRefs(
       [['week-ranking', '排行'],                       'week-ranking'],
       [['week-heatmap', '周热力', '周活动'],            'week-heatmap'],
       [['week-rhythm', '周节奏'],                      'week-rhythm'],
+      [['week-app-usage', '周应用', '本周应用'],         'week-app-usage'],
     ]
     for (const [keywords, id] of keywordRules) {
       if (keywords.some(kw => inner.toLowerCase().includes(kw))) {
@@ -183,16 +482,18 @@ function parseChartRefs(
       }
     }
 
-    // ---- 4. 都没匹配上：去掉【】，渲染为加粗文字 ----
+    // ---- 5. 都没匹配上：去掉【】，渲染为加粗文字 ----
     return <strong key={i} className="text-gray-700 font-semibold">{inner}</strong>
   })
 }
 
 function parseAssistantContent(
   text: string,
-  onRef: (chartId: string) => void,
+  onRef: (ref: VisualRef) => void,
+  bubbleVisualRef?: VisualRef | null,
 ): React.ReactNode[] {
   const lines = sanitizeAssistantDisplayText(text).split('\n')
+  const focusState = { rendered: false }
   return lines.map((line, i) => {
     const quoteMatch = line.match(/^>\s?(.*)$/)
     if (quoteMatch) {
@@ -201,14 +502,14 @@ function parseAssistantContent(
           key={i}
           className="my-1.5 border-l-2 border-gray-200 pl-3 py-0.5 text-gray-500"
         >
-          {parseChartRefs(quoteMatch[1], onRef)}
+          {parseChartRefs(quoteMatch[1], onRef, focusState, bubbleVisualRef)}
         </div>
       )
     }
 
     return (
       <span key={i}>
-        {parseChartRefs(line, onRef)}
+        {parseChartRefs(line, onRef, focusState, bubbleVisualRef)}
         {i < lines.length - 1 ? '\n' : null}
       </span>
     )
@@ -241,8 +542,10 @@ interface ReflectionChatProps {
   selectedDate?: string
   /** 存储标识，如 "2026-03-20" 或 "week-2026-03-20"，用于持久化聊天记录 */
   storageKey?: string
-  /** 图表引用回调：当用户点击 AI 消息中的图表标签时触发 */
-  onChartRef?: (chartId: string) => void
+  /** 当前左侧真实可高亮目标，供结构化输出从中选择 */
+  visualTargets?: VisualTarget[]
+  /** 图表/重点位置引用回调：当用户点击 AI 消息中的引用标签时触发 */
+  onVisualRef?: (ref: VisualRef) => void
   /** 反思完成回调（用于埋点） */
   onComplete?: (summary: string) => void
   /** 结束反思并关闭侧边栏 */
@@ -256,7 +559,8 @@ const ReflectionChat = forwardRef<ReflectionChatHandle, ReflectionChatProps>(fun
   screenshotBase64,
   selectedDate,
   storageKey,
-  onChartRef,
+  visualTargets = [],
+  onVisualRef,
   onComplete,
   onEndChat,
 }, ref) {
@@ -277,6 +581,7 @@ const ReflectionChat = forwardRef<ReflectionChatHandle, ReflectionChatProps>(fun
   const messagesRef = useRef<ReflectionMessage[]>([])
   const initCalledRef = useRef(false)
   const streamCleanupRef = useRef<(() => void) | null>(null)
+  const triggeredVisualRefKeysRef = useRef<Set<string>>(new Set())
   const rawSessionRef = useRef<{ date: string; mode: 'daily' | 'weekly'; status: 'in_progress' | 'processed'; startedAt: number; messages: { role: 'user' | 'assistant'; content: string; ts: number }[] }>({
     date: selectedDate || new Date().toISOString().slice(0, 10),
     mode,
@@ -312,6 +617,7 @@ const ReflectionChat = forwardRef<ReflectionChatHandle, ReflectionChatProps>(fun
     setLoading(true)
     setStreaming(false)
     setError(null)
+    triggeredVisualRefKeysRef.current.clear()
 
     return new Promise((resolve) => {
       const placeholder: ChatBubble = {
@@ -340,12 +646,88 @@ const ReflectionChat = forwardRef<ReflectionChatHandle, ReflectionChatProps>(fun
         resolve(null)
       }, TIMEOUT_MS)
 
-      chatReflectionStream(
+      const finishAssistantMessage = (
+        rawContent: string,
+        visualRef: VisualRef | null,
+        source: 'structured' | 'stream',
+      ): string | null => {
+        const content = sanitizeAssistantDisplayText(rawContent).trim()
+        if (!content) return null
+
+        if (source === 'stream') {
+          const cleanedSuggestions = extractSuggestions(rawContent)
+          if (cleanedSuggestions.length > 0) {
+            console.log('[ReflectionChat] 内嵌探索方向:', cleanedSuggestions)
+            setSuggestions(cleanedSuggestions)
+          }
+        }
+
+        setBubbles(prev => {
+          const updated = [...prev]
+          const last = updated[updated.length - 1]
+          if (last?.role === 'assistant') {
+            updated[updated.length - 1] = { ...last, content, visualRef }
+          }
+          return updated
+        })
+
+        messagesRef.current = [
+          ...newMessages,
+          { role: 'assistant', content },
+        ]
+        persistRawMessage('assistant', content)
+        return content
+      }
+
+      const attachVisualRefToBubble = (visualRef: VisualRef) => {
+        setBubbles(prev => prev.map(bubble =>
+          bubble.role === 'assistant' && bubble.timestamp === placeholder.timestamp
+            ? { ...bubble, visualRef }
+            : bubble
+        ))
+      }
+
+      const triggerVisualRef = (visualRef: VisualRef, delayMs = 300): boolean => {
+        const key = visualRefKey(visualRef)
+        if (triggeredVisualRefKeysRef.current.has(key)) return false
+        triggeredVisualRefKeysRef.current.add(key)
+
+        attachVisualRefToBubble(visualRef)
+        if (onVisualRef) {
+          window.setTimeout(() => onVisualRef(visualRef), delayMs)
+        }
+        return true
+      }
+
+      const selectVisualFocusAfterStream = async (content: string, fallbackChartRef: Extract<VisualRef, { kind: 'chart' }> | null) => {
+        const hasStreamTriggeredRef = triggeredVisualRefKeysRef.current.size > 0
+        let visualRef: VisualRef | null = null
+
+        if (!hasStreamTriggeredRef && visualTargets.length > 0) {
+          const selected = await selectReflectionVisualFocus(content, aiConfig, visualTargets)
+          visualRef = visualTargetsToVisualRef(selected.result?.visualFocusTargets ?? [])
+        }
+
+        if (visualRef) {
+          triggerVisualRef(visualRef)
+          return
+        }
+
+        if (!hasStreamTriggeredRef && fallbackChartRef) {
+          triggerVisualRef(fallbackChartRef)
+        }
+      }
+
+      void (async () => {
+        chatReflectionStream(
         newMessages,
         aiConfig,
         (delta) => {
           gotActivity = true
           streamedText += delta
+          for (const ref of parseVisualRefMarkers(streamedText, visualTargets)) {
+            triggerVisualRef(ref, 0)
+          }
           setStreaming(true)
           setLoading(false)
           setBubbles(prev => {
@@ -373,29 +755,10 @@ const ReflectionChat = forwardRef<ReflectionChatHandle, ReflectionChatProps>(fun
             setBubbles(prev => prev.slice(0, -1))
             resolve(null)
           } else {
-            const cleanedSuggestions = extractSuggestions(rawContent)
-            const content = sanitizeAssistantDisplayText(rawContent).trim()
-
-            if (cleanedSuggestions.length > 0) {
-              console.log('[ReflectionChat] 内嵌探索方向:', cleanedSuggestions)
-              setSuggestions(cleanedSuggestions)
+            const content = finishAssistantMessage(rawContent, null, 'stream')
+            if (content) {
+              void selectVisualFocusAfterStream(content, findFallbackChartRef(rawContent))
             }
-
-            // 更新 bubbles 中的最后一条消息为去掉标签后的内容
-            setBubbles(prev => {
-              const updated = [...prev]
-              const last = updated[updated.length - 1]
-              if (last?.role === 'assistant') {
-                updated[updated.length - 1] = { ...last, content }
-              }
-              return updated
-            })
-
-            messagesRef.current = [
-              ...newMessages,
-              { role: 'assistant', content },
-            ]
-            persistRawMessage('assistant', content)
             resolve(content)
           }
         },
@@ -411,11 +774,12 @@ const ReflectionChat = forwardRef<ReflectionChatHandle, ReflectionChatProps>(fun
           setBubbles(prev => prev.slice(0, -1))
           resolve(null)
         },
-      ).then(cleanup => {
-        streamCleanupRef.current = cleanup
-      })
+        ).then(cleanup => {
+          streamCleanupRef.current = cleanup
+        })
+      })()
     })
-  }, [aiConfig])
+  }, [aiConfig, onVisualRef, visualTargets])
 
   // ---- 加载历史聊天记录 ----
   useEffect(() => {
@@ -738,8 +1102,8 @@ const ReflectionChat = forwardRef<ReflectionChatHandle, ReflectionChatProps>(fun
                       <span className="w-2 h-2 bg-gray-300 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
                       <span className="w-2 h-2 bg-gray-300 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
                     </div>
-                  ) : b.role === 'assistant' && onChartRef
-                    ? parseAssistantContent(b.content, onChartRef)
+                  ) : b.role === 'assistant' && onVisualRef
+                    ? parseAssistantContent(b.content, onVisualRef, b.visualRef)
                     : b.role === 'assistant'
                       ? sanitizeAssistantDisplayText(b.content)
                       : b.content}

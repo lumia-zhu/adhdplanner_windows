@@ -26,6 +26,9 @@ interface Props {
   events?: TrackEvent[]
   rangeStart?: number
   rangeEnd?: number
+  highlightHour?: number | null
+  highlightHourRange?: { startHour: number; endHour: number } | null
+  highlightPulseKey?: string
 }
 
 const W = 400
@@ -41,7 +44,7 @@ const CHART_H = H - PAD_T - PAD_B
 export const HEATMAP_PAD_LEFT_PCT = `${(PAD_L / W) * 100}%`
 export const HEATMAP_PAD_RIGHT_PCT = `${(PAD_R / W) * 100}%`
 
-export default function ActivityRhythmChart({ data, events, rangeStart: rs, rangeEnd: re }: Props) {
+export default function ActivityRhythmChart({ data, events, rangeStart: rs, rangeEnd: re, highlightHour, highlightHourRange, highlightPulseKey }: Props) {
   const rangeStart = rs ?? 0
   const rangeEnd = re ?? 24
   const visibleHours = rangeEnd - rangeStart
@@ -75,6 +78,33 @@ export default function ActivityRhythmChart({ data, events, rangeStart: rs, rang
     }
     return s
   }, [hourlyUsage, maxVal, rangeStart, visibleHours])
+
+  const highlightFrame = useMemo(() => {
+    let startHour: number | null = null
+    let endHour: number | null = null
+
+    if (highlightHourRange) {
+      startHour = highlightHourRange.startHour
+      endHour = highlightHourRange.endHour
+    } else if (Number.isInteger(highlightHour)) {
+      startHour = highlightHour
+      endHour = highlightHour + 1
+    }
+
+    if (startHour == null || endHour == null) return null
+
+    const clippedStart = Math.max(startHour, rangeStart)
+    const clippedEnd = Math.min(endHour, rangeEnd)
+    if (clippedEnd <= clippedStart || visibleHours <= 0) return null
+
+    const leftX = PAD_L + ((clippedStart - rangeStart) / visibleHours) * CHART_W
+    const rightX = PAD_L + ((clippedEnd - rangeStart) / visibleHours) * CHART_W
+
+    return {
+      x: leftX + 1,
+      width: Math.max(rightX - leftX - 2, 1),
+    }
+  }, [highlightHour, highlightHourRange, rangeEnd, rangeStart, visibleHours])
 
   const stepLinePath = useMemo(() => {
     if (steps.length === 0) return ''
@@ -215,6 +245,23 @@ export default function ActivityRhythmChart({ data, events, rangeStart: rs, rang
 
         {/* 面积填充 */}
         <path d={stepAreaPath} fill="url(#usageGradient)" opacity={0.4} />
+
+        {/* AI 重点小时/小时段高亮：连续时段只画一个整体空心框 */}
+        {highlightFrame && (
+          <g key={`ai-highlight-${highlightPulseKey ?? 'pulse'}`} pointerEvents="none">
+            <rect
+              x={highlightFrame.x}
+              y={PAD_T}
+              width={highlightFrame.width}
+              height={CHART_H}
+              rx={2}
+              fill="none"
+              stroke="#f59e0b"
+              strokeWidth={1.6}
+              className="ai-focus-pulse-svg"
+            />
+          </g>
+        )}
 
         {/* 阶梯轮廓线 */}
         <path d={stepLinePath} fill="none" stroke="#10b981" strokeWidth={1.8} />

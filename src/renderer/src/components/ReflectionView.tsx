@@ -8,7 +8,7 @@
 
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import type { Task, UserProfile } from '../types'
-import type { AIConfig } from '../services/ai'
+import type { AIConfig, VisualTarget } from '../services/ai'
 import { buildReflectionSystemPrompt, buildWeeklyReflectionSystemPrompt, extractMemoryFromChat } from '../services/ai'
 import type { TrackEvent, DailySummary } from '../services/tracker'
 import { buildDailySummary, summaryToLLMContext, buildWeeklyLLMContext } from '../services/tracker'
@@ -25,7 +25,7 @@ import InteractiveActivityHeatmap from './InteractiveActivityHeatmap'
 import { computeActiveTimeRange } from '../utils/activity-time-range'
 import AppUsageRanking from './AppUsageRanking'
 import ReflectionChat from './ReflectionChat'
-import type { ReflectionChatHandle } from './ReflectionChat'
+import type { ReflectionChatHandle, VisualFocusType, VisualRef } from './ReflectionChat'
 import ManualTimeEntry from './ManualTimeEntry'
 import MiniCalendar from './MiniCalendar'
 import WeekView from './WeekView'
@@ -208,6 +208,37 @@ const PROMPT_EXCLUDED_APP_NAMES = new Set([
   'openconsole',
 ])
 
+const HIGHLIGHT_DURATION_MS = 5000
+
+const FOCUS_FALLBACK_CHARTS: Record<VisualFocusType, string> = {
+  'activity-hour': 'chart-activity-heatmap',
+  'activity-range': 'chart-activity-heatmap',
+  'task-duration': 'chart-task-duration',
+  metric: 'chart-key-metrics',
+  'app-usage': 'chart-app-usage',
+}
+
+const WEEK_FOCUS_FALLBACK_CHARTS: Record<VisualFocusType, string> = {
+  'activity-hour': 'chart-week-heatmap',
+  'activity-range': 'chart-week-heatmap',
+  'task-duration': 'chart-week-ranking',
+  metric: 'chart-week-metrics',
+  'app-usage': 'chart-week-app-usage',
+}
+
+const METRIC_KEYS = new Set(['completed-tasks', 'computer-usage', 'focus-minutes'])
+
+interface ActiveHighlight {
+  id: string
+  type: VisualFocusType
+  value: string
+  label: string
+  startHour?: number
+  endHour?: number
+  /** 并列多个应用（方案 A） */
+  appNames?: string[]
+}
+
 function formatClockTime(ts: number): string {
   return new Date(ts).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
 }
@@ -221,6 +252,83 @@ function formatDurationForPrompt(seconds: number): string {
 
 function shouldIncludePromptAppName(name: string): boolean {
   return !PROMPT_EXCLUDED_APP_NAMES.has(name.trim().toLowerCase())
+}
+
+function normalizeRefText(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[0-9０-９]+/g, ' ')
+    .replace(/[（(].*?[）)]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function findBestTaskTitleMatch(value: string, items: TaskDurationItem[]): string | null {
+  const target = normalizeRefText(value)
+  if (!target) return null
+
+  const exact = items.find(item => normalizeRefText(item.title) === target)
+  if (exact) return exact.title
+
+  const partial = items
+    .filter(item => {
+      const title = normalizeRefText(item.title)
+      return title.includes(target) || target.includes(title)
+    })
+    .sort((a, b) => b.durationSec - a.durationSec)
+
+  return partial[0]?.title ?? null
+}
+
+function getVisibleAppUsageNames(records: ActivityRecord[], limit = 5): string[] {
+  const totals = new Map<string, number>()
+  for (const rec of records) {
+    if (!rec.appUsage) continue
+    for (const [name, count] of Object.entries(rec.appUsage)) {
+      if (typeof count !== 'number' || count <= 0) continue
+      if (!shouldIncludePromptAppName(name)) continue
+      totals.set(name, (totals.get(name) ?? 0) + count)
+    }
+  }
+
+  return Array.from(totals.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, limit)
+    .map(([name]) => name)
+}
+
+function findBestAppNameMatch(value: string, records: ActivityRecord[]): string | null {
+  const target = value.trim().toLowerCase()
+  if (!target) return null
+
+  const visibleNames = getVisibleAppUsageNames(records)
+  const exact = visibleNames.find(name => name.trim().toLowerCase() === target)
+  if (exact) return exact
+
+  return visibleNames.find(name => {
+    const normalized = name.trim().toLowerCase()
+    return normalized.includes(target) || target.includes(normalized)
+  }) ?? null
+}
+
+function buildVisualMarkerPromptContext(visualTargets: VisualTarget[]): string {
+  if (visualTargets.length === 0) {
+    return [
+      '流式同步高亮可用整图 chartId：',
+      '- chart-key-metrics：核心指标卡片',
+      '- chart-task-duration：任务实际用时条形图',
+      '- chart-activity-heatmap：电脑活动分布',
+      '- chart-rhythm：电脑活动图',
+      '- chart-app-usage：应用使用时长',
+      '没有明确局部证据时，只输出整图 chartId。',
+    ].join('\n')
+  }
+
+  return [
+    '流式同步高亮可用局部 targetId（只能从这里选，禁止编造）：',
+    JSON.stringify(visualTargets.slice(0, 40)),
+    '如果只确定整张图而不确定局部位置，可用 chartId：chart-key-metrics、chart-task-duration、chart-activity-heatmap、chart-rhythm、chart-app-usage。',
+  ].join('\n')
 }
 
 function buildTaskSessionPromptContext(events: TrackEvent[]): string {
@@ -341,6 +449,11 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
   const [hoveredTask, setHoveredTask] = useState<string | null>(null)
   const [showAllTaskDistribution, setShowAllTaskDistribution] = useState(false)
 
+  // ---- AI 视觉引用高亮：同一时间只保留一个重点位置 ----
+  const [activeHighlight, setActiveHighlight] = useState<ActiveHighlight | null>(null)
+  const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const chartHighlightRef = useRef<string | null>(null)
+
   // ---- AI 浮标气泡 ----
   const [showBubble, setShowBubble] = useState(false)
 
@@ -378,15 +491,18 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
   }, [viewMode, isToday])
 
   const goPrev = useCallback(() => {
+    setActiveHighlight(null)
     setSelectedDate(d => shiftDate(d, -1))
   }, [])
   const goNext = useCallback(() => {
+    setActiveHighlight(null)
     setSelectedDate(d => {
       const next = shiftDate(d, 1)
       return next > getToday() ? d : next   // 不能超过今天
     })
   }, [])
   const goToday = useCallback(() => {
+    setActiveHighlight(null)
     setSelectedDate(getToday())
   }, [])
 
@@ -589,7 +705,7 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
         const lines: string[] = [
           '## 可用洞察线索（供 AI 选择，不要求全部使用）',
           '- 使用顺序：先讲当前图表事实，再按需选择当天内部模式、任务延续、卡顿恢复、用户画像、记忆或历史对比。',
-          '- 主线对齐：选择洞察时必须和当前引用的图表接得上；电脑活动图优先讲时段/进入状态，任务用时或活动分布图再讲任务推进、卡顿和恢复。',
+          '- 主线对齐：选择洞察时必须和当前引用的图表接得上；电脑活动图优先讲整天活跃节奏，任务用时图只讲任务总耗时/排行，电脑活动分布图负责任务时间段、卡顿红点、卡住前后变化。',
           '- 交互方式：每次只展开一个值得注意的行为模式；如果用户点击“换一个角度看看”，再换到另一个有图表证据支持的方向。',
           '- 历史对比只是可选证据；数据不足或不相关时不要强行对比。',
         ]
@@ -604,11 +720,11 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
               .map(event => event.reason)
               .filter(Boolean)
               .slice(0, 3)
-            lines.push(`- 可选任务过程线索（适合配合任务用时图或活动分布图）：卡顿主要和 ${stuckReasons.join('、') || '执行过程'} 有关。适合问开放小问题，例如“当时最先让你停下来的可能是什么？不用想得很完整，大概说说也可以。”`)
+            lines.push(`- 可选卡顿线索（优先配合【chart:activity】电脑活动分布图）：卡顿红点显示在任务时间分布线上，主要和 ${stuckReasons.join('、') || '执行过程'} 有关。适合问开放小问题，例如“当时最先让你停下来的可能是什么？不用想得很完整，大概说说也可以。”不要用【chart:task-duration】来指代卡顿红点位置。`)
           }
           if (current.summary.flowEvents.length > 0) {
             const flowTasks = current.summary.flowEvents.map(event => event.taskTitle).filter(Boolean).slice(0, 3)
-            lines.push(`- 可选任务推进线索（适合配合任务用时图、活动分布图或电脑活动高峰桥接）：出现过心流推进，相关任务：${flowTasks.join('、')}。可以用来做事实型鼓励。`)
+            lines.push(`- 可选任务推进线索：出现过心流推进，相关任务：${flowTasks.join('、')}。如果讲任务总用时可配合【chart:task-duration】；如果讲推进发生在哪段时间或前后状态，优先配合【chart:activity】。`)
           }
         }
 
@@ -647,7 +763,7 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
           lines.push(`- 可选反复卡点线索（适合配合任务过程图表）：${repeatedReasons.map(([reason, count]) => `「${reason}」${count}次`).join('、')}。适合围绕用户自己的上下文继续问。`)
         }
         if (successfulRescues > 0) {
-          lines.push(`- 可选恢复线索（适合配合任务用时图或活动分布图）：记录中有 ${successfulRescues} 次卡住后继续推进，可用于事实型鼓励。`)
+          lines.push(`- 可选恢复线索（优先配合【chart:activity】电脑活动分布图）：记录中有 ${successfulRescues} 次卡住后继续推进，可用于事实型鼓励。卡住后是否接上，要看活动分布里的时间线和卡顿点，不要只看任务用时排行。`)
         }
 
         const historySummaries = historyRows.map(row => row.summary).filter((s): s is DailySummary => !!s)
@@ -857,6 +973,302 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
     [displayActivityData],
   )
 
+  const visualTargets = useMemo<VisualTarget[]>(() => {
+    if (viewMode !== 'day') return []
+
+    const targets: VisualTarget[] = [
+      {
+        targetId: 'metric:completed-tasks',
+        type: 'metric',
+        chartId: 'chart-key-metrics',
+        label: '完成任务数',
+        value: 'completed-tasks',
+      },
+      {
+        targetId: 'metric:computer-usage',
+        type: 'metric',
+        chartId: 'chart-key-metrics',
+        label: '电脑使用时长',
+        value: 'computer-usage',
+      },
+      {
+        targetId: 'metric:focus-minutes',
+        type: 'metric',
+        chartId: 'chart-key-metrics',
+        label: '任务时长',
+        value: 'focus-minutes',
+      },
+    ]
+
+    const hourBuckets = Array.from({ length: 24 }, () => 0)
+    for (const record of displayActivityData) {
+      const hour = new Date(record.ts).getHours()
+      hourBuckets[hour] += getActiveRatio(record)
+    }
+
+    for (let hour = sharedRangeStart; hour < sharedRangeEnd; hour++) {
+      if (hourBuckets[hour] <= 0) continue
+      targets.push({
+        targetId: `activity:hour:${hour}`,
+        type: 'activity_hour',
+        chartId: 'chart-activity-heatmap',
+        label: `${hour}:00-${hour + 1}:00 电脑活动`,
+        value: String(hour),
+        startHour: hour,
+        endHour: hour + 1,
+      })
+    }
+
+    let rangeStart: number | null = null
+    for (let hour = sharedRangeStart; hour <= sharedRangeEnd; hour++) {
+      const isActive = hour < sharedRangeEnd && hourBuckets[hour] > 0
+      if (isActive && rangeStart == null) rangeStart = hour
+      if ((!isActive || hour === sharedRangeEnd) && rangeStart != null) {
+        const rangeEnd = hour
+        if (rangeEnd - rangeStart >= 2) {
+          targets.push({
+            targetId: `activity:range:${rangeStart}-${rangeEnd}`,
+            type: 'activity_range',
+            chartId: 'chart-activity-heatmap',
+            label: `${rangeStart}:00-${rangeEnd}:00 电脑活动`,
+            value: `${rangeStart}-${rangeEnd}`,
+            startHour: rangeStart,
+            endHour: rangeEnd,
+          })
+        }
+        rangeStart = null
+      }
+    }
+
+    for (const task of taskDurations.slice(0, 8)) {
+      targets.push({
+        targetId: `task:${task.title}`,
+        type: 'task_duration',
+        chartId: 'chart-task-duration',
+        label: task.title,
+        value: task.title,
+      })
+    }
+
+    for (const appName of getVisibleAppUsageNames(displayActivityData)) {
+      targets.push({
+        targetId: `app:${appName}`,
+        type: 'app_usage',
+        chartId: 'chart-app-usage',
+        label: appName,
+        value: appName,
+      })
+    }
+
+    return targets
+  }, [displayActivityData, sharedRangeEnd, sharedRangeStart, taskDurations, viewMode])
+
+  const scrollChartIntoDataPanel = useCallback((chartId: string) => {
+    const panel = dataPanelRef.current
+    const el = document.getElementById(chartId)
+    if (!panel || !el || !panel.contains(el)) return false
+
+    const panelRect = panel.getBoundingClientRect()
+    const elRect = el.getBoundingClientRect()
+    const visibleTop = Math.max(elRect.top, panelRect.top)
+    const visibleBottom = Math.min(elRect.bottom, panelRect.bottom)
+    const visibleHeight = Math.max(visibleBottom - visibleTop, 0)
+    const measuredHeight = Math.min(Math.max(elRect.height, 1), Math.max(panelRect.height, 1))
+    const visibleRatio = visibleHeight / measuredHeight
+
+    if (visibleRatio >= 0.6) return true
+
+    const desiredOffset = Math.max(24, (panelRect.height - measuredHeight) * 0.4)
+    const rawTop = panel.scrollTop + (elRect.top - panelRect.top) - desiredOffset
+    const maxTop = Math.max(panel.scrollHeight - panel.clientHeight, 0)
+    const targetTop = Math.max(0, Math.min(rawTop, maxTop))
+
+    panel.scrollTo({ top: targetTop, behavior: 'smooth' })
+    return true
+  }, [])
+
+  const handleVisualRef = useCallback((ref: VisualRef) => {
+    if (highlightTimerRef.current) {
+      clearTimeout(highlightTimerRef.current)
+      highlightTimerRef.current = null
+    }
+
+    if (chartHighlightRef.current) {
+      document.getElementById(chartHighlightRef.current)?.classList.remove('chart-highlight')
+      chartHighlightRef.current = null
+    }
+
+    setActiveHighlight(null)
+
+    const pulseChart = (chartId: string) => {
+      const el = document.getElementById(chartId)
+      if (!el) return false
+      scrollChartIntoDataPanel(chartId)
+      el.classList.add('chart-highlight')
+      chartHighlightRef.current = chartId
+      highlightTimerRef.current = setTimeout(() => {
+        el.classList.remove('chart-highlight')
+        if (chartHighlightRef.current === chartId) chartHighlightRef.current = null
+      }, HIGHLIGHT_DURATION_MS)
+      return true
+    }
+
+    if (ref.kind === 'chart') {
+      tracker.track('reflect.chart_referenced', { chartId: ref.chartId })
+      pulseChart(ref.chartId)
+      return
+    }
+
+    if (ref.kind === 'multi-focus') {
+      if (viewMode === 'week') {
+        tracker.track('reflect.visual_ref_clicked', {
+          type: 'multi-focus',
+          mode: viewMode,
+          chartId: ref.chartId,
+        })
+        const weekChartId = ref.chartId === 'chart-app-usage' ? 'chart-week-app-usage' : ref.chartId
+        pulseChart(weekChartId)
+        return
+      }
+
+      const fallbackChartId = ref.chartId
+      const resolvedApps: string[] = []
+      const labels: string[] = []
+      for (const sub of ref.refs) {
+        if (sub.focusType !== 'app-usage') continue
+        const appName = findBestAppNameMatch(sub.value, displayActivityData)
+        if (appName) {
+          resolvedApps.push(appName)
+          labels.push(sub.label)
+        }
+      }
+      const uniqueApps = [...new Set(resolvedApps)]
+
+      tracker.track('reflect.visual_ref_clicked', {
+        type: 'multi-focus',
+        matched: uniqueApps.length > 0,
+        count: uniqueApps.length,
+        chartId: fallbackChartId,
+      })
+
+      scrollChartIntoDataPanel(fallbackChartId)
+
+      if (uniqueApps.length === 0) {
+        pulseChart(fallbackChartId)
+        return
+      }
+
+      setActiveHighlight({
+        id: `app-usage:multi:${Date.now()}`,
+        type: 'app-usage',
+        value: uniqueApps[0],
+        label: labels.length > 0 ? [...new Set(labels)].join('、') : uniqueApps.join('、'),
+        appNames: uniqueApps,
+      })
+
+      highlightTimerRef.current = setTimeout(() => {
+        setActiveHighlight(null)
+        highlightTimerRef.current = null
+      }, HIGHLIGHT_DURATION_MS)
+      return
+    }
+
+    const fallbackChartId = viewMode === 'week'
+      ? WEEK_FOCUS_FALLBACK_CHARTS[ref.focusType]
+      : FOCUS_FALLBACK_CHARTS[ref.focusType]
+
+    if (viewMode === 'week') {
+      tracker.track('reflect.visual_ref_clicked', {
+        type: ref.focusType,
+        value: ref.value,
+        matched: false,
+        fallbackChartId,
+        mode: viewMode,
+      })
+      pulseChart(fallbackChartId)
+      return
+    }
+
+    let resolvedValue = ref.value
+    let matched = true
+
+    if (ref.focusType === 'activity-hour') {
+      const hour = Number(ref.value)
+      matched = Number.isInteger(hour) && hour >= 0 && hour < 24 && hour >= sharedRangeStart && hour < sharedRangeEnd
+      resolvedValue = String(hour)
+    } else if (ref.focusType === 'activity-range') {
+      const startHour = ref.startHour ?? Number(ref.value.split('-')[0])
+      const endHour = ref.endHour ?? Number(ref.value.split('-')[1])
+      matched = Number.isInteger(startHour) &&
+        Number.isInteger(endHour) &&
+        startHour >= 0 &&
+        endHour <= 24 &&
+        endHour > startHour &&
+        endHour > sharedRangeStart &&
+        startHour < sharedRangeEnd
+      resolvedValue = `${Math.max(startHour, sharedRangeStart)}-${Math.min(endHour, sharedRangeEnd)}`
+    } else if (ref.focusType === 'task-duration') {
+      const taskTitle = findBestTaskTitleMatch(ref.value, taskDurations)
+      matched = Boolean(taskTitle)
+      if (taskTitle) resolvedValue = taskTitle
+    } else if (ref.focusType === 'metric') {
+      matched = METRIC_KEYS.has(ref.value)
+    } else if (ref.focusType === 'app-usage') {
+      const appName = findBestAppNameMatch(ref.value, displayActivityData)
+      matched = Boolean(appName)
+      if (appName) resolvedValue = appName
+    }
+
+    tracker.track('reflect.visual_ref_clicked', {
+      type: ref.focusType,
+      value: ref.value,
+      matched,
+      fallbackChartId,
+    })
+
+    scrollChartIntoDataPanel(fallbackChartId)
+
+    if (!matched) {
+      pulseChart(fallbackChartId)
+      return
+    }
+
+    setActiveHighlight({
+      id: `${ref.focusType}:${resolvedValue}:${Date.now()}`,
+      type: ref.focusType,
+      value: resolvedValue,
+      label: ref.label,
+      startHour: ref.focusType === 'activity-range' ? Number(resolvedValue.split('-')[0]) : ref.startHour,
+      endHour: ref.focusType === 'activity-range' ? Number(resolvedValue.split('-')[1]) : ref.endHour,
+    })
+
+    highlightTimerRef.current = setTimeout(() => {
+      setActiveHighlight(null)
+      highlightTimerRef.current = null
+    }, HIGHLIGHT_DURATION_MS)
+  }, [displayActivityData, scrollChartIntoDataPanel, sharedRangeEnd, sharedRangeStart, taskDurations, viewMode])
+
+  useEffect(() => {
+    setActiveHighlight(null)
+    if (highlightTimerRef.current) {
+      clearTimeout(highlightTimerRef.current)
+      highlightTimerRef.current = null
+    }
+    if (chartHighlightRef.current) {
+      document.getElementById(chartHighlightRef.current)?.classList.remove('chart-highlight')
+      chartHighlightRef.current = null
+    }
+  }, [displayDate, viewMode])
+
+  useEffect(() => {
+    return () => {
+      if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current)
+      if (chartHighlightRef.current) {
+        document.getElementById(chartHighlightRef.current)?.classList.remove('chart-highlight')
+      }
+    }
+  }, [])
+
   /** 电脑使用总时长（分钟）：所有 30 秒窗口的 usageRatio 之和 × 0.5 */
   const totalUsageMinutes = useMemo(() => {
     if (displayActivityData.length === 0) return 0
@@ -939,12 +1351,13 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
     }
 
     const insightInfo = insightContext ? `\n\n${insightContext}` : ''
+    const visualMarkerInfo = `\n\n${buildVisualMarkerPromptContext(visualTargets)}`
     const taskSessionContext = taskSessionInfo ? `\n\n${taskSessionInfo}` : ''
     const appUsageContext = appUsageInfo ? `\n\n${appUsageInfo}` : ''
-    const prompt = buildReflectionSystemPrompt(context + taskInfo + productivityInfo + activityInfo + taskSessionContext + appUsageContext + taskDurationInfo + insightInfo, false, isToday, memoryContext, selectedDate)
+    const prompt = buildReflectionSystemPrompt(context + taskInfo + productivityInfo + activityInfo + taskSessionContext + appUsageContext + taskDurationInfo + insightInfo + visualMarkerInfo, false, isToday, memoryContext, selectedDate)
     console.log('[Memory Debug] systemPrompt 构建完成, 包含记忆:', prompt.includes('对话记忆'), ', memoryContext长度:', memoryContext.length)
     return prompt
-  }, [summary, events, localTasks, completionRate, totalUsageMinutes, productivityRatio, flowRatio, activityTimeDistribution, activityData, taskDurations, isToday, memoryContext, memoryLoaded, insightContext, insightLoaded, selectedDate])
+  }, [summary, events, localTasks, completionRate, totalUsageMinutes, productivityRatio, flowRatio, activityTimeDistribution, activityData, taskDurations, visualTargets, isToday, memoryContext, memoryLoaded, insightContext, insightLoaded, selectedDate])
 
   // ---- 周视图数据回调 ----
   const handleWeekDataReady = useCallback((data: WeekDayData[]) => {
@@ -958,7 +1371,9 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
     const dates = getWeekDates(weekEndDate)
     const weekLabel = `${formatDateFriendly(dates[0]).replace(/ .+/, '')} – ${formatDateFriendly(dates[6]).replace(/ .+/, '')}`
     const insightInfo = insightContext ? `\n\n${insightContext}` : ''
-    return buildWeeklyReflectionSystemPrompt(context + insightInfo, false, weekLabel, memoryContext)
+    const weekAppUsageInfo = buildAppUsagePromptContext(weekDayData.flatMap(day => day.activity))
+    const appUsageContext = weekAppUsageInfo ? `\n\n本周${weekAppUsageInfo}` : ''
+    return buildWeeklyReflectionSystemPrompt(context + appUsageContext + insightInfo, false, weekLabel, memoryContext)
   }, [weekDayData, weekEndDate, memoryContext, insightContext])
 
   // 根据当前视图模式选择对应的 system prompt
@@ -1088,19 +1503,6 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
     [selectedDate],
   )
 
-  const handleChartRef = useCallback((chartId: string) => {
-    tracker.track('reflect.chart_referenced', { chartId })
-    const el = document.getElementById(chartId)
-    if (!el) return
-
-    // 平滑滚动到目标图表
-    el.scrollIntoView({ behavior: 'smooth', block: 'center' })
-
-    // 添加高亮动画（闪烁 2 秒后自动移除）
-    el.classList.add('chart-highlight')
-    setTimeout(() => el.classList.remove('chart-highlight'), 2000)
-  }, [])
-
   // ---- 打开/关闭侧边栏时调整窗口大小 ----
   const openChat = useCallback(async () => {
     tracker.track('reflect.chat_opened', { date: selectedDate, mode: viewMode })
@@ -1185,6 +1587,28 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
 
   // ---- 是否有 AI 配置 ----
   const hasAI = !!(aiConfig.apiKey && aiConfig.modelId)
+  const highlightPulseKey = activeHighlight?.id ?? ''
+  const highlightedHour = activeHighlight?.type === 'activity-hour' ? Number(activeHighlight.value) : null
+  const highlightedHourRange = activeHighlight?.type === 'activity-range'
+    ? { startHour: activeHighlight.startHour ?? Number(activeHighlight.value.split('-')[0]), endHour: activeHighlight.endHour ?? Number(activeHighlight.value.split('-')[1]) }
+    : null
+  const highlightedTask = activeHighlight?.type === 'task-duration' ? activeHighlight.value : null
+  const highlightedMetric = activeHighlight?.type === 'metric' ? activeHighlight.value : null
+  const highlightedApps =
+    activeHighlight?.type === 'app-usage'
+      ? activeHighlight.appNames?.length
+        ? activeHighlight.appNames
+        : activeHighlight.value
+          ? [activeHighlight.value]
+          : null
+      : null
+
+  const metricCardClass = (metricKey: string, baseClass: string) => {
+    const isHighlighted = highlightedMetric === metricKey
+    return `${baseClass} transition-all duration-200 ${
+      isHighlighted ? 'ai-focus-pulse' : ''
+    }`
+  }
 
   return (
     <div className="h-full flex flex-col bg-white overflow-hidden">
@@ -1391,18 +1815,27 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
                   {/* chatOpen 时把指标卡片内联到圆环右侧 */}
                   {chatOpen && (
                     <div id="chart-key-metrics" className="grid grid-cols-3 gap-3 flex-1">
-                      <div className="text-center bg-gray-100 rounded-xl py-2.5 px-2">
+                      <div
+                        key={highlightedMetric === 'completed-tasks' ? highlightPulseKey : 'completed-tasks'}
+                        className={metricCardClass('completed-tasks', 'text-center bg-gray-100 rounded-xl py-2.5 px-2')}
+                      >
                         <p className="text-lg font-bold text-gray-600">{displayTasks.filter(t => t.completed).length}</p>
                         <p className="text-2xs text-gray-500 mt-0.5">完成任务数</p>
                       </div>
-                      <div className="text-center bg-emerald-50 rounded-xl py-2.5 px-2">
+                      <div
+                        key={highlightedMetric === 'computer-usage' ? highlightPulseKey : 'computer-usage'}
+                        className={metricCardClass('computer-usage', 'text-center bg-emerald-50 rounded-xl py-2.5 px-2')}
+                      >
                         <p className="text-lg font-bold text-emerald-600">
                           {usageDurationStr.value}
                           <span className="text-xs font-normal ml-0.5">{usageDurationStr.unit}</span>
                         </p>
                         <p className="text-2xs text-emerald-500 mt-0.5">电脑使用时长</p>
                       </div>
-                      <div className="text-center bg-blue-50 rounded-xl py-2.5 px-2">
+                      <div
+                        key={highlightedMetric === 'focus-minutes' ? highlightPulseKey : 'focus-minutes'}
+                        className={metricCardClass('focus-minutes', 'text-center bg-blue-50 rounded-xl py-2.5 px-2')}
+                      >
                         <p className="text-lg font-bold text-blue-600">
                           {displaySummary?.stats.totalFocusMinutes ?? 0}
                           <span className="text-xs font-normal ml-0.5">分钟</span>
@@ -1417,20 +1850,29 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
               {/* 核心指标卡片（仅 chatOpen=false 时独立显示） */}
               {(!chatOpen || !displayIsToday) && (
               <div id="chart-key-metrics" className="grid grid-cols-3 gap-3 w-full">
-                <div className="text-center bg-gray-100 rounded-xl py-2.5 px-2">
+                <div
+                  key={highlightedMetric === 'completed-tasks' ? highlightPulseKey : 'completed-tasks'}
+                  className={metricCardClass('completed-tasks', 'text-center bg-gray-100 rounded-xl py-2.5 px-2')}
+                >
                   <p className="text-lg font-bold text-gray-600">
                     {displayTasks.filter(t => t.completed).length}
                   </p>
                   <p className="text-2xs text-gray-500 mt-0.5">完成任务数</p>
                 </div>
-                <div className="text-center bg-emerald-50 rounded-xl py-2.5 px-2">
+                <div
+                  key={highlightedMetric === 'computer-usage' ? highlightPulseKey : 'computer-usage'}
+                  className={metricCardClass('computer-usage', 'text-center bg-emerald-50 rounded-xl py-2.5 px-2')}
+                >
                   <p className="text-lg font-bold text-emerald-600">
                     {usageDurationStr.value}
                     <span className="text-xs font-normal ml-0.5">{usageDurationStr.unit}</span>
                   </p>
                   <p className="text-2xs text-emerald-500 mt-0.5">电脑使用时长</p>
                 </div>
-                <div className="text-center bg-blue-50 rounded-xl py-2.5 px-2">
+                <div
+                  key={highlightedMetric === 'focus-minutes' ? highlightPulseKey : 'focus-minutes'}
+                  className={metricCardClass('focus-minutes', 'text-center bg-blue-50 rounded-xl py-2.5 px-2')}
+                >
                   <p className="text-lg font-bold text-blue-600">
                     {displaySummary?.stats.totalFocusMinutes ?? 0}
                     <span className="text-xs font-normal ml-0.5">分钟</span>
@@ -1463,7 +1905,12 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
                       </button>
                     )}
                   </div>
-                  <TaskDurationChart data={taskDurations} onTaskHover={setHoveredTask} />
+                  <TaskDurationChart
+                    data={taskDurations}
+                    onTaskHover={setHoveredTask}
+                    highlightTask={highlightedTask}
+                    highlightPulseKey={highlightPulseKey}
+                  />
                 </div>
               )}
 
@@ -1482,7 +1929,15 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
                   </span>
                 </h3>
                 <div id="chart-rhythm">
-                  <ActivityRhythmChart data={displayActivityData} events={displayEvents} rangeStart={sharedRangeStart} rangeEnd={sharedRangeEnd} />
+                  <ActivityRhythmChart
+                    data={displayActivityData}
+                    events={displayEvents}
+                    rangeStart={sharedRangeStart}
+                    rangeEnd={sharedRangeEnd}
+                    highlightHour={highlightedHour}
+                    highlightHourRange={highlightedHourRange}
+                    highlightPulseKey={highlightPulseKey}
+                  />
                 </div>
                 <div className="mt-0">
                   <InteractiveActivityHeatmap
@@ -1491,6 +1946,9 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
                     rangeStart={sharedRangeStart}
                     rangeEnd={sharedRangeEnd}
                     highlightTask={hoveredTask}
+                    highlightHour={highlightedHour}
+                    highlightHourRange={highlightedHourRange}
+                    highlightPulseKey={highlightPulseKey}
                     showAllTasks={showAllTaskDistribution}
                     taskTitles={taskDurations.map(t => t.title)}
                   />
@@ -1509,7 +1967,11 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
                     </span>
                   </span>
                 </h3>
-                <AppUsageRanking data={displayActivityData} />
+                <AppUsageRanking
+                  data={displayActivityData}
+                  highlightApps={highlightedApps}
+                  highlightPulseKey={highlightPulseKey}
+                />
               </div>
 
               {/* 遗留任务（仅今天显示，历史日期没有任务快照） */}
@@ -1598,7 +2060,8 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
                   screenshotBase64={null}
                   selectedDate={viewMode === 'week' ? weekEndDate : selectedDate}
                   storageKey={viewMode === 'week' ? `week-${weekEndDate}` : selectedDate}
-                  onChartRef={handleChartRef}
+                  visualTargets={visualTargets}
+                  onVisualRef={handleVisualRef}
                   onComplete={handleReflectionComplete}
                   onEndChat={handleChatEndedProperly}
                 />

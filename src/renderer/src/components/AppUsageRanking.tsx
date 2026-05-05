@@ -14,6 +14,9 @@ import type { ActivityRecord } from './ActivityHeatmap'
 
 interface Props {
   data: ActivityRecord[]
+  /** 可同时高亮多行（并列多个应用） */
+  highlightApps?: string[] | null
+  highlightPulseKey?: string
 }
 
 /** 每次采样间隔（秒），与主进程 ActivitySampler.SAMPLE_INTERVAL 保持一致 */
@@ -55,8 +58,10 @@ function formatUsage(seconds: number): string {
   return `${Math.round(seconds / 60)} 分钟`
 }
 
-export default function AppUsageRanking({ data }: Props) {
+export default function AppUsageRanking({ data, highlightApps, highlightPulseKey }: Props) {
   const [showAll, setShowAll] = useState(false)
+
+  const highlightSet = highlightApps?.length ? new Set(highlightApps) : null
 
   const allApps: AppUsageItem[] = useMemo(() => {
     const totals = new Map<string, number>()
@@ -89,8 +94,14 @@ export default function AppUsageRanking({ data }: Props) {
     <div className="space-y-2">
       {visible.map((item, i) => {
         const barWidthPct = Math.max((item.seconds / maxSec) * 100, 4)
+        const isHighlighted = highlightSet?.has(item.name) ?? false
         return (
-          <div key={`${item.name}-${i}`}>
+          <div
+            key={`${item.name}-${i}-${isHighlighted ? highlightPulseKey ?? 'pulse' : 'idle'}`}
+            className={`rounded-xl transition-all duration-200 ${
+              isHighlighted ? 'ai-focus-pulse px-1.5 py-1' : ''
+            }`}
+          >
             <div className="flex items-center gap-2.5">
               <span
                 className="text-xxs text-gray-600 w-[100px] text-right flex-shrink-0 leading-tight break-words truncate"
@@ -101,7 +112,9 @@ export default function AppUsageRanking({ data }: Props) {
 
               <div className="flex-1 h-[22px] rounded-lg overflow-hidden relative">
                 <div
-                  className="h-full rounded-lg transition-all duration-700 ease-out bg-emerald-400/80"
+                  className={`h-full rounded-lg transition-all duration-700 ease-out ${
+                    isHighlighted ? 'bg-emerald-400/80 shadow-[0_0_0_1px_rgba(245,158,11,0.35)]' : 'bg-emerald-400/80'
+                  }`}
                   style={{ width: `${barWidthPct}%` }}
                 />
               </div>

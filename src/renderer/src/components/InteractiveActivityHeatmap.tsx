@@ -50,6 +50,9 @@ interface Props {
   rangeStart?: number
   rangeEnd?: number
   highlightTask?: string | null
+  highlightHour?: number | null
+  highlightHourRange?: { startHour: number; endHour: number } | null
+  highlightPulseKey?: string
   showAllTasks?: boolean
   taskTitles?: string[]
 }
@@ -151,6 +154,9 @@ export default function InteractiveActivityHeatmap({
   rangeStart: propStart,
   rangeEnd: propEnd,
   highlightTask,
+  highlightHour,
+  highlightHourRange,
+  highlightPulseKey,
   showAllTasks = false,
   taskTitles = [],
 }: Props) {
@@ -202,6 +208,30 @@ export default function InteractiveActivityHeatmap({
 
   // ---- 裁剪后的热力块 ----
   const visibleBlocks = blocks.slice(rangeStart, rangeEnd)
+
+  const highlightFrame = useMemo(() => {
+    let startHour: number | null = null
+    let endHour: number | null = null
+
+    if (highlightHourRange) {
+      startHour = highlightHourRange.startHour
+      endHour = highlightHourRange.endHour
+    } else if (Number.isInteger(highlightHour)) {
+      startHour = highlightHour
+      endHour = highlightHour + 1
+    }
+
+    if (startHour == null || endHour == null) return null
+
+    const clippedStart = Math.max(startHour, rangeStart)
+    const clippedEnd = Math.min(endHour, rangeEnd)
+    if (clippedEnd <= clippedStart || visibleSpan <= 0) return null
+
+    return {
+      leftPct: ((clippedStart - rangeStart) / visibleSpan) * 100,
+      widthPct: ((clippedEnd - clippedStart) / visibleSpan) * 100,
+    }
+  }, [highlightHour, highlightHourRange, rangeEnd, rangeStart, visibleSpan])
 
   // ---- hover 高亮：计算指定任务的精确时间段 ----
   const highlightSegments = useMemo(() => {
@@ -276,6 +306,16 @@ export default function InteractiveActivityHeatmap({
               </div>
             )
           })}
+          {highlightFrame && (
+            <div
+              key={`ai-heatmap-highlight-${highlightPulseKey ?? 'pulse'}`}
+              className="absolute top-0 h-7 rounded-[5px] ai-focus-pulse pointer-events-none z-20"
+              style={{
+                left: `${highlightFrame.leftPct}%`,
+                width: `${highlightFrame.widthPct}%`,
+              }}
+            />
+          )}
         </div>
 
       </div>

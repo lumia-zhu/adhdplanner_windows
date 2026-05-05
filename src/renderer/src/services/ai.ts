@@ -17,6 +17,29 @@ export interface AIConfig {
   modelId: string  // 模型 ID
 }
 
+export type VisualTargetType = 'activity_hour' | 'activity_range' | 'task_duration' | 'metric' | 'app_usage'
+
+export interface VisualTarget {
+  targetId: string
+  type: VisualTargetType
+  chartId: string
+  label: string
+  value?: string
+  startHour?: number
+  endHour?: number
+}
+
+export interface StructuredReflectionResult {
+  reply: string
+  /** 已解析且校验过的视觉焦点（同一张图；并列多个应用时可多项，其它类型最多保留一项） */
+  visualFocusTargets: VisualTarget[]
+  suggestions: string[]
+}
+
+export interface VisualFocusSelectionResult {
+  visualFocusTargets: VisualTarget[]
+}
+
 // 默认值：优先使用构建时注入的环境变量（用于用户研究预配置），否则为空（需用户手动填写）
 export const DEFAULT_AI_CONFIG: AIConfig = {
   apiUrl: import.meta.env.VITE_AI_API_URL || 'https://ark.cn-beijing.volces.com/api/v3/chat/completions',
@@ -663,6 +686,331 @@ export async function chatReflection(
   }
 }
 
+const STRUCTURED_REFLECTION_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['reply', 'visualFocus', 'suggestions'],
+  properties: {
+    reply: {
+      type: 'string',
+      description: '直接展示给用户看的自然语言反思回复，不要包含 JSON、focus 控制文本或 SUGGESTIONS 注释。',
+    },
+    visualFocus: {
+      type: 'array',
+      maxItems: 3,
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['targetId'],
+        properties: {
+          targetId: { type: 'string' },
+        },
+      },
+      description:
+        '视觉证据 targetId 列表（0～3 项），每项必须来自 availableVisualTargets。并列提到多个应用（同一应用时长图）时可填多项；其它情况最多 1 项；无需高亮时为空数组。',
+    },
+    suggestions: {
+      type: 'array',
+      minItems: 0,
+      maxItems: 3,
+      items: { type: 'string' },
+      description: '回复底部展示的 0-3 个探索方向短句。',
+    },
+  },
+} as const
+
+const VISUAL_FOCUS_SELECTION_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['visualFocus'],
+  properties: {
+    visualFocus: {
+      type: 'array',
+      maxItems: 3,
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['targetId'],
+        properties: {
+          targetId: { type: 'string' },
+        },
+      },
+      description:
+        '只根据已生成的 assistantReply 选择视觉证据 targetId 列表（0～3 项）。并列多个应用且同属应用时长图时可多项；其它情况最多 1 项。',
+    },
+  },
+} as const
+
+function extractJsonObject(text: string): Record<string, unknown> | null {
+  try {
+    const parsed = JSON.parse(text)
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed as Record<string, unknown>
+  } catch { /* 尝试从包裹文本里提取 JSON */ }
+
+  const match = text.match(/\{[\s\S]*\}/)
+  if (!match) return null
+
+  try {
+    const parsed = JSON.parse(match[0])
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed as Record<string, unknown>
+  } catch { /* noop */ }
+
+  return null
+}
+
+function resolveVisualFocusTargets(parsed: Record<string, unknown>, visualTargets: VisualTarget[]): VisualTarget[] {
+  const targetMap = new Map(visualTargets.map(target => [target.targetId, target]))
+
+  /** 兼容旧版单个对象或 null；新版为 { targetId }[] */
+  const rawFocus = parsed.visualFocus
+  const focusEntries: { targetId: string }[] = []
+  if (Array.isArray(rawFocus)) {
+    for (const item of rawFocus) {
+      if (!item || typeof item !== 'object') continue
+      const targetId = (item as { targetId?: unknown }).targetId
+      if (typeof targetId === 'string' && targetId.length > 0) focusEntries.push({ targetId })
+    }
+  } else if (rawFocus && typeof rawFocus === 'object') {
+    const targetId = (rawFocus as { targetId?: unknown }).targetId
+    if (typeof targetId === 'string' && targetId.length > 0) focusEntries.push({ targetId })
+  }
+
+  const seen = new Set<string>()
+  const resolved: VisualTarget[] = []
+  for (const { targetId } of focusEntries) {
+    if (seen.has(targetId)) continue
+    seen.add(targetId)
+    const t = targetMap.get(targetId)
+    if (t) resolved.push(t)
+    if (resolved.length >= 3) break
+  }
+
+  let visualFocusTargets = resolved
+  if (visualFocusTargets.length > 1) {
+    const chartId = visualFocusTargets[0].chartId
+    visualFocusTargets = visualFocusTargets.filter(t => t.chartId === chartId).slice(0, 3)
+    const allApps = visualFocusTargets.length > 1 && visualFocusTargets.every(t => t.type === 'app_usage')
+    if (!allApps) visualFocusTargets = visualFocusTargets.slice(0, 1)
+  }
+
+  return visualFocusTargets
+}
+
+function parseStructuredReflection(content: string, visualTargets: VisualTarget[]): StructuredReflectionResult | null {
+  const parsed = extractJsonObject(content)
+  if (!parsed) return null
+
+  const reply = typeof parsed.reply === 'string' ? parsed.reply.trim() : ''
+  if (!reply) return null
+
+  const visualFocusTargets = resolveVisualFocusTargets(parsed, visualTargets)
+
+  const suggestions = Array.isArray(parsed.suggestions)
+    ? parsed.suggestions
+        .map(item => String(item).replace(/\s+/g, ' ').trim())
+        .filter(item => item.length >= 4 && item.length <= 30)
+        .slice(0, 3)
+    : []
+
+  return { reply, visualFocusTargets, suggestions }
+}
+
+function parseVisualFocusSelection(content: string, visualTargets: VisualTarget[]): VisualFocusSelectionResult | null {
+  const parsed = extractJsonObject(content)
+  if (!parsed) return null
+
+  return {
+    visualFocusTargets: resolveVisualFocusTargets(parsed, visualTargets),
+  }
+}
+
+function buildStructuredReflectionMessages(
+  messages: ReflectionMessage[],
+  visualTargets: VisualTarget[],
+): ReflectionMessage[] {
+  const targetContext = visualTargets.length > 0
+    ? JSON.stringify(visualTargets.slice(0, 40))
+    : '[]'
+
+  const structuredInstruction = [
+    '## 结构化输出要求',
+    '你这次必须输出严格 JSON 对象，不要输出 Markdown 代码块，也不要输出 JSON 以外的任何文字。',
+    'JSON 字段：',
+    '- reply：展示给用户看的自然语言回复。reply 里不要写【focus:...】、不要写 HTML 注释、不要写 JSON。',
+    '- visualFocus：视觉证据数组，元素形如 {"targetId":"..."}，长度 0～3；只能从 availableVisualTargets 选取 targetId，禁止编造。无需高亮时输出 []。',
+    '- suggestions：正好 3 个探索方向短句，规则沿用系统提示词里的 Tag 方向。对话自然收尾时可以为空数组。',
+    '',
+    '选择 visualFocus 的规则：',
+    '- 默认最多 1 个 targetId；仅在 reply 里**并列**提到多个应用（例如同时点到 Cursor 与 Edge），且它们都在「应用使用时长」对应的条目里时，才可填写 2～3 个 targetId，且必须都属于同一 chart（同为应用时长列表）。',
+    '- 若只提到一个时间段、一条任务、一张指标卡或单个应用，只填 1 项。',
+    '- 如果只是泛泛提到一张图，visualFocus 应为 []。',
+    '- 绝对不要编造 targetId。',
+    '',
+    `availableVisualTargets = ${targetContext}`,
+  ].join('\n')
+
+  return [
+    ...messages,
+    { role: 'system', content: structuredInstruction },
+  ]
+}
+
+export async function chatReflectionStructured(
+  messages: ReflectionMessage[],
+  config: AIConfig,
+  visualTargets: VisualTarget[],
+): Promise<{ result: StructuredReflectionResult | null; error?: string }> {
+  if (!config.apiKey || !config.modelId || !config.apiUrl) {
+    return { result: null, error: '未配置 AI' }
+  }
+
+  const useResponses = isResponsesApi(config.apiUrl)
+  if (useResponses) {
+    return { result: null, error: '当前 Responses API 路径暂未启用结构化反思' }
+  }
+
+  const structuredMessages = buildStructuredReflectionMessages(messages, visualTargets)
+
+  const buildBody = (responseFormat: Record<string, unknown> | null) => JSON.stringify({
+    model: config.modelId,
+    messages: structuredMessages,
+    temperature: 0.7,
+    max_tokens: 1000,
+    thinking: { type: 'disabled' },
+    ...(responseFormat ? { response_format: responseFormat } : {}),
+  })
+
+  const requestOnce = async (responseFormat: Record<string, unknown> | null) => {
+    const res = await window.electronAPI.aiRequest({
+      url: config.apiUrl,
+      apiKey: config.apiKey,
+      body: buildBody(responseFormat),
+    })
+    if (!res.ok) {
+      console.warn('[AI Structured Reflection] HTTP', res.status, res.body?.slice(0, 300))
+      return null
+    }
+    const raw = extractContent(res.body, false)
+    console.log('[AI Structured Reflection] 返回内容:', raw.slice(0, 300))
+    return parseStructuredReflection(raw, visualTargets)
+  }
+
+  try {
+    const schemaFormat = {
+      type: 'json_schema',
+      json_schema: {
+        name: 'reflection_response',
+        strict: true,
+        schema: STRUCTURED_REFLECTION_SCHEMA,
+      },
+    }
+
+    const jsonObjectFormat = { type: 'json_object' }
+
+    return {
+      result:
+        await requestOnce(schemaFormat) ??
+        await requestOnce(jsonObjectFormat) ??
+        await requestOnce(null),
+    }
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    console.warn('[AI Structured Reflection] 请求异常:', msg)
+    return { result: null, error: `结构化请求异常：${msg.slice(0, 80)}` }
+  }
+}
+
+export async function selectReflectionVisualFocus(
+  assistantReply: string,
+  config: AIConfig,
+  visualTargets: VisualTarget[],
+): Promise<{ result: VisualFocusSelectionResult | null; error?: string }> {
+  if (!config.apiKey || !config.modelId || !config.apiUrl) {
+    return { result: null, error: '未配置 AI' }
+  }
+  if (visualTargets.length === 0) {
+    return { result: { visualFocusTargets: [] } }
+  }
+
+  const useResponses = isResponsesApi(config.apiUrl)
+  if (useResponses) {
+    return { result: null, error: '当前 Responses API 路径暂未启用结构化高亮选择' }
+  }
+
+  const targetContext = JSON.stringify(visualTargets.slice(0, 40))
+  const messages: ReflectionMessage[] = [
+    {
+      role: 'system',
+      content: [
+        '你是反思界面的视觉证据选择器，只能输出严格 JSON 对象，不要输出 Markdown 或解释。',
+        '任务：根据 assistantReply 里已经说出的内容，从 availableVisualTargets 里选择最匹配的视觉证据。',
+        'JSON 字段：',
+        '- visualFocus：数组，元素形如 {"targetId":"..."}，长度 0～3。',
+        '',
+        '选择规则：',
+        '- 默认最多 1 个 targetId。',
+        '- 仅当 assistantReply 并列提到多个应用，且它们都存在于「应用使用时长」条目里时，才可填写 2～3 项，并且必须都属于同一 chart。',
+        '- 如果 assistantReply 只是泛泛提到一张图，或没有明确证据位置，输出 []。',
+        '- 绝对不要编造 targetId，只能使用 availableVisualTargets 里的 targetId。',
+        '',
+        `availableVisualTargets = ${targetContext}`,
+      ].join('\n'),
+    },
+    {
+      role: 'user',
+      content: `assistantReply = ${assistantReply}`,
+    },
+  ]
+
+  const buildBody = (responseFormat: Record<string, unknown> | null) => JSON.stringify({
+    model: config.modelId,
+    messages,
+    temperature: 0.1,
+    max_tokens: 400,
+    thinking: { type: 'disabled' },
+    ...(responseFormat ? { response_format: responseFormat } : {}),
+  })
+
+  const requestOnce = async (responseFormat: Record<string, unknown> | null) => {
+    const res = await window.electronAPI.aiRequest({
+      url: config.apiUrl,
+      apiKey: config.apiKey,
+      body: buildBody(responseFormat),
+    })
+    if (!res.ok) {
+      console.warn('[AI Visual Focus Selection] HTTP', res.status, res.body?.slice(0, 300))
+      return null
+    }
+    const raw = extractContent(res.body, false)
+    console.log('[AI Visual Focus Selection] 返回内容:', raw.slice(0, 300))
+    return parseVisualFocusSelection(raw, visualTargets)
+  }
+
+  try {
+    const schemaFormat = {
+      type: 'json_schema',
+      json_schema: {
+        name: 'reflection_visual_focus',
+        strict: true,
+        schema: VISUAL_FOCUS_SELECTION_SCHEMA,
+      },
+    }
+
+    const jsonObjectFormat = { type: 'json_object' }
+
+    return {
+      result:
+        await requestOnce(schemaFormat) ??
+        await requestOnce(jsonObjectFormat) ??
+        await requestOnce(null),
+    }
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    console.warn('[AI Visual Focus Selection] 请求异常:', msg)
+    return { result: null, error: `高亮选择请求异常：${msg.slice(0, 80)}` }
+  }
+}
+
 // ===================== 卡住急救对话 =====================
 
 export interface StuckChatMessage {
@@ -1035,7 +1383,7 @@ export function buildReflectionSystemPrompt(
 
 ## 铁律
 1. **三步循环式反思**：第一步开场只做“简短问候 → 1 个证据锚点 → 1 个隐藏行为现象”，少讲一点，不提问不建议；第二步用户点击 Tag 后，按该 Tag 做“对应数据线索 → 元认知分析 → 1 个开放式上下文问题”；第三步用户回答后，做“共情承接 → 数据对照 → 1 个低压力建议 → 继续给 3 个新 Tag”。
-2. **图表事实和行为模式必须同主线**：如果引用电脑活动图，就围绕时间高峰、进入状态或某个时段的推进讲；如果讲任务卡顿/恢复，就优先引用任务用时或活动分布。不要先讲电脑活动图，后面突然跳到无桥接的卡顿细节。若必须切换维度，先写一句桥接句说明“顺着这个图表往下看，能对应到哪个任务/过程”。
+2. **图表事实和行为模式必须同主线**：如果引用电脑活动图，就围绕整天活跃节奏、时间高峰或进入状态讲；如果引用任务用时图，就围绕任务总耗时、任务排行和任务之间的用时差异讲；如果讲任务发生时间、任务分布、卡顿红点、卡住前后变化，必须优先引用电脑活动分布。不要先讲电脑活动图，后面突然跳到无桥接的卡顿细节。若必须切换维度，先写一句桥接句说明“顺着这个图表往下看，能对应到哪个任务/过程”。
 3. **开放小问题规则**：一条消息最多一个问题；禁止 binary 问题（是不是/好不好/对吧）和二选一/三选一；问题要具体、容易回答，并能帮助后续建议分类。问题本身要短，不要在问题后追加解释用户该怎么回答。
 4. **建议规则**：建议必须具体但不命令，像递一个选择。用“可以试试/如果愿意/也许可以先/先不用...”，不用“应该/必须/你需要/下次就”。建议要能让用户理解怎么开始，但不要像布置作业。
 
@@ -1089,12 +1437,32 @@ ${isToday ? '- 【chart:completion-rate】任务完成率\n' : ''}- 【chart:met
 - 【chart:task-duration】任务实际用时条形图
 - 【chart:activity】任务活动分布热力图
 - 【chart:rhythm】电脑活动图
+- 【chart:app-usage】应用使用时长
 规则：每条消息尽量引用一个图表；只用上面的 ID；不要用【】包裹非图表内容；不要连续两条引用相同图表。开场不强制编号；如果引用图表，尽量把图表引用放在句子开头或很靠前的位置，避免夹在长句中间。
+
+## 流式同步高亮
+当你第一次说到某个具体图表证据时，在那句话前后插入一个隐藏 HTML 注释，让前端在流式输出过程中同步高亮。这个注释用户看不到，但格式必须严格：
+- 局部高亮：<!--VISUAL_REF:{"targetIds":["activity:range:13-16"]}-->
+- 整图高亮：<!--VISUAL_REF:{"chartId":"chart-activity-heatmap"}-->
+
+高亮规则：
+- 每条回复最多输出 1 个 VISUAL_REF 注释，放在最重要证据附近，不要放到回复最后。
+- 如果系统额外提供了 availableVisualTargets，只能从里面选择 targetId，禁止编造。
+- targetIds 最多 3 个；只有并列多个应用且同属应用使用时长图时，才允许多个 targetId。
+- 不确定具体小时、任务名、指标 key 或应用名时，不要编造 targetIds，只用 chartId 兜底整图高亮。
+- VISUAL_REF 不能替代正文图表引用；正文仍要保留【chart:ID】，方便用户点击。
+- 除了 VISUAL_REF 和 SUGGESTIONS 这两种 HTML 注释，不要输出其它 HTML 注释。
+
+图表职责：
+- 【chart:task-duration】任务用时：只适合讲“哪些任务花了多久、哪个任务占用最多时间、任务之间用时差异”。它不显示卡顿红点，也不适合讲卡顿发生的时间位置。
+- 【chart:activity】电脑活动分布：适合讲“任务发生在哪些时间段、卡顿红点在哪里、卡住前后电脑活动有没有变化、卡住是否集中在某段时间”。如果用户要看卡顿位置，必须引用这张图。
+- 【chart:rhythm】电脑活动：适合讲整天电脑活跃节奏和高峰，不等于任务完成时间，也不显示具体任务卡顿点。
+- 【chart:app-usage】应用使用时长：适合解释电脑活跃时段具体可能在用哪些前台应用。它只能说明应用类别和大致时长，不记录窗口标题、文件名、网址，也不能单独证明任务完成。
 
 ## 数据边界
 - 任务发生时间只能使用“任务真实发生时间段”或 tracker 事件里的时间；不能用电脑活跃高峰反推任务完成时间。
 - 电脑活动图只说明电脑在某段时间更活跃，不等于任务在那段时间完成。
-- 如果要解释电脑活跃高峰在做什么，优先结合“应用使用时长”的应用名；没有应用数据时要承认只能看到活跃度，不能猜具体活动。
+- 如果要解释电脑活跃高峰在做什么，优先结合【chart:app-usage】应用使用时长里的应用名；没有应用数据时要承认只能看到活跃度，不能猜具体活动。
 
 ## 对话方式
 这是一次自然的反思对话，不是结构化问卷。没有固定步骤，跟着用户的话题自然推进。
@@ -1122,7 +1490,7 @@ ${isToday ? '- 【chart:completion-rate】任务完成率\n' : ''}- 【chart:met
 - ${dayRef}的活跃节奏：高峰在什么时段、什么时候平缓下来（引用【chart:rhythm】）
 - 专注和心流的整体状况：总时长、持续性如何（引用【chart:metrics】）
 - 任务延续或未推进：哪个任务花时少、长期没进入执行（引用【chart:task-duration】）
-- 卡住和恢复的整体情况（如有卡住数据）
+- 卡住和恢复的整体情况：卡顿红点集中在哪些任务时间线上、卡住前后是否还有继续推进（引用【chart:activity】）
 - ${dayRef}整体的完成节奏（引用【chart:completion-rate】或【chart:activity】）
 
 开场示例："${timeOfDay}好呀，看看${dayRefFirst}的情况。\n\n【chart:completion-rate】${dayRefFirst}最值得看的不是完成率数字本身，而是计划里的任务都进入了可收尾的状态。\n\n我注意到这里可以继续看一个问题：这些做完的任务里，哪些是真正推进了事情，哪些可能只是很快勾掉的小任务。\n\n<!--SUGGESTIONS:["一直没碰的任务","和昨天的差别","比较活跃的时段"]-->"
@@ -1147,7 +1515,7 @@ ${isToday ? '- 【chart:completion-rate】任务完成率\n' : ''}- 【chart:met
 - 如果用户是在回答上一个问题，先共情并承接他的上下文，再把它和相关图表事实对上，最后给 1 个低压力策略和一句鼓励
 - 用户回答后的回复必须使用 3-4 个短段落，每段 1 句左右，禁止把“承接 + 数据 + 建议 + 鼓励”写成一整段
 - 用户回答后的回复要适度加粗：把关键动作、关键数字、策略入口加粗，例如 **28分钟**、**先写一句最口语化的内容**、**把入口变轻**
-- 用户回答后的策略回复示例："你提到先写了点句子，这其实是一个很聪明的入口。\n\n【chart:task-duration】你花在这个任务上的 **28分钟** 里，大部分时间都在推进，卡顿没有占掉太多比例。\n\n如果下次遇到类似卡壳，可以试试先写一句**最口语化的内容**放着，先不用一开始就写得很正式。\n\n> 可以先记住一点：哪怕只是几句零散的话，也是在把任务往前推。"
+- 用户回答后的策略回复示例："你提到先写了点句子，这其实是一个很聪明的入口。\n\n【chart:activity】卡顿点是在任务推进的时间线上出现的，所以这里更适合看：你是在哪一段停住，又是从哪里继续接上的。\n\n如果下次遇到类似卡壳，可以试试先写一句**最口语化的内容**放着，先不用一开始就写得很正式。\n\n> 可以先记住一点：哪怕只是几句零散的话，也是在把任务往前推。"
 - 第三步结尾仍然必须生成 3 个新的分析角度，方便用户继续循环；新角度要尽量避开刚刚已经聊过的角度
 - 如果用户回复简短或不确定聊什么，再呈现一个有意思的数据发现引起兴趣；这个发现也必须和引用图表同主线
 - 根据用户的回答深入，不急着切换话题——一次有深度的反思 > 浅浅覆盖所有方向
@@ -1165,18 +1533,20 @@ ${isToday ? '- 【chart:completion-rate】任务完成率\n' : ''}- 【chart:met
 - Tag 是“可点击的任务管理问题入口”，不是结论、不是图表名、也不是研究分类；目标是帮用户发现自己平时难以觉察的任务管理过程问题。
 - Tag 表面文字要具体、好理解，背后必须对应一个可分析的 pattern，例如长期没推进的任务、今天和昨天的差别、活跃时间和实际推进是否一致、计划里列了但没开始的事。
 - Tag 不能像半截话。如果是时间片段或任务片段，要补上“任务/时间/在做什么/为什么没开始”等可理解对象。
+- Tag 只写“分析方向”，不要提前暴露具体任务名、课程名、文件名、应用名、具体日期或精确小时；这些具体对象必须等用户点击 Tag 后再在正文里解释。
+- 例如：不要写「总被留到后面的学习任务」，要写「总被留到后面的任务」；不要写「论文任务一直没开始」，要写「列了但没开始的任务」；不要写「Cursor 和 Edge 的使用」，要写「电脑开着时在做什么」；不要写「15点的学习任务」，要写「比较集中的推进时间」。
 - 优先使用这些类型：
   - 长期任务：「一直没碰的任务」「这几天都没动的事」「总被留到后面的事」「反复出现在计划里的任务」
-  - 对比入口：「和昨天的差别」「和前几天相比」「两天的节奏」「今天多出来的任务」
-  - 活跃时段：「比较活跃的时段」「真正推进的时间」「电脑开着时在做什么」「活动最密的时间在做什么」
+  - 对比入口：「和昨天的差别」「和前几天的区别」「两天的节奏」「今天多出来的任务」
+  - 活跃时段：「比较活跃的时段」「真正推进的时间」「比较集中的推进时间」「电脑开着时在做什么」「活动最密的时间在做什么」
   - 计划实际：「计划里没写的事」「列了但没开始的事」「做了但没计划的事」「很快勾掉的任务」
-  - 任务推进：「花最久的任务」「顺手做完的任务」「被留到后面的事」「真正开始的任务」
-  - 卡住片段：「卡住时正在做什么」「停下来的是哪一步」「卡住后怎么继续的」「类似的一次卡住」
+  - 任务推进：「花最久的任务」「顺手做完的任务」「被留到后面的事」「真正开始的任务」「哪些环境更容易推进」
+  - 卡住片段：「卡住时正在做什么」「分析卡顿情况」
 - 避免单纯结果：「完成率100%」「15分钟专注」「没有待办」
 - 避免图表入口：「指标卡片」「任务用时分析」「电脑活动图」
 - 避免已经下结论：「任务切得刚好」「完成得很顺」「效率很好」
 - 避免抽象或研究感表达：「比平时顺在哪里」「开始前少了什么阻力」「完成率背后的计划」「任务大小合不合适」「时间状态匹配」「策略复用」
-- 避免半截表达或不清楚对象：「反复出现在计划里」「电脑开着的那段」「活动最密的那段」「后来接上的地方」「今天和昨天」「卡住后的那段」「停下来的那一步」
+- 避免半截表达或不清楚对象：「反复出现在计划里」「电脑开着的那段」「活动最密的那段」「后来接上的地方」「今天和昨天」「卡住后的那段」「停下来的那一步」「卡住后怎么继续的」「类似的一次卡住」
 - 标签长度通常控制在 5-14 个中文字左右；宁可稍长但说完整，不要为了短而让用户看不懂
 - 必须放在回复的最后一行
 - 探索方向注释不要编号，不要加粗，不要参与正文分段
@@ -1238,7 +1608,7 @@ export function buildWeeklyReflectionSystemPrompt(
 
 ## 铁律
 1. **三步循环式反思**：第一步开场只做“简短问候 → 1 个周证据锚点 → 1 个跨天隐藏行为现象”，少讲一点，不提问不建议；第二步用户点击 Tag 后，按该 Tag 做“对应数据线索 → 元认知分析 → 1 个开放式上下文问题”；第三步用户回答后，做“共情承接 → 周数据对照 → 1 个低压力建议 → 继续给 3 个新 Tag”。
-2. **图表事实和行为模式必须同主线**：如果引用周热力图/电脑活动图，就围绕时段规律、活跃高峰或进入状态讲；如果讲任务延续/排行，就优先引用任务用时排行或完成率。不要先讲电脑活动图，后面突然跳到无桥接的具体任务细节。若必须切换维度，先写一句桥接句说明“顺着这个图表往下看，能对应到哪个任务/过程”。
+2. **图表事实和行为模式必须同主线**：如果引用周热力图或电脑活动图，就围绕跨天时段规律、活跃高峰或进入状态讲；如果引用周任务用时排行，就围绕任务总耗时、排行和任务之间的用时差异讲；如果讲卡顿点、卡住前后变化或具体任务发生时间，优先使用能显示时间线和卡顿点的活动分布类图表，不要把卡顿位置说成在任务用时排行里。若必须切换维度，先写一句桥接句说明“顺着这个图表往下看，能对应到哪个任务/过程”。
 3. **开放小问题规则**：一条消息最多一个问题；禁止 binary 问题（是不是/好不好/对吧）和二选一/三选一；问题要具体、容易回答，并能帮助后续建议分类。问题本身要短，不要在问题后追加解释用户该怎么回答。
 4. **建议规则**：建议必须具体但不命令，像递一个选择。用“可以试试/如果愿意/也许可以先/先不用...”，不用“应该/必须/你需要/下次就”。建议要能让用户理解怎么开始，但不要像布置作业。
 
@@ -1288,12 +1658,30 @@ ${screenshotNote}
 - 【chart:week-ranking】周任务用时排行
 - 【chart:week-heatmap】7×24 活动热力图
 - 【chart:week-rhythm】电脑活动图
+- 【chart:week-app-usage】应用使用时长（本周）
 规则：每条消息尽量引用一个图表；只用上面的 ID；不要用【】包裹非图表内容；不要连续两条引用相同图表。开场不强制编号；如果引用图表，尽量把图表引用放在句子开头或很靠前的位置，避免夹在长句中间。
+
+## 流式同步高亮
+周视图第一版不要使用局部 targetIds，先只用整图 chartId。周热力图的“某天某小时”涉及日期和小时双维度，先避免局部定位错误。
+当你第一次说到某个图表证据时，可以在那句话附近插入一个隐藏 HTML 注释，让前端在流式输出过程中同步高亮整张图：
+<!--VISUAL_REF:{"chartId":"chart-week-heatmap"}-->
+
+规则：
+- 每条回复最多输出 1 个 VISUAL_REF 注释，放在最重要证据附近，不要放到回复最后。
+- chartId 必须是这些 DOM 图表 ID 之一：chart-week-completion、chart-week-metrics、chart-week-ranking、chart-week-heatmap、chart-week-rhythm、chart-week-app-usage。
+- VISUAL_REF 不能替代正文图表引用；正文仍要保留【chart:ID】，方便用户点击。
+- 除了 VISUAL_REF 和 SUGGESTIONS 这两种 HTML 注释，不要输出其它 HTML 注释。
+
+图表职责：
+- 【chart:week-ranking】周任务用时排行：只适合讲“哪些任务一周里花得最多、任务之间用时差异、哪些任务反复被推进”。它不负责显示卡顿发生的位置。
+- 【chart:week-heatmap】7×24 活动热力图：适合讲“哪些天/时段更活跃、任务或卡顿是否集中在某些时间”。如果讨论卡顿集中在哪些天或时段，优先引用这张图。
+- 【chart:week-rhythm】电脑活动图：适合讲一周整体电脑活动节奏，不等于任务完成时间，也不负责显示具体卡顿点。
+- 【chart:week-app-usage】应用使用时长：适合解释本周电脑活跃时间主要被哪些前台应用占用。它只能说明应用类别和累计时长，不记录窗口标题、文件名、网址，也不能单独证明任务完成。
 
 ## 数据边界
 - 任务发生时间只能使用“任务真实发生时间段”、周任务排行或 tracker 事件里的时间；不能用电脑活跃高峰反推任务完成时间。
 - 电脑活动图只说明电脑在某段时间更活跃，不等于任务在那段时间完成。
-- 如果要解释电脑活跃高峰在做什么，优先结合“应用使用时长”的应用名；没有应用数据时要承认只能看到活跃度，不能猜具体活动。
+- 如果要解释电脑活跃高峰在做什么，优先结合【chart:week-app-usage】应用使用时长里的应用名；没有应用数据时要承认只能看到活跃度，不能猜具体活动。
 
 ## 对话方式
 这是一次自然的反思对话，不是结构化问卷。没有固定步骤，跟着用户的话题自然推进。
@@ -1324,7 +1712,7 @@ ${screenshotNote}
 - 任务延续或长期未推进：哪些任务反复出现但推进不多（引用【chart:week-ranking】）
 - 一周整体的完成节奏和趋势（引用【chart:week-rhythm】）
 
-开场示例："${wTimeOfDay}好呀，看看这周的情况。\n\n【chart:week-heatmap】这周最值得看的不是哪一格最深，而是有几段活动反复集中在相近时间。\n\n我注意到这里可以继续看一个问题：这些比较活跃的时段里，哪些是真的在推进任务，哪些只是电脑开着或来回切换。\n\n<!--SUGGESTIONS:["反复出现在计划里的任务","和前几天相比","活动最密的时间在做什么"]-->"
+开场示例："${wTimeOfDay}好呀，看看这周的情况。\n\n【chart:week-heatmap】这周最值得看的不是哪一格最深，而是有几段活动反复集中在相近时间。\n\n我注意到这里可以继续看一个问题：这些比较活跃的时段里，哪些是真的在推进任务，哪些只是电脑开着或来回切换。\n\n<!--SUGGESTIONS:["反复出现在计划里的任务","和前几天的区别","活动最密的时间在做什么"]-->"
 
 ### 第二步：用户点击 Tag 后
 当用户消息包含“用户选择了分析角度：XXX”时，说明他点了底部 Tag。这个 Tag 是你基于本周行为模式和历史记录发现的有趣点，用来促进用户对自己、任务、策略的觉察。此时不要把 XXX 当成普通回答，也不要问“你想聊这个吗”。
@@ -1357,25 +1745,27 @@ ${screenshotNote}
 
 ## Tag 方向（必须遵守）
 每条回复末尾必须附带探索方向，格式为 HTML 注释：
-<!--SUGGESTIONS:["反复出现在计划里的任务","和前几天相比","活动最密的时间在做什么"]-->
+<!--SUGGESTIONS:["反复出现在计划里的任务","和前几天的区别","活动最密的时间在做什么"]-->
 
 规则：
 - 每次必须生成 **正好 3 个**Tag
 - Tag 是“可点击的任务管理问题入口”，不是结论、不是图表名、也不是研究分类；目标是帮用户发现自己平时难以觉察的跨天任务管理过程问题。
 - Tag 表面文字要具体、好理解，背后必须对应一个可分析的 pattern，例如反复出现在计划里的任务、这周和前几天的差别、活跃时间和实际推进是否一致、列了但没开始的事。
 - Tag 不能像半截话。如果是时间片段或任务片段，要补上“任务/时间/在做什么/为什么没开始”等可理解对象。
+- Tag 只写“分析方向”，不要提前暴露具体任务名、课程名、文件名、应用名、具体日期或精确小时；这些具体对象必须等用户点击 Tag 后再在正文里解释。
+- 例如：不要写「总被留到后面的学习任务」，要写「总被留到后面的任务」；不要写「论文任务一直没开始」，要写「列了但没开始的任务」；不要写「Cursor 和 Edge 的使用」，要写「电脑开着时在做什么」；不要写「周三晚上的学习」，要写「更容易动起来的时间」。
 - 优先使用这些类型：
   - 长期任务：「一直没碰的任务」「这几天都没动的事」「总被留到后面的事」「反复出现在计划里的任务」
-  - 对比入口：「和前几天相比」「两天的节奏」「这周多出来的任务」「这周少掉的任务」
-  - 活跃时段：「比较活跃的时段」「真正推进的时间」「电脑开着时在做什么」「活动最密的时间在做什么」
+  - 对比入口：「和前几天的区别」「两天的节奏」「这周多出来的任务」「这周少掉的任务」
+  - 活跃时段：「比较活跃的时段」「真正推进的时间」「比较集中的推进时间」「电脑开着时在做什么」「活动最密的时间在做什么」
   - 计划实际：「计划里没写的事」「列了但没开始的事」「做了但没计划的事」「很快勾掉的任务」
-  - 任务推进：「花最久的任务」「顺手做完的任务」「被留到后面的事」「真正开始的任务」
-  - 卡住片段：「卡住时正在做什么」「停下来的是哪一步」「卡住后怎么继续的」「类似的一次卡住」
+  - 任务推进：「花最久的任务」「顺手做完的任务」「被留到后面的事」「真正开始的任务」「哪些环境更容易推进」
+  - 卡住片段：「卡住时正在做什么」「分析卡顿情况」
 - 避免单纯结果：「完成率100%」「15分钟专注」「没有待办」
 - 避免图表入口：「指标卡片」「任务用时分析」「电脑活动图」
 - 避免已经下结论：「任务切得刚好」「完成得很顺」「效率很好」
 - 避免抽象或研究感表达：「比平时顺在哪里」「开始前少了什么阻力」「完成率背后的计划」「任务大小合不合适」「时间状态匹配」「策略复用」
-- 避免半截表达或不清楚对象：「反复出现在计划里」「电脑开着的那段」「活动最密的那段」「后来接上的地方」「今天和昨天」「卡住后的那段」「停下来的那一步」
+- 避免半截表达或不清楚对象：「反复出现在计划里」「电脑开着的那段」「活动最密的那段」「后来接上的地方」「今天和昨天」「卡住后的那段」「停下来的那一步」「卡住后怎么继续的」「类似的一次卡住」
 - 标签长度通常控制在 5-14 个中文字左右；宁可稍长但说完整，不要为了短而让用户看不懂
 - 必须放在回复的最后一行
 - 探索方向注释不要编号，不要加粗，不要参与正文分段

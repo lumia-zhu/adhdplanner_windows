@@ -32,11 +32,13 @@ interface TaskDurationItem {
 interface TaskDurationChartProps {
   data: TaskDurationItem[]
   onTaskHover?: (taskTitle: string | null) => void
+  highlightTask?: string | null
+  highlightPulseKey?: string
 }
 
 export type { TaskDurationItem, StuckMark }
 
-export default function TaskDurationChart({ data, onTaskHover }: TaskDurationChartProps) {
+export default function TaskDurationChart({ data, onTaskHover, highlightTask, highlightPulseKey }: TaskDurationChartProps) {
   if (data.length === 0) return null
 
   const maxSec = Math.max(...data.map(d => d.durationSec), 1)
@@ -45,9 +47,15 @@ export default function TaskDurationChart({ data, onTaskHover }: TaskDurationCha
     <div className="space-y-2.5">
       {data.map((item, i) => {
         const barWidthPct = Math.max((item.durationSec / maxSec) * 100, 4)
+        const isHighlighted = highlightTask === item.title
 
         return (
-          <div key={i}>
+          <div
+            key={`${item.title}-${i}-${isHighlighted ? highlightPulseKey ?? 'pulse' : 'idle'}`}
+            className={`rounded-xl transition-all duration-200 ${
+              isHighlighted ? 'ai-focus-pulse px-1.5 py-1' : ''
+            }`}
+          >
             <div
               className="flex items-center gap-2.5"
               onMouseEnter={() => onTaskHover?.(item.title)}
@@ -61,7 +69,9 @@ export default function TaskDurationChart({ data, onTaskHover }: TaskDurationCha
 
               <div className="flex-1 h-[22px] rounded-lg overflow-hidden relative">
                 <div
-                  className="h-full rounded-lg transition-all duration-700 ease-out bg-blue-400/80"
+                  className={`h-full rounded-lg transition-all duration-700 ease-out ${
+                    isHighlighted ? 'bg-blue-400/80 shadow-[0_0_0_1px_rgba(245,158,11,0.35)]' : 'bg-blue-400/80'
+                  }`}
                   style={{ width: `${barWidthPct}%` }}
                 />
               </div>
