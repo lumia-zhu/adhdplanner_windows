@@ -1328,11 +1328,9 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
     return Math.min(Math.round((flowMin / focusMin) * 100), 100)
   }, [displaySummary])
 
-  /** 格式化使用时长：< 60 分钟显示"X分钟"，>= 60 分钟显示"X.Xh" */
+  /** 格式化使用时长：指标卡统一显示分钟，方便和任务时长直接比较。 */
   const usageDurationStr = useMemo(() => {
-    if (totalUsageMinutes < 60) return { value: totalUsageMinutes, unit: '分钟' }
-    const hours = (totalUsageMinutes / 60).toFixed(1)
-    return { value: hours, unit: '小时' }
+    return { value: totalUsageMinutes, unit: '分钟' }
   }, [totalUsageMinutes])
 
   /**

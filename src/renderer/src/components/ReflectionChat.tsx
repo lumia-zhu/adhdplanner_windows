@@ -43,6 +43,8 @@ const CHART_ID_MAP: Record<string, { domId: string; label: string }> = {
   'week-app-usage':  { domId: 'chart-week-app-usage',  label: '应用使用时长' },
 }
 
+const STREAM_CHART_FALLBACK_DELAY_MS = 700
+
 export type VisualFocusType = 'activity-hour' | 'activity-range' | 'task-duration' | 'metric' | 'app-usage'
 
 export type VisualFocusRef = Extract<VisualRef, { kind: 'focus' }>
@@ -633,12 +635,32 @@ const ReflectionChat = forwardRef<ReflectionChatHandle, ReflectionChatProps>(fun
       let settled = false
       let gotActivity = false
       let streamedText = ''
+      let pendingChartFallback: {
+        timer: ReturnType<typeof window.setTimeout>
+        ref: Extract<VisualRef, { kind: 'chart' }>
+      } | null = null
       const TIMEOUT_MS = 60_000
       const startTime = Date.now()
+
+      const clearPendingChartFallback = () => {
+        if (pendingChartFallback) {
+          window.clearTimeout(pendingChartFallback.timer)
+          pendingChartFallback = null
+        }
+      }
+
+      const flushPendingChartFallback = () => {
+        const pending = pendingChartFallback
+        clearPendingChartFallback()
+        if (pending && triggeredVisualRefKeysRef.current.size === 0) {
+          triggerVisualRef(pending.ref, 0)
+        }
+      }
 
       const timeoutId = setTimeout(() => {
         if (settled || gotActivity) return
         settled = true
+        clearPendingChartFallback()
         const elapsed = ((Date.now() - startTime) / 1000).toFixed(1)
         console.warn(`[ReflectionChat] ${elapsed}s 超时，未收到任何 AI 响应。消息数: ${newMessages.length}`)
         streamCleanupRef.current?.()
@@ -702,6 +724,20 @@ const ReflectionChat = forwardRef<ReflectionChatHandle, ReflectionChatProps>(fun
         return true
       }
 
+      const scheduleChartFallback = (chartRef: Extract<VisualRef, { kind: 'chart' }>) => {
+        if (pendingChartFallback || triggeredVisualRefKeysRef.current.size > 0) return
+        pendingChartFallback = {
+          ref: chartRef,
+          timer: window.setTimeout(() => {
+            const pending = pendingChartFallback
+            pendingChartFallback = null
+            if (pending && triggeredVisualRefKeysRef.current.size === 0) {
+              triggerVisualRef(pending.ref, 0)
+            }
+          }, STREAM_CHART_FALLBACK_DELAY_MS),
+        }
+      }
+
       const selectVisualFocusAfterStream = async (content: string, fallbackChartRef: Extract<VisualRef, { kind: 'chart' }> | null) => {
         const hasStreamTriggeredRef = triggeredVisualRefKeysRef.current.size > 0
         let visualRef: VisualRef | null = null
@@ -728,8 +764,16 @@ const ReflectionChat = forwardRef<ReflectionChatHandle, ReflectionChatProps>(fun
         (delta) => {
           gotActivity = true
           streamedText += delta
-          for (const ref of parseVisualRefMarkers(streamedText, visualTargets)) {
+          const explicitRefs = parseVisualRefMarkers(streamedText, visualTargets)
+          if (explicitRefs.length > 0) {
+            clearPendingChartFallback()
+          }
+          for (const ref of explicitRefs) {
             triggerVisualRef(ref, 0)
+          }
+          if (triggeredVisualRefKeysRef.current.size === 0) {
+            const fallbackChartRef = findFallbackChartRef(streamedText)
+            if (fallbackChartRef) scheduleChartFallback(fallbackChartRef)
           }
           setStreaming(true)
           setLoading(false)
@@ -746,6 +790,7 @@ const ReflectionChat = forwardRef<ReflectionChatHandle, ReflectionChatProps>(fun
           if (settled) return
           settled = true
           clearTimeout(timeoutId)
+          flushPendingChartFallback()
           const elapsed = ((Date.now() - startTime) / 1000).toFixed(1)
           console.log(`[ReflectionChat] AI 回复完成，耗时 ${elapsed}s，长度 ${fullText.length}`)
           setStreaming(false)
@@ -769,6 +814,7 @@ const ReflectionChat = forwardRef<ReflectionChatHandle, ReflectionChatProps>(fun
           if (settled) return
           settled = true
           clearTimeout(timeoutId)
+          clearPendingChartFallback()
           const elapsed = ((Date.now() - startTime) / 1000).toFixed(1)
           console.warn(`[ReflectionChat] AI 出错，耗时 ${elapsed}s:`, errMsg)
           setStreaming(false)

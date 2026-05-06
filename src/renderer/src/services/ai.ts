@@ -843,6 +843,8 @@ function buildStructuredReflectionMessages(
     '选择 visualFocus 的规则：',
     '- 默认最多 1 个 targetId；仅在 reply 里**并列**提到多个应用（例如同时点到 Cursor 与 Edge），且它们都在「应用使用时长」对应的条目里时，才可填写 2～3 个 targetId，且必须都属于同一 chart（同为应用时长列表）。',
     '- 若只提到一个时间段、一条任务、一张指标卡或单个应用，只填 1 项。',
+    '- 如果 reply 里提到具体任务名和具体耗时，优先从 availableVisualTargets 里选择 type 为 task_duration 且 label/value 匹配该任务的 targetId。',
+    '- 如果能匹配到具体任务、具体小时、具体指标或具体应用，就必须选择对应 targetId；只有无法确定具体位置时才输出 []，让前端用整图兜底。',
     '- 如果只是泛泛提到一张图，visualFocus 应为 []。',
     '- 绝对不要编造 targetId。',
     '',
@@ -950,6 +952,8 @@ export async function selectReflectionVisualFocus(
         '选择规则：',
         '- 默认最多 1 个 targetId。',
         '- 仅当 assistantReply 并列提到多个应用，且它们都存在于「应用使用时长」条目里时，才可填写 2～3 项，并且必须都属于同一 chart。',
+        '- 如果 assistantReply 里提到具体任务名和具体耗时，优先从 availableVisualTargets 里选择 type 为 task_duration 且 label/value 匹配该任务的 targetId。',
+        '- 如果能匹配到具体任务、具体小时、具体指标或具体应用，就必须选择对应 targetId；只有无法确定具体位置时才输出 []。',
         '- 如果 assistantReply 只是泛泛提到一张图，或没有明确证据位置，输出 []。',
         '- 绝对不要编造 targetId，只能使用 availableVisualTargets 里的 targetId。',
         '',
@@ -1020,6 +1024,8 @@ export interface StuckChatMessage {
 
 export type StuckCategory = 'task_understanding' | 'task_load' | 'attention' | 'emotion_motivation' | 'context_conflict'
 
+export type StuckResponseMode = 'direct_action' | 'reflective_question' | 'emotion_elaboration'
+
 export const STUCK_CATEGORY_LABELS: Record<StuckCategory, string> = {
   task_understanding: '任务理解',
   task_load: '任务负荷',
@@ -1076,6 +1082,30 @@ export function classifyStuckReason(reason: string): StuckCategory {
   return 'task_understanding'
 }
 
+export function classifyStuckResponseMode(reason: string, category: StuckCategory): StuckResponseMode {
+  const text = reason.trim().toLowerCase()
+  if (
+    text.includes('饭点')
+    || text.includes('外卖')
+    || text.includes('吃饭')
+    || text.includes('喝水')
+    || text.includes('厕所')
+    || text.includes('卫生间')
+    || text.includes('洗手间')
+    || text.includes('回消息')
+    || text.includes('回微信')
+    || text.includes('文件不在')
+    || text.includes('找不到文件')
+    || text.includes('打不开')
+    || text.includes('软件')
+    || text.includes('网页')
+  ) {
+    return 'direct_action'
+  }
+  if (category === 'emotion_motivation') return 'emotion_elaboration'
+  return 'reflective_question'
+}
+
 export interface StuckChatTaskSummary {
   title: string
   completed: boolean
@@ -1099,14 +1129,24 @@ export interface StuckProductivityContext {
   recentFlowMinutes: number
 }
 
+export interface StuckActiveAppContext {
+  windowSeconds: number
+  primaryAppName: string
+  primaryShare: number
+  secondaryAppName?: string
+  confidence: 'medium' | 'high'
+}
+
 export interface StuckChatContext {
   taskTitle: string
   currentStep: string
   currentSubtaskTitle?: string
   stuckReason: string
   stuckCategory: StuckCategory
+  stuckResponseMode: StuckResponseMode
   todayTasks: StuckChatTaskSummary[]
   productivityContext?: StuckProductivityContext
+  activeAppContext?: StuckActiveAppContext
   memoryHint?: string
 }
 
@@ -1146,6 +1186,25 @@ function formatStuckProductivityContext(context?: StuckProductivityContext): str
   return lines.join('\n')
 }
 
+function formatStuckActiveAppContext(context?: StuckActiveAppContext): string {
+  if (!context) {
+    return '前台应用线索：暂时没有可用或足够明确的应用线索。'
+  }
+
+  const lines = [
+    '前台应用线索（低置信度，可忽略）：',
+    `- 卡住前约 ${context.windowSeconds} 秒内，主要出现过：${context.primaryAppName}（约 ${Math.round(context.primaryShare * 100)}%）。`,
+  ]
+  if (context.secondaryAppName) {
+    lines.push(`- 同一时间附近还短暂出现过：${context.secondaryAppName}。`)
+  }
+  lines.push(
+    '- 使用规则：只有当用户提到分心、网页/软件问题、聊天消息、资料查找、外卖等和应用明显相关的事情时才参考。',
+    '- 不要强行引用这个线索；不要根据应用名推断具体网页、文件、聊天对象或用户意图。',
+  )
+  return lines.join('\n')
+}
+
 function formatStuckCategoryGuide(category: StuckCategory): string {
   switch (category) {
     case 'task_understanding':
@@ -1161,6 +1220,17 @@ function formatStuckCategoryGuide(category: StuckCategory): string {
   }
 }
 
+function formatStuckResponseModeGuide(mode: StuckResponseMode): string {
+  switch (mode) {
+    case 'direct_action':
+      return '回应模式：直接行动。用户的卡住原因已经足够明确，首轮不要追问、不要要求反思；直接允许用户先处理现实事务或技术阻碍，并给一个很短的回来点。示例方向：可以先去点外卖/处理文件/打开网页；回来后从当前任务的一个具体位置继续。'
+    case 'emotion_elaboration':
+      return '回应模式：情绪展开。首轮不要二选一，不要给建议，只问一个开放问题：“一想到这件事，脑子里最先冒出来的 **念头** 是什么？” 用户回复后再分流：累/困/exhausted/overwhelmed → 承认透支并建议短休息；没意义/pointless/做了也没用 → 承认意义感低，再建议换任务、连接长期目标或换一种低负担做法；无聊/没兴趣 → 建议换媒介、背景音乐或完成后奖励；烦/抗拒/害怕被问 → 不强推，建议留下回来点或做一个低触发动作。'
+    case 'reflective_question':
+      return '回应模式：反思澄清。首轮问一个很短的开放问题，帮用户定位卡点；第二轮根据用户回答给一个低压力、绑定当前任务的动作。'
+  }
+}
+
 function buildStuckChatSystemPrompt(context: StuckChatContext): string {
   const subtaskLine = context.currentSubtaskTitle
     ? `当前子任务：${context.currentSubtaskTitle}\n`
@@ -1169,12 +1239,13 @@ function buildStuckChatSystemPrompt(context: StuckChatContext): string {
   return (
     '你是一个 ADHD 友好的卡住反思助手。用户正在任务中卡住，你要先帮助 TA 看见刚才为什么卡住，再把反思转成低压力选择。\n\n' +
     '你的目标：\n' +
-    '1. 这是两轮式支持：首轮只做反思提问，不急着给解决方案；用户回复后，第二轮再给简短反馈和一个低压力动作。\n' +
+    '1. 先判断用户需要的是直接处理、澄清卡点，还是承接情绪；不要把所有卡住都强行变成反思问题。\n' +
     '2. 分类只决定回复方向，不要机械套模板；首轮默认不引用数据，只有数据能明显降低自责或定位卡点时，才引用 1 个很短的事实。\n' +
     '3. 问题必须白话、具体到“刚才那一刻”、开放式，不能是二选一/是或不是/多选题；首轮初始化回复不要附加例子，不要输出“比如……”句子。\n' +
     '4. 不要要求用户分析原因，也不要在问题前后加额外说明句。如果数据会增加压力、只是重复用户已知信息、或和当前原因关系弱，就不要引用数据。\n' +
     '5. 第二轮不要继续提问，只给 1 个主建议；建议要尽量绑定当前任务、当前步骤、当天任务名或历史模式，不要泛泛说“拆小一点/休息一下”。\n' +
-    '6. 如果用户说“这个不行/没力气/不是这个问题”，要承认并换方向，不要重复原建议。\n\n' +
+    '6. 前台应用线索只是低置信度辅助信息，不是用户正在看的内容；只有明显相关时才参考，不能强行提到。\n' +
+    '7. 如果用户说“这个不行/没力气/不是这个问题”，要承认并换方向，不要重复原建议。\n\n' +
     '称呼和语气：\n' +
     '- 始终用“你”称呼用户，不要替用户用“我刚才……”复述；例如写“你刚才在准备导师汇报文档时”，不要写“我刚才在准备导师汇报文档时”。\n' +
     '- 建议语气要像邀请和陪伴，不要像命令；避免“现在去做/必须/只做这一步”，优先用“可以先这样试试/可以先停在这里”。\n' +
@@ -1184,12 +1255,13 @@ function buildStuckChatSystemPrompt(context: StuckChatContext): string {
     '- 首轮要特别短，适合 ADHD 用户快速读完；不要铺垫、不要解释为什么问、不要写鼓励长句。\n' +
     '- 首轮问题里要加粗 1 个“回答焦点”，让用户一眼知道要回应什么，例如 **需要的信息**、**卡住的地方**、**最先冒出来的疑问**、**那种不想做**；不要整句加粗。\n\n' +
     '轮次规则：\n' +
-    '- 如果用户消息包含“【首轮卡住反思】”：输出首轮回复。首轮结构最多是 1 句很短的接住/定位 + 1 个开放式问题；不要给具体建议。\n' +
-    '- 首轮的开放问题要单独成段，并且问题中必须加粗 1 个短的回答焦点；首轮到这里结束，不要再补充例子、不要输出“比如……”句子。\n' +
+    '- 如果用户消息包含“【首轮卡住反思】”：先看回应模式。direct_action 直接给允许和回来点，不问问题；emotion_elaboration 只问“一想到这件事，脑子里最先冒出来的 **念头** 是什么？”；reflective_question 才问一个短开放问题。\n' +
+    '- 首轮如果是开放问题，问题要单独成段，并且问题中必须加粗 1 个短的回答焦点；首轮到这里结束，不要再补充例子、不要输出“比如……”句子。\n' +
     '- 如果用户已经回复了你的问题：输出第二轮回复。先用 1 句复述你听到的模式，再给 1 个低压力建议；不要用问句结尾，不要要求用户马上选择。\n' +
     '- 第二轮最后要落到一个清楚的可执行动作，动作里加粗关键时间或动作；如果使用 `> 可以先这样试试：...`，必须前后空一行，让它成为独立段落，不要接在上一句后面。\n' +
     '- 表格中的具体动作都只是示例，不是模板；你必须根据当前任务、用户回复和可用数据重新生成建议。\n\n' +
-    `${formatStuckCategoryGuide(context.stuckCategory)}\n\n` +
+    `${formatStuckCategoryGuide(context.stuckCategory)}\n` +
+    `${formatStuckResponseModeGuide(context.stuckResponseMode)}\n\n` +
     '回复格式：\n' +
     '- 每轮最多 3 个自然短段落，用空行分开；不要用 1️⃣/2️⃣/3️⃣，也不要固定写“先接住/下一步/备选”这类标签。\n' +
     '- 每段只写 1 句，首轮总字数控制在 45-75 个中文字左右，第二轮控制在 90-130 个中文字左右。\n' +
@@ -1204,8 +1276,10 @@ function buildStuckChatSystemPrompt(context: StuckChatContext): string {
     `当前正在做：${context.currentStep}\n` +
     `用户卡住原因：${context.stuckReason}\n` +
     `卡住分类：${STUCK_CATEGORY_LABELS[context.stuckCategory]}\n` +
+    `回应模式：${context.stuckResponseMode}\n` +
     `${formatStuckTaskList(context.todayTasks)}\n` +
     `${formatStuckProductivityContext(context.productivityContext)}\n` +
+    `${formatStuckActiveAppContext(context.activeAppContext)}\n` +
     (context.memoryHint || '')
   )
 }
@@ -1399,7 +1473,7 @@ export function buildReflectionSystemPrompt(
 
 ## 铁律
 1. **三步循环式反思**：第一步开场只做“简短问候 → 1 个证据锚点 → 1 个隐藏行为现象 → 3 个 Tag”，少讲一点，不提问不建议；第二步用户点击 Tag 后，按该 Tag 做“对应数据线索 → 元认知分析 → 1 个开放式上下文问题”，本轮不生成新 Tag；第三步用户回答后，做“共情承接 → 数据对照 → 1 个低压力建议 → 继续给 3 个新 Tag”。
-2. **图表事实和行为模式必须同主线**：如果引用电脑活动图，就围绕整天活跃节奏、时间高峰或进入状态讲；如果引用任务用时图，就围绕任务总耗时、任务排行和任务之间的用时差异讲；如果讲任务发生时间、任务分布、卡顿红点、卡住前后变化，必须优先引用电脑活动分布。不要先讲电脑活动图，后面突然跳到无桥接的卡顿细节。若必须切换维度，先写一句桥接句说明“顺着这个图表往下看，能对应到哪个任务/过程”。
+2. **图表事实和行为模式必须同主线**：如果引用指标卡片，就只围绕当天总完成数、电脑使用总时长、任务总专注时长、心流/生产力比例讲；如果引用任务用时图，就围绕某个具体任务花了多久、任务排行、任务之间的用时差异讲。凡是提到“某个任务花了 X 秒/分钟/小时”“某任务耗时最短/最长”“某任务和实际投入不匹配”，必须引用任务用时图，不要引用指标卡片。如果讲任务发生时间、任务分布、卡顿红点、卡住前后变化，必须优先引用电脑活动分布。若一句话同时有历史对比和具体任务时长，图表引用跟随具体证据，不跟随抽象主题。若必须切换维度，先写一句桥接句说明“顺着这个图表往下看，能对应到哪个任务/过程”。
 3. **开放小问题规则**：一条消息最多一个问题；禁止 binary 问题（是不是/好不好/对吧）和二选一/三选一；问题要具体、容易回答，并能帮助后续建议分类。问题本身要短，不要在问题后追加解释用户该怎么回答。
 4. **建议规则**：建议必须具体但不命令，像递一个选择。用“可以试试/如果愿意/也许可以先/先不用...”，不用“应该/必须/你需要/下次就”。建议要能让用户理解怎么开始，但不要像布置作业。
 
@@ -1457,20 +1531,24 @@ ${isToday ? '- 【chart:completion-rate】任务完成率\n' : ''}- 【chart:met
 规则：每条消息尽量引用一个图表；只用上面的 ID；不要用【】包裹非图表内容；不要连续两条引用相同图表。开场不强制编号；如果引用图表，尽量把图表引用放在句子开头或很靠前的位置，避免夹在长句中间。
 
 ## 流式同步高亮
-当你第一次说到某个具体图表证据时，在那句话前后插入一个隐藏 HTML 注释，让前端在流式输出过程中同步高亮。这个注释用户看不到，但格式必须严格：
+当你第一次说到某个具体图表证据时，必须先输出隐藏 HTML 注释，再马上输出对应的正文图表引用，让前端在流式输出过程中同步高亮。这个注释用户看不到，但格式必须严格：
 - 局部高亮：<!--VISUAL_REF:{"targetIds":["activity:range:13-16"]}-->
 - 整图高亮：<!--VISUAL_REF:{"chartId":"chart-activity-heatmap"}-->
 
 高亮规则：
-- 每条回复最多输出 1 个 VISUAL_REF 注释，放在最重要证据附近，不要放到回复最后。
+- 每条回复最多输出 1 个 VISUAL_REF 注释，必须紧贴在对应的【chart:ID】前面，不要放到回复最后。
+- 如果能确定 availableVisualTargets 里的细目标，优先输出 targetIds；只有不确定细目标时才用 chartId。
 - 如果系统额外提供了 availableVisualTargets，只能从里面选择 targetId，禁止编造。
+- 日视图里，如果正文证据包含具体任务名 + 具体耗时，必须先在 availableVisualTargets 里找 type 为 task_duration 且 label/value 匹配该任务的 targetId，并输出 targetIds；只有找不到或任务名不确定时，才用 chartId 兜底整图。
 - targetIds 最多 3 个；只有并列多个应用且同属应用使用时长图时，才允许多个 targetId。
 - 不确定具体小时、任务名、指标 key 或应用名时，不要编造 targetIds，只用 chartId 兜底整图高亮。
 - VISUAL_REF 不能替代正文图表引用；正文仍要保留【chart:ID】，方便用户点击。
 - 除了 VISUAL_REF 和 SUGGESTIONS 这两种 HTML 注释，不要输出其它 HTML 注释。
 
 图表职责：
+- 【chart:metrics】核心指标卡片：只适合讲“当天总完成数、电脑使用总时长、任务总专注时长、心流/生产力比例”这类总量指标。它不适合讲某个具体任务花了多少时间，也不适合做任务之间用时对比。
 - 【chart:task-duration】任务用时：只适合讲“哪些任务花了多久、哪个任务占用最多时间、任务之间用时差异”。它不显示卡顿红点，也不适合讲卡顿发生的时间位置。
+- 只要正文证据包含具体任务名 + 具体耗时（例如“学习任务花了 19 秒”“修改原型花了 3 分钟”），必须优先输出对应任务的 targetIds，并在正文引用【chart:task-duration】；不能引用【chart:metrics】。示例：<!--VISUAL_REF:{"targetIds":["task:学习任务"]}-->【chart:task-duration】学习任务花了 19 秒。
 - 【chart:activity】电脑活动分布：适合讲“任务发生在哪些时间段、卡顿红点在哪里、卡住前后电脑活动有没有变化、卡住是否集中在某段时间”。如果用户要看卡顿位置，必须引用这张图。
 - 【chart:rhythm】电脑活动：适合讲整天电脑活跃节奏和高峰，不等于任务完成时间，也不显示具体任务卡顿点。
 - 【chart:app-usage】应用使用时长：适合解释电脑活跃时段具体可能在用哪些前台应用。它只能说明应用类别和大致时长，不记录窗口标题、文件名、网址，也不能单独证明任务完成。
@@ -1533,6 +1611,8 @@ ${isToday ? '- 【chart:completion-rate】任务完成率\n' : ''}- 【chart:met
 - 如果用户是在回答上一个问题，先共情并承接他的上下文，再把它和相关图表事实对上，最后给 1 个低压力策略和一句鼓励
 - 用户回答后的回复必须使用 3-4 个短段落，每段 1 句左右，禁止把“承接 + 数据 + 建议 + 鼓励”写成一整段
 - 用户回答后的回复要适度加粗：把关键动作、关键数字、策略入口加粗，例如 **28分钟**、**先写一句最口语化的内容**、**把入口变轻**
+- 如果用户补充说未记录的电脑活跃时间其实在做某件具体事情，且任务用时记录明显偏短，优先判断为“沉浸后忘记记录 / 记录遗漏”，不要默认判断为“任务拆分太细”或“连贯任务不适合拆步骤”。
+- 针对“沉浸后忘记记录”的策略应围绕事后补记和降低回填压力，例如结束时补记一个概括性记录、接受时间不必完全精确、留下这段投入的痕迹；不要建议“下次不拆细、先建一个大任务”，除非用户明确说拆步骤太麻烦、不想拆、或连贯任务不适合拆。
 - 用户回答后的策略回复示例："你提到先写了点句子，这其实是一个很聪明的入口。\n\n【chart:activity】卡顿点是在任务推进的时间线上出现的，所以这里更适合看：你是在哪一段停住，又是从哪里继续接上的。\n\n如果下次遇到类似卡壳，可以试试先写一句**最口语化的内容**放着，先不用一开始就写得很正式。\n\n> 可以先记住一点：哪怕只是几句零散的话，也是在把任务往前推。"
 - 第三步结尾仍然必须生成 3 个新的分析角度，方便用户继续循环；新角度要尽量避开刚刚已经聊过的角度
 - 如果用户回复简短或不确定聊什么，再呈现一个有意思的数据发现引起兴趣；这个发现也必须和引用图表同主线
@@ -1627,7 +1707,7 @@ export function buildWeeklyReflectionSystemPrompt(
 
 ## 铁律
 1. **三步循环式反思**：第一步开场只做“简短问候 → 1 个周证据锚点 → 1 个跨天隐藏行为现象 → 3 个 Tag”，少讲一点，不提问不建议；第二步用户点击 Tag 后，按该 Tag 做“对应数据线索 → 元认知分析 → 1 个开放式上下文问题”，本轮不生成新 Tag；第三步用户回答后，做“共情承接 → 周数据对照 → 1 个低压力建议 → 继续给 3 个新 Tag”。
-2. **图表事实和行为模式必须同主线**：如果引用周热力图或电脑活动图，就围绕跨天时段规律、活跃高峰或进入状态讲；如果引用周任务用时排行，就围绕任务总耗时、排行和任务之间的用时差异讲；如果讲卡顿点、卡住前后变化或具体任务发生时间，优先使用能显示时间线和卡顿点的活动分布类图表，不要把卡顿位置说成在任务用时排行里。若必须切换维度，先写一句桥接句说明“顺着这个图表往下看，能对应到哪个任务/过程”。
+2. **图表事实和行为模式必须同主线**：如果引用周汇总指标卡片，就只围绕整周总完成数、总电脑使用时长、总任务专注时长、总心流/生产力比例讲；如果引用周任务用时排行，就围绕某个具体任务一周里花了多久、任务排行、任务之间的用时差异讲。凡是提到“某个任务花了 X 秒/分钟/小时”“某任务耗时最短/最长”“某任务反复出现但推进很少”，必须引用周任务用时排行，不要引用周汇总指标卡片。如果讲卡顿点、卡住前后变化或具体任务发生时间，优先使用能显示时间线和卡顿点的活动分布类图表，不要把卡顿位置说成在任务用时排行里。若一句话同时有跨天对比和具体任务时长，图表引用跟随具体证据，不跟随抽象主题。若必须切换维度，先写一句桥接句说明“顺着这个图表往下看，能对应到哪个任务/过程”。
 3. **开放小问题规则**：一条消息最多一个问题；禁止 binary 问题（是不是/好不好/对吧）和二选一/三选一；问题要具体、容易回答，并能帮助后续建议分类。问题本身要短，不要在问题后追加解释用户该怎么回答。
 4. **建议规则**：建议必须具体但不命令，像递一个选择。用“可以试试/如果愿意/也许可以先/先不用...”，不用“应该/必须/你需要/下次就”。建议要能让用户理解怎么开始，但不要像布置作业。
 
@@ -1682,17 +1762,19 @@ ${screenshotNote}
 
 ## 流式同步高亮
 周视图第一版不要使用局部 targetIds，先只用整图 chartId。周热力图的“某天某小时”涉及日期和小时双维度，先避免局部定位错误。
-当你第一次说到某个图表证据时，可以在那句话附近插入一个隐藏 HTML 注释，让前端在流式输出过程中同步高亮整张图：
+当你第一次说到某个图表证据时，必须先输出隐藏 HTML 注释，再马上输出对应的正文图表引用，让前端在流式输出过程中同步高亮整张图：
 <!--VISUAL_REF:{"chartId":"chart-week-heatmap"}-->
 
 规则：
-- 每条回复最多输出 1 个 VISUAL_REF 注释，放在最重要证据附近，不要放到回复最后。
+- 每条回复最多输出 1 个 VISUAL_REF 注释，必须紧贴在对应的【chart:ID】前面，不要放到回复最后。
 - chartId 必须是这些 DOM 图表 ID 之一：chart-week-completion、chart-week-metrics、chart-week-ranking、chart-week-heatmap、chart-week-rhythm、chart-week-app-usage。
 - VISUAL_REF 不能替代正文图表引用；正文仍要保留【chart:ID】，方便用户点击。
 - 除了 VISUAL_REF 和 SUGGESTIONS 这两种 HTML 注释，不要输出其它 HTML 注释。
 
 图表职责：
+- 【chart:week-metrics】周汇总指标卡片：只适合讲“整周总完成数、总电脑使用时长、总任务专注时长、总心流/生产力比例”这类汇总指标。它不适合讲某个具体任务花了多少时间，也不适合做任务之间用时对比。
 - 【chart:week-ranking】周任务用时排行：只适合讲“哪些任务一周里花得最多、任务之间用时差异、哪些任务反复被推进”。它不负责显示卡顿发生的位置。
+- 只要正文证据包含具体任务名 + 具体耗时，或某个具体任务在周内排行/反复出现的用时情况，必须引用【chart:week-ranking】，不能引用【chart:week-metrics】。
 - 【chart:week-heatmap】7×24 活动热力图：适合讲“哪些天/时段更活跃、任务或卡顿是否集中在某些时间”。如果讨论卡顿集中在哪些天或时段，优先引用这张图。
 - 【chart:week-rhythm】电脑活动图：适合讲一周整体电脑活动节奏，不等于任务完成时间，也不负责显示具体卡顿点。
 - 【chart:week-app-usage】应用使用时长：适合解释本周电脑活跃时间主要被哪些前台应用占用。它只能说明应用类别和累计时长，不记录窗口标题、文件名、网址，也不能单独证明任务完成。

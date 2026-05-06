@@ -20,12 +20,10 @@ export default function WeekMetricCards({ days }: Props) {
   const totalCompleted = daysWithData.reduce((sum, d) => sum + d.summary.stats.completedMicroSteps, 0)
   const avgCompleted = (totalCompleted / n).toFixed(1)
 
-  // 日均使用时长（分钟 → 显示）
+  // 日均使用时长统一用分钟显示，避免 4.9 小时这类小数不直观。
   const totalUsage = daysWithData.reduce((sum, d) => sum + d.totalUsageMinutes, 0)
   const avgUsageMin = Math.round(totalUsage / n)
-  const usageStr = avgUsageMin >= 60
-    ? { value: (avgUsageMin / 60).toFixed(1), unit: '小时' }
-    : { value: String(avgUsageMin), unit: '分钟' }
+  const usageStr = { value: String(avgUsageMin), unit: '分钟' }
 
   // 日均任务时长
   const totalFocus = daysWithData.reduce((sum, d) => sum + d.summary.stats.totalFocusMinutes, 0)

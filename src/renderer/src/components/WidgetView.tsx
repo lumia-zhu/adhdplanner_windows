@@ -17,7 +17,8 @@
 import { useState, useEffect, useRef } from 'react'
 import type { Task } from '../types'
 import type { AIConfig, MicroActionChip, StuckChatContext, StuckChatMessage, StuckProductivityContext } from '../services/ai'
-import { generateStuckChips, chatStuckSupportStream, buildStuckHint, classifyStuckReason } from '../services/ai'
+import { generateStuckChips, chatStuckSupportStream, buildStuckHint, classifyStuckReason, classifyStuckResponseMode } from '../services/ai'
+import type { ActivityRecord } from './ActivityHeatmap'
 import { aiCache } from '../services/ai-cache'
 import { tracker } from '../services/tracker'
 import { buildDailySummary, type TrackEvent } from '../services/tracker'
@@ -34,6 +35,9 @@ const BAR_H_RELAY = 280
 const BAR_H_STUCK = 340
 const BAR_H_STUCK_CHAT = 460
 const BAR_H_FIRST_STEP = 52  // 简化模式：横向低干扰任务条
+const STUCK_APP_CONTEXT_WINDOW_MS = 90_000
+const STUCK_APP_CONTEXT_TIMEOUT_MS = 200
+const STUCK_APP_CONTEXT_MIN_PRIMARY_SHARE = 0.5
 
 // ★ Feature Flag：关闭逐步拆解（relay 循环），简化为"理解 → 第一步 → 完成 → 退出"
 // 设为 true 可恢复完整的 step-by-step 接力模式
@@ -467,7 +471,62 @@ function FocusDynamicBar({
     }
   }
 
-  const fallbackStuckFirstReply = (reason: string, category: StuckChatContext['stuckCategory']): string => {
+  const withTimeout = async <T,>(promise: Promise<T>, timeoutMs: number): Promise<T | undefined> => {
+    return Promise.race([
+      promise,
+      new Promise<undefined>(resolve => window.setTimeout(() => resolve(undefined), timeoutMs)),
+    ])
+  }
+
+  const buildStuckActiveAppContext = async (): Promise<StuckChatContext['activeAppContext']> => {
+    const records = await withTimeout(
+      window.electronAPI.loadActivityData(getToday()) as Promise<unknown[]>,
+      STUCK_APP_CONTEXT_TIMEOUT_MS,
+    )
+    if (!Array.isArray(records)) return undefined
+
+    const now = Date.now()
+    const recentRecords = (records as ActivityRecord[])
+      .filter(record => (
+        typeof record.ts === 'number'
+        && record.ts >= now - STUCK_APP_CONTEXT_WINDOW_MS
+        && record.ts <= now + 5_000
+        && record.appUsage
+      ))
+
+    const appCounts = new Map<string, number>()
+    for (const record of recentRecords) {
+      if (!record.appUsage) continue
+      for (const [appName, count] of Object.entries(record.appUsage)) {
+        if (!appName.trim() || count <= 0) continue
+        appCounts.set(appName, (appCounts.get(appName) || 0) + count)
+      }
+    }
+
+    const rankedApps = [...appCounts.entries()].sort((a, b) => b[1] - a[1])
+    const totalSamples = rankedApps.reduce((sum, [, count]) => sum + count, 0)
+    const primary = rankedApps[0]
+    if (!primary || totalSamples <= 0) return undefined
+
+    const primaryShare = primary[1] / totalSamples
+    if (primaryShare < STUCK_APP_CONTEXT_MIN_PRIMARY_SHARE) return undefined
+
+    return {
+      windowSeconds: STUCK_APP_CONTEXT_WINDOW_MS / 1000,
+      primaryAppName: primary[0],
+      primaryShare,
+      secondaryAppName: rankedApps[1]?.[0],
+      confidence: primaryShare >= 0.7 ? 'high' : 'medium',
+    }
+  }
+
+  const fallbackStuckFirstReply = (context: StuckChatContext): string => {
+    if (context.stuckResponseMode === 'direct_action') {
+      return `可以，先处理这个。\n\n回来后从这里继续：${context.currentStep}`
+    }
+    if (context.stuckResponseMode === 'emotion_elaboration') {
+      return '一想到这件事，脑子里最先冒出来的 **念头** 是什么？'
+    }
     const questionByCategory: Record<StuckChatContext['stuckCategory'], string> = {
       task_understanding: '刚才你看着这个任务时，脑子里第一个冒出来的 **疑问** 是什么？',
       task_load: '刚才你觉得它变复杂的时候，最先冒出来的是 **哪一块**？',
@@ -475,7 +534,7 @@ function FocusDynamicBar({
       emotion_motivation: '刚才那种 **不想做**，你会怎么形容它？',
       context_conflict: '刚才除了这个任务，还有什么事情一直在你脑子里 **占位置**？',
     }
-    return questionByCategory[category]
+    return questionByCategory[context.stuckCategory]
   }
 
   const fallbackStuckSecondReply = (context: StuckChatContext): string => {
@@ -539,7 +598,7 @@ function FocusDynamicBar({
     setStuckChatError('')
     const isFirstRound = messages.some(message => message.role === 'user' && message.content.includes('【首轮卡住反思】'))
     const fallbackText = isFirstRound
-      ? fallbackStuckFirstReply(context.stuckReason, context.stuckCategory)
+      ? fallbackStuckFirstReply(context)
       : fallbackStuckSecondReply(context)
 
     setStuckMessages([...visibleMessages, { role: 'assistant', content: '' }])
@@ -617,16 +676,7 @@ function FocusDynamicBar({
     const trimmedReason = reason.trim()
     if (!trimmedReason) return
     const stuckCategory = classifyStuckReason(trimmedReason)
-
-    // 📊 埋点：卡顿归因
-    tracker.track('stuck.reason', {
-      sessionId: session.sessionId,
-      taskId: session.taskId,
-      microAction: currentMicroTask,
-      reason: trimmedReason,
-      reasonSource,
-      stuckCategory,
-    })
+    const stuckResponseMode = classifyStuckResponseMode(trimmedReason, stuckCategory)
 
     // 行为学习：记录卡住原因到 MemoryStore
     window.electronAPI.loadMemoryStore().then(raw => {
@@ -653,8 +703,9 @@ function FocusDynamicBar({
     Promise.all([
       window.electronAPI.loadMemoryStore().catch(() => null),
       buildProductivityContext(trimmedReason).catch(() => undefined),
+      buildStuckActiveAppContext().catch(() => undefined),
     ])
-      .then(([raw, productivityContext]) => {
+      .then(([raw, productivityContext, activeAppContext]) => {
         const hints = buildStuckHint(
           (raw as any)?.stuckReasons ?? [],
           (raw as any)?.hintFeedback ?? [],
@@ -665,13 +716,31 @@ function FocusDynamicBar({
           currentSubtaskTitle,
           stuckReason: trimmedReason,
           stuckCategory,
+          stuckResponseMode,
           todayTasks: buildTodayTaskSnapshot(),
           productivityContext,
+          activeAppContext,
           memoryHint: `${hints.forChips}${hints.forReflection}`,
         }
+        // 📊 埋点：卡顿归因。应用线索只记录应用名，不包含窗口标题或网址。
+        tracker.track('stuck.reason', {
+          sessionId: session.sessionId,
+          taskId: session.taskId,
+          microAction: currentMicroTask,
+          reason: trimmedReason,
+          reasonSource,
+          stuckCategory,
+          stuckResponseMode,
+          activeAppContext,
+        })
+        const initialInstruction = stuckResponseMode === 'direct_action'
+          ? '请你直接允许用户先处理这个现实事务或阻碍，并给一个很短的回来点，不要追问。'
+          : stuckResponseMode === 'emotion_elaboration'
+            ? '请你只问一个开放问题：一想到这件事，脑子里最先冒出来的念头是什么？不要给建议。'
+            : '请你主动发起第一条反思对话，只问一个白话开放问题，不要直接给建议。'
         const initialMessages: StuckChatMessage[] = [{
           role: 'user',
-          content: `【首轮卡住反思】用户刚才选择/输入的卡住原因是：「${trimmedReason}」。请你主动发起第一条反思对话，先帮助用户回看刚才发生了什么，只问一个白话开放问题，不要直接给建议。`,
+          content: `【首轮卡住反思】用户刚才选择/输入的卡住原因是：「${trimmedReason}」。${initialInstruction}`,
         }]
         setStuckChatContext(context)
         return requestStuckChatReply(initialMessages, context, [])
@@ -683,16 +752,31 @@ function FocusDynamicBar({
           currentSubtaskTitle,
           stuckReason: trimmedReason,
           stuckCategory,
+          stuckResponseMode,
           todayTasks: buildTodayTaskSnapshot(),
         }
+        tracker.track('stuck.reason', {
+          sessionId: session.sessionId,
+          taskId: session.taskId,
+          microAction: currentMicroTask,
+          reason: trimmedReason,
+          reasonSource,
+          stuckCategory,
+          stuckResponseMode,
+        })
+        const initialInstruction = stuckResponseMode === 'direct_action'
+          ? '请你直接允许用户先处理这个现实事务或阻碍，并给一个很短的回来点，不要追问。'
+          : stuckResponseMode === 'emotion_elaboration'
+            ? '请你只问一个开放问题：一想到这件事，脑子里最先冒出来的念头是什么？不要给建议。'
+            : '请你主动发起第一条反思对话，只问一个白话开放问题，不要直接给建议。'
         const initialMessages: StuckChatMessage[] = [{
           role: 'user',
-          content: `【首轮卡住反思】用户刚才选择/输入的卡住原因是：「${trimmedReason}」。请你主动发起第一条反思对话，只问一个白话开放问题，不要直接给建议。`,
+          content: `【首轮卡住反思】用户刚才选择/输入的卡住原因是：「${trimmedReason}」。${initialInstruction}`,
         }]
         setStuckChatContext(context)
         requestStuckChatReply(initialMessages, context, []).catch(() => {
           setStuckMessages([
-            { role: 'assistant', content: fallbackStuckFirstReply(trimmedReason, stuckCategory) },
+            { role: 'assistant', content: fallbackStuckFirstReply(context) },
           ])
           setStuckChatError('AI 暂时没有回复，先给你一个备用小步骤。')
           setLoadingStuckChat(false)
