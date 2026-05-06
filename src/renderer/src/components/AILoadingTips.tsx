@@ -4,6 +4,7 @@ interface AILoadingTipsProps {
   variant: 'start' | 'stuck'
   title: string
   compact?: boolean
+  mode?: 'tips' | 'dots'
 }
 
 const START_TIPS = [
@@ -33,7 +34,7 @@ function shuffle<T>(items: T[]): T[] {
   return next
 }
 
-export default function AILoadingTips({ variant, title, compact = false }: AILoadingTipsProps) {
+export default function AILoadingTips({ variant, title, compact = false, mode = 'tips' }: AILoadingTipsProps) {
   const tips = useMemo(
     () => shuffle(variant === 'start' ? START_TIPS : STUCK_TIPS),
     [variant],
@@ -54,6 +55,27 @@ export default function AILoadingTips({ variant, title, compact = false }: AILoa
 
   const currentTip = tips[tipIndex] ?? ''
   const isStart = variant === 'start'
+
+  if (mode === 'dots') {
+    return (
+      <div className={`flex items-center justify-center gap-2 ${compact ? 'py-1' : 'py-2'}`}>
+        <span className={`${compact ? 'text-xs' : 'text-sm'} font-medium ${isStart ? 'text-emerald-500' : 'text-amber-500'}`}>
+          {title}
+        </span>
+        <span className="flex items-center gap-0.5" aria-hidden="true">
+          {[0, 1, 2].map((dot) => (
+            <span
+              key={dot}
+              className={`rounded-full ${compact ? 'h-1 w-1' : 'h-1.5 w-1.5'} ${
+                isStart ? 'bg-emerald-400' : 'bg-amber-400'
+              } animate-bounce`}
+              style={{ animationDelay: `${dot * 120}ms` }}
+            />
+          ))}
+        </span>
+      </div>
+    )
+  }
 
   return (
     <div className={`flex flex-col items-center text-center ${compact ? 'gap-2 py-4' : 'gap-3 py-3'}`}>

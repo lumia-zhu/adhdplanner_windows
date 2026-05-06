@@ -17,7 +17,7 @@
 import { useState, useEffect, useRef } from 'react'
 import type { Task } from '../types'
 import type { AIConfig, MicroActionChip, StuckChatContext, StuckChatMessage, StuckProductivityContext } from '../services/ai'
-import { generateStuckChips, chatStuckSupport, buildStuckHint, classifyStuckReason } from '../services/ai'
+import { generateStuckChips, chatStuckSupportStream, buildStuckHint, classifyStuckReason } from '../services/ai'
 import { aiCache } from '../services/ai-cache'
 import { tracker } from '../services/tracker'
 import { buildDailySummary, type TrackEvent } from '../services/tracker'
@@ -216,9 +216,18 @@ function FocusDynamicBar({
   const [stuckChatContext, setStuckChatContext] = useState<StuckChatContext | null>(null)
   const [stuckChatInput, setStuckChatInput] = useState('')
   const [loadingStuckChat, setLoadingStuckChat] = useState(false)
+  const [streamingStuckChat, setStreamingStuckChat] = useState(false)
   const [stuckChatError, setStuckChatError] = useState('')
   const stuckChatInputRef = useRef<HTMLTextAreaElement>(null)
   const stuckMessagesEndRef = useRef<HTMLDivElement>(null)
+  const stuckStreamCleanupRef = useRef<(() => void) | null>(null)
+  const isStuckChatBusy = loadingStuckChat || streamingStuckChat
+
+  useEffect(() => {
+    return () => {
+      stuckStreamCleanupRef.current?.()
+    }
+  }, [])
 
   // ---- ★ Workaround: Windows 下 Chromium 拖拽区域缓存 bug ----
   // 窗口 resize 后 -webkit-app-region 命中区域不会自动重算，
@@ -459,34 +468,14 @@ function FocusDynamicBar({
   }
 
   const fallbackStuckFirstReply = (reason: string, category: StuckChatContext['stuckCategory']): string => {
-    const cleanReason = reason.trim()
-    const promptByCategory: Record<StuckChatContext['stuckCategory'], { question: string; examples: string }> = {
-      task_understanding: {
-        question: '刚才你看着这个任务时，脑子里第一个冒出来的 **疑问** 是什么？',
-        examples: '比如不知道要先确认哪条标准。',
-      },
-      task_load: {
-        question: '刚才你觉得它变复杂的时候，最先冒出来的是 **哪一块**？',
-        examples: '比如材料太多，一下子不知道从哪里开始看。',
-      },
-      attention: {
-        question: '刚才注意力被带走前，手上这一步发生了 **什么变化**？',
-        examples: '比如刚才其实已经在任务里停住了一会儿。',
-      },
-      emotion_motivation: {
-        question: '刚才那种 **不想做**，你会怎么形容它？',
-        examples: '比如一想到这个任务就觉得有点抗拒。',
-      },
-      context_conflict: {
-        question: '刚才除了这个任务，还有什么事情一直在你脑子里 **占位置**？',
-        examples: '比如还有一件现实里的事一直没处理完。',
-      },
+    const questionByCategory: Record<StuckChatContext['stuckCategory'], string> = {
+      task_understanding: '刚才你看着这个任务时，脑子里第一个冒出来的 **疑问** 是什么？',
+      task_load: '刚才你觉得它变复杂的时候，最先冒出来的是 **哪一块**？',
+      attention: '刚才注意力被带走前，手上这一步发生了 **什么变化**？',
+      emotion_motivation: '刚才那种 **不想做**，你会怎么形容它？',
+      context_conflict: '刚才除了这个任务，还有什么事情一直在你脑子里 **占位置**？',
     }
-    const categoryPrompt = promptByCategory[category]
-    const anchor = cleanReason
-      ? `你卡在「${cleanReason}」，先不用急着马上解决。`
-      : '先不用急着马上解决。'
-    return `${anchor}\n\n不用分析原因，按刚才脑子里的真实想法说就行：${categoryPrompt.question}\n\n${categoryPrompt.examples}`
+    return questionByCategory[category]
   }
 
   const fallbackStuckSecondReply = (context: StuckChatContext): string => {
@@ -501,7 +490,8 @@ function FocusDynamicBar({
   }
 
   const renderStuckMessageContent = (text: string) => {
-    const paragraphs = text.split(/\n{2,}/).map(part => part.trim()).filter(Boolean)
+    const normalizedText = text.replace(/\s*>\s*(可以先这样试试[:：])/g, '\n\n> $1')
+    const paragraphs = normalizedText.split(/\n{2,}/).map(part => part.trim()).filter(Boolean)
     const renderInlineContent = (paragraph: string) => {
       const parts = paragraph.split(/(\*\*[^*]+\*\*)/g)
       return parts.map((part, index) => {
@@ -543,24 +533,60 @@ function FocusDynamicBar({
     context: StuckChatContext,
     visibleMessages: StuckChatMessage[] = messages,
   ) => {
+    stuckStreamCleanupRef.current?.()
     setLoadingStuckChat(true)
+    setStreamingStuckChat(false)
     setStuckChatError('')
-    const result = await chatStuckSupport(messages, context, aiConfig)
     const isFirstRound = messages.some(message => message.role === 'user' && message.content.includes('【首轮卡住反思】'))
-    const assistantMessage: StuckChatMessage = {
-      role: 'assistant',
-      content: result.content?.trim() || (isFirstRound
-        ? fallbackStuckFirstReply(context.stuckReason, context.stuckCategory)
-        : fallbackStuckSecondReply(context)),
-    }
-    setStuckMessages([...visibleMessages, assistantMessage])
-    setStuckChatError(result.error ?? '')
-    setLoadingStuckChat(false)
+    const fallbackText = isFirstRound
+      ? fallbackStuckFirstReply(context.stuckReason, context.stuckCategory)
+      : fallbackStuckSecondReply(context)
+
+    setStuckMessages([...visibleMessages, { role: 'assistant', content: '' }])
+
+    await new Promise<void>((resolve) => {
+      let settled = false
+      let streamedText = ''
+
+      const finish = (content: string, error?: string) => {
+        if (settled) return
+        settled = true
+        const finalContent = content.trim() || fallbackText
+        setStuckMessages([...visibleMessages, { role: 'assistant', content: finalContent }])
+        setStuckChatError(error ?? '')
+        setLoadingStuckChat(false)
+        setStreamingStuckChat(false)
+        stuckStreamCleanupRef.current = null
+        resolve()
+      }
+
+      void chatStuckSupportStream(
+        messages,
+        context,
+        aiConfig,
+        (delta) => {
+          streamedText += delta
+          setLoadingStuckChat(false)
+          setStreamingStuckChat(true)
+          setStuckMessages([...visibleMessages, { role: 'assistant', content: streamedText }])
+        },
+        (fullText) => {
+          finish(fullText)
+        },
+        (error) => {
+          finish(streamedText, error || 'AI 暂时没有回复，先给你一个备用小步骤。')
+        },
+      ).then((cleanup) => {
+        if (!settled) stuckStreamCleanupRef.current = cleanup
+      }).catch(() => {
+        finish(streamedText, 'AI 暂时没有回复，先给你一个备用小步骤。')
+      })
+    })
   }
 
   const handleSendStuckChat = () => {
     const text = stuckChatInput.trim()
-    if (!text || loadingStuckChat || !stuckChatContext) return
+    if (!text || isStuckChatBusy || !stuckChatContext) return
     const nextMessages: StuckChatMessage[] = [
       ...stuckMessages,
       { role: 'user', content: text },
@@ -574,6 +600,7 @@ function FocusDynamicBar({
       ])
       setStuckChatError('AI 暂时没有回复，先给你一个备用小步骤。')
       setLoadingStuckChat(false)
+      setStreamingStuckChat(false)
     })
   }
 
@@ -583,7 +610,7 @@ function FocusDynamicBar({
       stuckMessagesEndRef.current?.scrollIntoView({ block: 'end' })
     })
     return () => cancelAnimationFrame(frameId)
-  }, [phase, stuckMessages, loadingStuckChat])
+  }, [phase, stuckMessages, loadingStuckChat, streamingStuckChat])
 
   // stuck_a → stuck_b：用户提交困难描述后进入 AI 急救对话
   const handleSubmitStuckReason = (reason: string, reasonSource: 'common_chip' | 'self') => {
@@ -669,6 +696,7 @@ function FocusDynamicBar({
           ])
           setStuckChatError('AI 暂时没有回复，先给你一个备用小步骤。')
           setLoadingStuckChat(false)
+          setStreamingStuckChat(false)
         })
       })
   }
@@ -1177,21 +1205,25 @@ function FocusDynamicBar({
 
           <div className="flex-1 overflow-y-auto pr-1 flex flex-col gap-2.5">
             {stuckMessages.map((message, index) => (
-              <div
-                key={`${message.role}-${index}`}
-                className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
-              >
-                <div
-                  className={`no-drag select-text cursor-text max-w-[92%] rounded-2xl px-3.5 py-2.5 text-[13px] leading-[1.65] ${
-                    message.role === 'user'
-                      ? 'bg-orange-500 text-white rounded-br-md'
-                      : 'bg-gray-50 text-gray-700 border border-gray-100 rounded-bl-md'
-                  }`}
-                  style={{ userSelect: 'text', WebkitUserSelect: 'text' }}
-                >
-                  {renderStuckMessageContent(message.content)}
-                </div>
-              </div>
+              message.role === 'assistant' && !message.content.trim()
+                ? null
+                : (
+                    <div
+                      key={`${message.role}-${index}`}
+                      className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                    >
+                      <div
+                        className={`no-drag select-text cursor-text max-w-[92%] rounded-2xl px-3.5 py-2.5 text-[13px] leading-[1.65] ${
+                          message.role === 'user'
+                            ? 'bg-orange-500 text-white rounded-br-md'
+                            : 'bg-gray-50 text-gray-700 border border-gray-100 rounded-bl-md'
+                        }`}
+                        style={{ userSelect: 'text', WebkitUserSelect: 'text' }}
+                      >
+                        {renderStuckMessageContent(message.content)}
+                      </div>
+                    </div>
+                  )
             ))}
 
             {loadingStuckChat && (
@@ -1199,8 +1231,9 @@ function FocusDynamicBar({
                 <div className="bg-gray-50 border border-gray-100 rounded-2xl rounded-bl-md px-3 py-2">
                   <AILoadingTips
                     variant="stuck"
-                    title="AI 正在结合你的计划想一个可回去的下一步…"
+                    title="AI 正在思考"
                     compact
+                    mode="dots"
                   />
                 </div>
               </div>
@@ -1228,7 +1261,7 @@ function FocusDynamicBar({
               }}
               placeholder="想调整回复，可以在这里说"
               rows={1}
-              disabled={loadingStuckChat}
+              disabled={isStuckChatBusy}
               className="h-11 flex-1 resize-none rounded-xl border border-gray-200 bg-white px-3 py-2.5
                          text-xs text-gray-700 placeholder:text-gray-300 outline-none
                          focus:border-orange-300 focus:ring-2 focus:ring-orange-100
@@ -1236,7 +1269,7 @@ function FocusDynamicBar({
             />
             <button
               onClick={handleSendStuckChat}
-              disabled={!stuckChatInput.trim() || loadingStuckChat || !stuckChatContext}
+              disabled={!stuckChatInput.trim() || isStuckChatBusy || !stuckChatContext}
               className="h-11 px-3.5 rounded-xl bg-orange-500 text-white text-xs font-semibold
                          hover:bg-orange-600 active:scale-95 disabled:opacity-40
                          disabled:cursor-not-allowed transition-all"

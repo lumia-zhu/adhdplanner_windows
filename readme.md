@@ -62,6 +62,8 @@ npm run build:portable
 如果你当前更关心“为什么这样设计”，建议优先看这些文档：
 
 - `docs/flowchart.md`：核心交互流程，理解计划、执行、反思三阶段如何串起来
+- `docs/data-visualization-reflection-prompt.md`：Data Visualization and Reflection 最新 AI prompt 与回答规则
+- `docs/stuck-support-prompt.md`：卡住了（Stuck Support）最新 AI prompt、分类规则与两轮式回复策略
 - `docs/pilot-interview-outline.md`：3 天预实验后的访谈提纲
 - `docs/pretest-p1-behavior-analysis.md`：P1（studentpretest01）预实验行为数据分析总结
 - `docs/pretest-p2-behavior-analysis.md`：P2（user2）预实验行为数据分析总结
