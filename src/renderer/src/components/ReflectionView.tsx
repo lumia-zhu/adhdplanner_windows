@@ -1824,8 +1824,18 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
           </div>
         </div>
 
-        {/* 右侧：全屏 + 关闭按钮 */}
+        {/* 右侧：最小化 + 全屏 + 关闭按钮 */}
         <div className="flex-shrink-0 flex justify-end gap-1">
+          <button
+            onClick={() => window.electronAPI.minimizeWindow()}
+            className="no-drag w-7 h-7 rounded-md hover:bg-gray-100 flex items-center justify-center text-gray-400 hover:text-gray-600 transition-colors"
+            title="最小化到任务栏"
+            aria-label="最小化到任务栏"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h14" />
+            </svg>
+          </button>
           <button
             onClick={toggleReflectionFullscreen}
             className="no-drag w-7 h-7 rounded-md hover:bg-gray-100 flex items-center justify-center text-gray-400 hover:text-gray-600 transition-colors"
