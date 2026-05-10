@@ -159,6 +159,7 @@ export default function App() {
         }
         if (savedProfile && typeof savedProfile === 'object') {
           setUserProfile({
+            preferredName: String(savedProfile.preferredName || ''),
             major: String(savedProfile.major || ''),
             grade: String(savedProfile.grade || ''),
             challenges: Array.isArray(savedProfile.challenges) ? savedProfile.challenges.map(String) : [],
@@ -345,7 +346,7 @@ export default function App() {
     }
   }
 
-  const hasProfile = !!(userProfile.major || userProfile.grade)
+  const hasProfile = !!(userProfile.preferredName || userProfile.major || userProfile.grade)
 
   // -------- 搬迁操作（支持多天） --------
   const handleCarryOver = async (dateTaskMap: Record<string, string[]>) => {
@@ -432,6 +433,7 @@ export default function App() {
         <StandbyWidget
           tasks={tasks}
           aiConfig={aiConfig}
+          preferredName={userProfile.preferredName}
           onStartMicro={focusSession.handleStandbyStartMicro}
           onResumePaused={focusSession.handleStandbyResume}
           onExpand={widgetMode.handleExpandFromStandby}

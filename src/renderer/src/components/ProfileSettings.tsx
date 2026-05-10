@@ -1,7 +1,7 @@
 /**
  * ProfileSettings —— 个人资料设置弹窗
  *
- * 让用户填写：专业、年级、挑战标签、常用工作场所、每日反思提醒时间
+ * 让用户填写：称呼、专业、年级、挑战标签、常用工作场所、每日反思提醒时间
  * 这些信息会被 AI 用来提供更精准的个性化建议
  */
 
@@ -164,6 +164,23 @@ export default function ProfileSettings({ visible, profile, onSave, onClose }: P
         {/* 表单内容（可滚动） */}
         <div className="flex-1 overflow-y-auto px-6 py-4 space-y-5">
 
+          {/* 称呼 */}
+          <div>
+            <label className="block text-sm font-semibold text-gray-800 mb-1.5">希望我们怎么称呼你</label>
+            <input
+              type="text"
+              value={form.preferredName}
+              onChange={(e) => setForm(f => ({ ...f, preferredName: e.target.value }))}
+              placeholder="如：小林、Lumia、学姐…"
+              maxLength={24}
+              className="w-full px-3 py-2.5 text-sm rounded-lg border border-gray-200
+                         focus:border-indigo-400 focus:ring-1 focus:ring-indigo-100
+                         outline-none bg-gray-50 focus:bg-white transition-all
+                         placeholder:text-gray-400"
+            />
+            <p className="text-xs text-gray-400 mt-1">AI 会用这个称呼和你对话</p>
+          </div>
+
           {/* 专业 */}
           <div>
             <label className="block text-sm font-semibold text-gray-800 mb-1.5">专业</label>
@@ -271,7 +288,7 @@ export default function ProfileSettings({ visible, profile, onSave, onClose }: P
             <div>
               <p className="text-sm font-semibold text-blue-700">个性化功能</p>
               <p className="text-xs text-blue-600 mt-0.5 leading-relaxed">
-                完善个人资料后，AI 可以根据你的专业、年级、挑战和工作场所提供更精准的任务建议。
+                完善个人资料后，AI 可以根据你的称呼、专业、年级、挑战和工作场所提供更精准的任务建议。
               </p>
             </div>
           </div>

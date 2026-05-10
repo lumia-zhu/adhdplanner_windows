@@ -47,6 +47,7 @@ export interface PausedSession {
  * 用于 AI 提供个性化建议，保存在本地 profile.json 中
  */
 export interface UserProfile {
+  preferredName: string    // 希望 AI 如何称呼用户
   major: string            // 专业方向
   grade: string            // 年级（如 "大三"、"硕一"、"博二"）
   challenges: string[]     // 我的挑战标签（如 ["拖延", "容易分心"]）
@@ -57,6 +58,7 @@ export interface UserProfile {
 
 /** 空白的用户资料（初始默认值） */
 export const EMPTY_PROFILE: UserProfile = {
+  preferredName: '',
   major: '',
   grade: '',
   challenges: [],

@@ -33,6 +33,7 @@ const FALLBACK_CHIPS: MicroActionChip[] = [
 interface StandbyWidgetProps {
   tasks: Task[]
   aiConfig: AIConfig
+  preferredName?: string
   onStartMicro: (taskId: string, microTask: string, source: 'self' | 'ai_chip' | 'memory_chip' | 'skip') => void
   onResumePaused: (taskId: string) => void
   onExpand: () => void
@@ -49,7 +50,7 @@ function pickDefaultTask(tasks: Task[]): Task | null {
 }
 
 export default function StandbyWidget({
-  tasks, aiConfig, onStartMicro, onResumePaused, onExpand, onQuickAddTask, onDeleteTask,
+  tasks, aiConfig, preferredName, onStartMicro, onResumePaused, onExpand, onQuickAddTask, onDeleteTask,
   pendingTaskId, onClearPendingTask,
 }: StandbyWidgetProps) {
   // ---- 待命条状态 ----
@@ -96,6 +97,7 @@ export default function StandbyWidget({
   const activeSubtask = firstStepTask
     ? (firstStepTask.subtasks ?? []).find(s => !s.completed) ?? null
     : null
+  const greetingName = preferredName?.trim()
 
   // ---- 窗口尺寸 ----
   const QUICK_ADD_H = 56
@@ -286,8 +288,8 @@ export default function StandbyWidget({
         {/* 头部：任务名 + 关闭 */}
         <div className="drag-region flex items-center gap-2 px-4 pt-3.5 pb-2">
           <div className="no-drag flex-1 min-w-0">
-            <p className="text-2xs text-emerald-500 font-semibold uppercase tracking-wider">
-              🎯 即将开始
+            <p className="text-2xs text-emerald-500 font-semibold tracking-wider">
+              Hi{greetingName ? ` ${greetingName}` : ''}，我们开始任务吧 🙂
             </p>
             <p className="text-sm font-bold text-gray-800 truncate mt-0.5">
               {firstStepTask.title}
@@ -310,8 +312,8 @@ export default function StandbyWidget({
         <div className="px-4 pt-3 pb-2">
           <p className="text-xs text-gray-500 mb-2 leading-relaxed">
             {activeSubtask
-              ? <>下一步是「<span className="text-emerald-600 font-medium">{activeSubtask.title}</span>」，从哪个动作开始？</>
-              : <>你现在的<span className="text-emerald-600 font-medium">第一个具体动作</span>是？</>
+              ? <span className="block">下一步是「<span className="text-emerald-600 font-medium">{activeSubtask.title}</span>」，你需要做的第一个具体动作是？</span>
+              : <span className="block">你需要做的<span className="text-emerald-600 font-medium">第一个具体动作</span>是？</span>
             }
           </p>
           <div className="flex gap-1.5">

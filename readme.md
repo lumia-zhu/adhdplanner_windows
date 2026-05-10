@@ -160,6 +160,11 @@ C:\Users\{用户名}\AppData\Roaming\task-manager\tasks.json
 
 ## 🛠️ 最近修复
 
+- **2026-05-10**：
+  - 个人资料设置在「专业」前新增「希望我们怎么称呼你」输入框；保存后会写入本地个人资料，并在反思时作为用户画像提供给 AI，方便 AI 用用户偏好的称呼进行对话。
+  - 优化待命小组件的第一步启动面板：顶部会显示“Hi [称呼]，我们开始任务吧 🙂”，称呼会保留用户输入的原始大小写，并将问题改为“你需要做的第一个具体动作是？”，降低进入任务前的理解压力。
+  - 涉及文件：`src/renderer/src/components/ProfileSettings.tsx`、`src/renderer/src/components/StandbyWidget.tsx`、`src/renderer/src/types/index.ts`、`src/renderer/src/App.tsx`、`src/renderer/src/components/ReflectionView.tsx`。
+
 - **2026-05-07**：
   - 反思页右上角新增常驻「最小化到任务栏」按钮，位于全屏按钮左侧；用户在普通反思窗口或放大窗口中都可以直接把窗口收进 Windows 任务栏，稍后再从任务栏恢复，当前反思页面和对话状态不会因此被主动结束。
   - 涉及文件：`src/renderer/src/components/ReflectionView.tsx`。

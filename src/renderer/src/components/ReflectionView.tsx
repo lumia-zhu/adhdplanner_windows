@@ -176,6 +176,9 @@ function compareLevel(current: number, average: number): 'higher' | 'lower' | 's
 
 function buildProfileContext(profile: UserProfile): string {
   const lines: string[] = []
+  if (profile.preferredName) {
+    lines.push(`- 用户希望被称呼为：${profile.preferredName}`)
+  }
   if (profile.major || profile.grade) {
     lines.push(`- 背景：${[profile.grade, profile.major].filter(Boolean).join('，')}`)
   }
