@@ -43,6 +43,34 @@ const STUCK_APP_CONTEXT_MIN_PRIMARY_SHARE = 0.5
 // 设为 true 可恢复完整的 step-by-step 接力模式
 export const ENABLE_STEP_BY_STEP = false
 
+/** 完成这一步的鼓励语池 */
+const STEP_DONE_MESSAGES = [
+  '哇，第一步拿下！🦉✨',
+  '小小一步，大大推进 🌟',
+  '启动引擎已点火！🔥',
+  '大脑上线，任务开跑 🧠🏃',
+  '嘿，你真的开始了！🎉',
+  '第一块积木放好了 🧱',
+  '任务怪兽掉了一点血！👾',
+  '进度条偷偷往前走了一格 📋',
+  '今天的你，有点会开始 😎',
+  '又迈出去了 ✨',
+]
+
+/** 完成主任务的鼓励语池 */
+const TASK_DONE_MESSAGES = [
+  '任务怪兽被击败！👾⚔️',
+  '完成啦！今天又多了一个 🦉👏',
+  '叮！成就感到账 💰✨',
+  '今日任务星星已收集 ⭐',
+  '完成！你的小宇宙亮了一格 🌌',
+  '这个任务正式下班了 🏠',
+  '太棒了，任务被你送走啦 📦',
+  '任务完成，奖励自己一口水也可以 🥤',
+  '搞定了！真的搞定了 🎊',
+  '做到了，值得记住 🌟',
+]
+
 /** 卡住时的常见原因快捷标签（点击自动填入输入框） */
 const STUCK_COMMON_REASONS = [
   '不确定下一步该做什么',
@@ -817,13 +845,118 @@ function FocusDynamicBar({
   // ============ 微任务完成闪动动画状态 ============
   const [showMicroDone, setShowMicroDone] = useState(false)
 
-  /** 微任务完成 → 先播放轻量 ✅ 动画，再跳 relay */
-  const handleMicroDoneClick = () => {
-    setShowMicroDone(true)
+  // ============ 完成鼓励语覆盖层状态 ============
+  const [celebrationMsg, setCelebrationMsg] = useState('')
+  const [celebrationVisible, setCelebrationVisible] = useState(false)
+  const [celebrationType, setCelebrationType] = useState<'step' | 'task'>('step')
+
+  /** 随机取一条鼓励语，显示 1.2s 后执行回调 */
+  const showCelebration = (pool: string[], type: 'step' | 'task', callback: () => void) => {
+    const msg = pool[Math.floor(Math.random() * pool.length)]
+    setCelebrationMsg(msg)
+    setCelebrationType(type)
+    setCelebrationVisible(true)
     setTimeout(() => {
+      setCelebrationVisible(false)
+      setTimeout(callback, 200)
+    }, type === 'task' ? 1800 : 1000)
+  }
+
+  /** 微任务完成 → 先显示鼓励语，再跳 relay */
+  const handleMicroDoneClick = () => {
+    if (showMicroDone || celebrationVisible) return
+    setShowMicroDone(true)
+    showCelebration(STEP_DONE_MESSAGES, 'step', () => {
       setShowMicroDone(false)
       onMicroComplete()
-    }, 800) // 800ms 闪动后跳转（多 300ms 做预加载安全缓冲）
+    })
+  }
+
+  /** 主任务完成 → 先显示打勾动画+鼓励语，再触发完成回调 */
+  const handleTaskDoneClick = (_e: React.MouseEvent<HTMLButtonElement>) => {
+    if (celebrationVisible) return
+    showCelebration(TASK_DONE_MESSAGES, 'task', () => {
+      onTaskDone()
+    })
+  }
+
+  /** 完成庆祝覆盖层（步骤完成=纯文案，主任务完成=打勾动画+文案） */
+  const renderCelebrationOverlay = (rounded: string = 'rounded-xl') => {
+    if (!celebrationMsg) return null
+    return (
+      <>
+        <style>{`
+          @keyframes drawCircle {
+            to { stroke-dashoffset: 0; }
+          }
+          @keyframes drawCheck {
+            to { stroke-dashoffset: 0; }
+          }
+          @keyframes checkPop {
+            0%   { transform: scale(0.5); opacity: 0; }
+            55%  { transform: scale(1.15); opacity: 1; }
+            75%  { transform: scale(0.95); }
+            100% { transform: scale(1); opacity: 1; }
+          }
+          @keyframes checkFadeOut {
+            from { opacity: 1; transform: scale(1); }
+            to   { opacity: 0; transform: scale(0.8); }
+          }
+          @keyframes fadeInUp {
+            from { opacity: 0; transform: translateY(8px); }
+            to   { opacity: 1; transform: translateY(0); }
+          }
+        `}</style>
+        <div
+          className={`absolute inset-0 flex flex-col items-center justify-center ${rounded} pointer-events-none`}
+          style={{
+            backgroundColor: 'rgba(255,255,255,0.97)',
+            opacity: celebrationVisible ? 1 : 0,
+            transition: 'opacity 0.2s ease',
+          }}
+        >
+          {celebrationType === 'task' && (
+            <svg
+              viewBox="0 0 52 52"
+              style={{
+                width: 44, height: 44,
+                position: 'absolute',
+                animation: 'checkPop 0.55s ease forwards, checkFadeOut 0.25s 0.75s ease forwards',
+              }}
+            >
+              <circle
+                cx="26" cy="26" r="23" fill="none"
+                stroke="#3daeac" strokeWidth="2.5"
+                style={{
+                  strokeDasharray: 145,
+                  strokeDashoffset: 145,
+                  animation: 'drawCircle 0.4s ease forwards',
+                }}
+              />
+              <path
+                fill="none" stroke="#3daeac" strokeWidth="3.5"
+                strokeLinecap="round" strokeLinejoin="round"
+                d="M14 27 l8 8 l16 -16"
+                style={{
+                  strokeDasharray: 38,
+                  strokeDashoffset: 38,
+                  animation: 'drawCheck 0.25s 0.4s ease forwards',
+                }}
+              />
+            </svg>
+          )}
+          <span
+            className="text-sm font-semibold text-gray-800 text-center px-4"
+            style={celebrationType === 'task'
+              ? { animation: 'fadeInUp 0.3s 1.05s ease both', opacity: 0 }
+              : undefined
+            }
+          >
+            {celebrationMsg}
+          </span>
+        </div>
+      </>
+    )
   }
 
   // ============ 执行状态 / 心流状态 ============
@@ -835,7 +968,7 @@ function FocusDynamicBar({
       // —— 状态 A：正在执行第一步 ——
       if (!isFlowMode) {
         return (
-          <div className="drag-region w-full h-full flex items-center gap-2.5 bg-white/75 hover:bg-white/95 backdrop-blur-md
+          <div className="drag-region relative w-full h-full flex items-center gap-2.5 bg-white/75 hover:bg-white/95 backdrop-blur-md
                           border border-gray-200/35 hover:border-gray-200/60 rounded-xl
                           shadow-[0_2px_12px_rgba(0,0,0,0.035)] hover:shadow-[0_4px_18px_rgba(0,0,0,0.08)]
                           px-3 py-1 select-none overflow-hidden transition-all duration-200">
@@ -879,6 +1012,8 @@ function FocusDynamicBar({
                 需要帮助
               </button>
             </div>
+            {/* 完成鼓励语覆盖层 */}
+            {renderCelebrationOverlay('rounded-xl')}
           </div>
         )
       }
@@ -886,7 +1021,7 @@ function FocusDynamicBar({
       // —— 状态 B：第一步完成后进入主任务（无子任务时保持横向低干扰条） ——
       if (taskSubtasks.length === 0 && !session.firstStepHint) {
         return (
-          <div className="drag-region w-full h-full flex items-center gap-2.5 bg-white/75 hover:bg-white/95 backdrop-blur-md
+          <div className="drag-region relative w-full h-full flex items-center gap-2.5 bg-white/75 hover:bg-white/95 backdrop-blur-md
                           border border-gray-200/35 hover:border-gray-200/60 rounded-xl
                           shadow-[0_2px_12px_rgba(0,0,0,0.035)] hover:shadow-[0_4px_18px_rgba(0,0,0,0.08)]
                           px-3 py-1 select-none overflow-hidden transition-all duration-200">
@@ -913,10 +1048,7 @@ function FocusDynamicBar({
                 暂停
               </button>
               <button
-                onClick={(e) => {
-                  triggerEffect(e.currentTarget)
-                  onTaskDone()
-                }}
+                onClick={handleTaskDoneClick}
                 className="px-3.5 py-1 rounded-full text-white text-xs font-semibold
                            shadow-sm hover:shadow-md active:scale-95 transition-all"
                 style={{ backgroundColor: '#3daeac' }}
@@ -933,6 +1065,8 @@ function FocusDynamicBar({
                 需要帮助
               </button>
             </div>
+            {/* 完成鼓励语覆盖层 */}
+            {renderCelebrationOverlay('rounded-xl')}
           </div>
         )
       }
@@ -941,7 +1075,7 @@ function FocusDynamicBar({
       const taskStructureRef = taskStructurePanelRef
       return (
         <div ref={taskStructureRef}
-             className="drag-region w-full h-full flex flex-col bg-white/85 backdrop-blur-md
+             className="drag-region relative w-full h-full flex flex-col bg-white/85 backdrop-blur-md
                         border border-gray-200/60 rounded-2xl
                         shadow-[0_3px_18px_rgba(0,0,0,0.06)] select-none overflow-hidden">
 
@@ -1014,10 +1148,7 @@ function FocusDynamicBar({
             </div>
             <div className="flex-1 flex justify-center">
               <button
-                onClick={(e) => {
-                  triggerEffect(e.currentTarget)
-                  onTaskDone()
-                }}
+                onClick={handleTaskDoneClick}
                 className="px-5 py-1.5 rounded-full text-white text-xs font-semibold
                            shadow-sm hover:shadow-md active:scale-95 transition-all"
                 style={{ backgroundColor: '#3daeac' }}
@@ -1037,6 +1168,8 @@ function FocusDynamicBar({
               </button>
             </div>
           </div>
+          {/* 完成鼓励语覆盖层 */}
+          {renderCelebrationOverlay('rounded-2xl')}
         </div>
       )
     }
@@ -1045,7 +1178,7 @@ function FocusDynamicBar({
     const displayTask = isFlowMode ? taskTitle : currentMicroTask
 
     return (
-      <div className="drag-region w-full h-full flex flex-col justify-center bg-white/85 backdrop-blur-md
+      <div className="drag-region relative w-full h-full flex flex-col justify-center bg-white/85 backdrop-blur-md
                       border border-gray-200/60 rounded-2xl shadow-[0_3px_18px_rgba(0,0,0,0.06)]
                       px-3.5 py-1 select-none overflow-hidden">
 
@@ -1108,13 +1241,12 @@ function FocusDynamicBar({
             <button
               onClick={(e) => {
                 if (isFlowMode) {
-                  triggerEffect(e.currentTarget)
-                  onTaskDone()
+                  handleTaskDoneClick(e)
                 } else {
                   handleMicroDoneClick()
                 }
               }}
-              disabled={showMicroDone}
+              disabled={showMicroDone || celebrationVisible}
               className="no-drag px-5 py-1.5 rounded-full text-xs font-semibold transition-all text-white shadow-sm hover:shadow-md active:scale-95"
               style={{ backgroundColor: showMicroDone ? '#3daeaccc' : '#3daeac' }}
             >
@@ -1136,6 +1268,8 @@ function FocusDynamicBar({
             )}
           </div>
         </div>
+        {/* 完成鼓励语覆盖层 */}
+        {renderCelebrationOverlay('rounded-2xl')}
       </div>
     )
   }
