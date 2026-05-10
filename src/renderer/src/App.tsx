@@ -454,6 +454,7 @@ export default function App() {
           tasks={tasks}
           session={focusSession.session}
           aiConfig={aiConfig}
+          preferredName={userProfile.preferredName}
           focusTaskId={focusSession.focusTaskId}
           onToggle={focusSession.handleWidgetToggle}
           onExit={focusSession.handleExitWidget}

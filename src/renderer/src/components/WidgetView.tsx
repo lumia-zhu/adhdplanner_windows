@@ -49,6 +49,7 @@ const STUCK_COMMON_REASONS = [
   '这一步太难/复杂了，不知道从哪开始',
   '不确定去哪找需要的信息',
   '总是被其他事情分心',
+  '心情不好，不太想做',
 ]
 
 // ===================== 类型 =====================
@@ -83,6 +84,7 @@ interface WidgetViewProps {
   tasks: Task[]
   session: FocusSession | null     // null = 旧的普通小组件模式
   aiConfig: AIConfig
+  preferredName?: string
   focusTaskId?: string | null
   onToggle: (id: string) => void
   onExit: () => void
@@ -103,12 +105,13 @@ interface WidgetViewProps {
 // ===================== 主组件 =====================
 
 export default function WidgetView({
-  tasks, session, aiConfig, focusTaskId,
+  tasks, session, aiConfig, preferredName, focusTaskId,
   onToggle, onExit,
   onMicroComplete, onNextMicro, onEnterFlow, onTaskDone,
   onStuck, onStuckToB, onResume, onSubtaskDone, onPause,
   onWidgetSubtaskToggle,
 }: WidgetViewProps) {
+  const greetingName = preferredName?.trim()
 
   // 如果没有 session → 走旧的普通小组件模式
   if (!session) {
@@ -135,6 +138,7 @@ export default function WidgetView({
     <FocusDynamicBar
       session={session}
       aiConfig={aiConfig}
+      preferredName={greetingName}
       todayTasks={tasks}
       taskSubtasks={taskSubtasks}
       onMicroComplete={onMicroComplete}
@@ -157,6 +161,7 @@ export default function WidgetView({
 interface FocusDynamicBarProps {
   session: FocusSession
   aiConfig: AIConfig
+  preferredName?: string
   todayTasks: Task[]
   taskSubtasks: Array<{ id: string; title: string; completed: boolean }>
   onMicroComplete: () => void
@@ -173,11 +178,12 @@ interface FocusDynamicBarProps {
 }
 
 function FocusDynamicBar({
-  session, aiConfig, todayTasks, taskSubtasks,
+  session, aiConfig, preferredName, todayTasks, taskSubtasks,
   onMicroComplete, onNextMicro, onEnterFlow, onTaskDone,
   onStuck, onStuckToB, onResume, onSubtaskDone, onExit, onPause,
   onWidgetSubtaskToggle,
 }: FocusDynamicBarProps) {
+  const greetingName = preferredName?.trim()
   const {
     taskId, phase, isFlowMode, currentMicroTask, taskTitle, startTime,
     currentSubtaskId, currentSubtaskTitle, isSubtaskTransition, allSubtasksDone,
@@ -525,16 +531,27 @@ function FocusDynamicBar({
       return `可以，先处理这个。\n\n回来后从这里继续：${context.currentStep}`
     }
     if (context.stuckResponseMode === 'emotion_elaboration') {
-      return '一想到这件事，脑子里最先冒出来的 **念头** 是什么？'
+      return '这会儿的 **心情** 是什么样的？可以随便描述一点。'
     }
     const questionByCategory: Record<StuckChatContext['stuckCategory'], string> = {
       task_understanding: '刚才你看着这个任务时，脑子里第一个冒出来的 **疑问** 是什么？',
       task_load: '刚才你觉得它变复杂的时候，最先冒出来的是 **哪一块**？',
       attention: '刚才注意力被带走前，手上这一步发生了 **什么变化**？',
-      emotion_motivation: '刚才那种 **不想做**，你会怎么形容它？',
+      emotion_motivation: '这会儿的 **心情** 是什么样的？可以随便描述一点。',
       context_conflict: '刚才除了这个任务，还有什么事情一直在你脑子里 **占位置**？',
     }
     return questionByCategory[context.stuckCategory]
+  }
+
+  const shouldAskEmotionSource = (messages: StuckChatMessage[], context: StuckChatContext): boolean => {
+    if (context.stuckResponseMode !== 'emotion_elaboration') return false
+    if (messages.some(message => message.role === 'user' && message.content.includes('【首轮卡住反思】'))) return false
+    const visibleUserReplyCount = messages.filter(message => message.role === 'user').length
+    return visibleUserReplyCount === 1
+  }
+
+  const fallbackEmotionSourceReply = (): string => {
+    return '这种心情大概是从哪里来的？可以只说一点点。'
   }
 
   const fallbackStuckSecondReply = (context: StuckChatContext): string => {
@@ -597,9 +614,18 @@ function FocusDynamicBar({
     setStreamingStuckChat(false)
     setStuckChatError('')
     const isFirstRound = messages.some(message => message.role === 'user' && message.content.includes('【首轮卡住反思】'))
+    const isEmotionSourceRound = shouldAskEmotionSource(messages, context)
     const fallbackText = isFirstRound
       ? fallbackStuckFirstReply(context)
-      : fallbackStuckSecondReply(context)
+      : isEmotionSourceRound
+        ? fallbackEmotionSourceReply()
+        : fallbackStuckSecondReply(context)
+    const requestMessages: StuckChatMessage[] = isEmotionSourceRound
+      ? [
+          ...messages,
+          { role: 'user', content: '【情绪来源追问】用户刚才已经描述了心情。请只轻问这种心情大概是从哪里来的，不要给建议。' },
+        ]
+      : messages
 
     setStuckMessages([...visibleMessages, { role: 'assistant', content: '' }])
 
@@ -620,7 +646,7 @@ function FocusDynamicBar({
       }
 
       void chatStuckSupportStream(
-        messages,
+        requestMessages,
         context,
         aiConfig,
         (delta) => {
@@ -652,10 +678,13 @@ function FocusDynamicBar({
     ]
     setStuckMessages(nextMessages)
     setStuckChatInput('')
+    const fallbackText = shouldAskEmotionSource(nextMessages, stuckChatContext)
+      ? fallbackEmotionSourceReply()
+      : fallbackStuckSecondReply(stuckChatContext)
     requestStuckChatReply(nextMessages, stuckChatContext).catch(() => {
       setStuckMessages([
         ...nextMessages,
-        { role: 'assistant', content: fallbackStuckSecondReply(stuckChatContext) },
+        { role: 'assistant', content: fallbackText },
       ])
       setStuckChatError('AI 暂时没有回复，先给你一个备用小步骤。')
       setLoadingStuckChat(false)
@@ -736,7 +765,7 @@ function FocusDynamicBar({
         const initialInstruction = stuckResponseMode === 'direct_action'
           ? '请你直接允许用户先处理这个现实事务或阻碍，并给一个很短的回来点，不要追问。'
           : stuckResponseMode === 'emotion_elaboration'
-            ? '请你只问一个开放问题：一想到这件事，脑子里最先冒出来的念头是什么？不要给建议。'
+            ? '请你只问一个开放问题：这会儿的心情是什么样的？可以随便描述一点。不要给建议。'
             : '请你主动发起第一条反思对话，只问一个白话开放问题，不要直接给建议。'
         const initialMessages: StuckChatMessage[] = [{
           role: 'user',
@@ -767,7 +796,7 @@ function FocusDynamicBar({
         const initialInstruction = stuckResponseMode === 'direct_action'
           ? '请你直接允许用户先处理这个现实事务或阻碍，并给一个很短的回来点，不要追问。'
           : stuckResponseMode === 'emotion_elaboration'
-            ? '请你只问一个开放问题：一想到这件事，脑子里最先冒出来的念头是什么？不要给建议。'
+            ? '请你只问一个开放问题：这会儿的心情是什么样的？可以随便描述一点。不要给建议。'
             : '请你主动发起第一条反思对话，只问一个白话开放问题，不要直接给建议。'
         const initialMessages: StuckChatMessage[] = [{
           role: 'user',
@@ -1168,7 +1197,7 @@ function FocusDynamicBar({
 
           {/* 提示语 */}
           <p className="text-xs text-gray-600 leading-relaxed">
-            描述一下你遇到了<span className="text-orange-600 font-bold">什么困难</span>？
+            {greetingName ? `Hi ${greetingName}，` : ''}<span className="text-orange-600 font-bold">你卡住的原因是？</span>
           </p>
 
           {/* 输入框 */}
