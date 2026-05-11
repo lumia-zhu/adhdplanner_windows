@@ -30,6 +30,10 @@ interface Window {
     // 用户个人资料
     loadProfile: () => Promise<Record<string, unknown>>
     saveProfile: (profile: Record<string, unknown>) => Promise<boolean>
+    // 每日心情记录
+    loadMoodRecord: (date: string) => Promise<unknown | null>
+    saveMoodRecord: (record: unknown) => Promise<boolean>
+    deleteMoodRecord: (date: string) => Promise<boolean>
     // AI 配置 & 请求
     loadAIConfig: () => Promise<Record<string, string>>
     saveAIConfig: (config: Record<string, string>) => Promise<boolean>

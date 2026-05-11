@@ -160,6 +160,11 @@ C:\Users\{用户名}\AppData\Roaming\task-manager\tasks.json
 
 ## 🛠️ 最近修复
 
+- **2026-05-11**：
+  - 主界面日期下方新增「今天心情怎么样？」入口，用户可以选择“很低落、低落、平静、开心、很开心”5 档心情，并可补充一段文字记录当天发生了什么。
+  - 每日心情记录按日期保存到本地 `moods.json`，重启后仍会保留；当天已记录时入口会展示为紧凑心情胶囊，点击可继续修改，悬停时可用 `×` 清除当天记录。
+  - 涉及文件：`src/main/storage.ts`、`src/main/index.ts`、`src/preload/index.ts`、`src/renderer/src/env.d.ts`、`src/renderer/src/types/index.ts`、`src/renderer/src/components/NoteEditor.tsx`。
+
 - **2026-05-10**：
   - 个人资料设置在「专业」前新增「希望我们怎么称呼你」输入框；保存后会写入本地个人资料，并在反思时作为用户画像提供给 AI，方便 AI 用用户偏好的称呼进行对话。
   - 优化待命小组件的第一步启动面板：顶部会显示“Hi [称呼]，我们开始任务吧 🙂”，称呼会保留用户输入的原始大小写，并将问题改为“你需要做的第一个具体动作是？”，降低进入任务前的理解压力。

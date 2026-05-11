@@ -1391,7 +1391,7 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
     const visualMarkerInfo = `\n\n${buildVisualMarkerPromptContext(visualTargets)}`
     const taskSessionContext = taskSessionInfo ? `\n\n${taskSessionInfo}` : ''
     const appUsageContext = appUsageInfo ? `\n\n${appUsageInfo}` : ''
-    const prompt = buildReflectionSystemPrompt(context + taskInfo + productivityInfo + activityInfo + taskSessionContext + appUsageContext + taskDurationInfo + insightInfo + visualMarkerInfo, false, isToday, memoryContext, selectedDate)
+    const prompt = buildReflectionSystemPrompt(context + taskInfo + productivityInfo + activityInfo + taskSessionContext + appUsageContext + taskDurationInfo + insightInfo + visualMarkerInfo, false, isToday, memoryContext, selectedDate, userProfile.preferredName ?? '')
     console.log('[Memory Debug] systemPrompt 构建完成, 包含记忆:', prompt.includes('对话记忆'), ', memoryContext长度:', memoryContext.length)
     return prompt
   }, [summary, events, localTasks, completionRate, totalUsageMinutes, productivityRatio, flowRatio, activityTimeDistribution, activityData, taskDurations, visualTargets, isToday, memoryContext, memoryLoaded, insightContext, insightLoaded, selectedDate])

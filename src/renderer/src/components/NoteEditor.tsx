@@ -23,7 +23,7 @@ import {
 } from '@dnd-kit/sortable'
 import { restrictToVerticalAxis, restrictToWindowEdges } from '@dnd-kit/modifiers'
 import { CSS } from '@dnd-kit/utilities'
-import type { Task, Subtask } from '../types'
+import type { DailyMoodRecord, Task, Subtask } from '../types'
 import { PRIORITY_CONFIG } from '../types'
 import { triggerEffect } from '../effects'
 import MiniCalendar from './MiniCalendar'
@@ -86,7 +86,9 @@ function flattenTasks(tasks: Task[]): FlatLine[] {
 /** 生成唯一 ID */
 const uid = (prefix = 't') => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
 
-// ===================== 日期 & 问候语 =====================
+// ===================== 日期 & 心情记录 =====================
+
+type MoodValue = DailyMoodRecord['mood']
 
 /** 获取日期的友好显示，如 "3月8日 · 周日" */
 function getDateLabel(dateStr?: string): string {
@@ -97,14 +99,30 @@ function getDateLabel(dateStr?: string): string {
   return `${month}月${day}日 · ${weekNames[now.getDay()]}`
 }
 
-/** 根据当前时段返回一句温暖的问候语 */
-function getGreeting(): string {
-  const hour = new Date().getHours()
-  if (hour >= 6 && hour < 11) return '☀️ 早上好，今天想从哪件事开始？'
-  if (hour >= 11 && hour < 14) return '🌤️ 中午好，继续加油'
-  if (hour >= 14 && hour < 18) return '🌇 下午好，还有几件事可以搞定'
-  if (hour >= 18 && hour < 22) return '🌙 晚上好，今天辛苦了'
-  return '🌜 夜深了，早点休息吧'
+function getTodayDateStr(): string {
+  const now = new Date()
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+}
+
+const MOOD_OPTIONS: Array<{ value: MoodValue; label: string; emoji: string }> = [
+  { value: 1, label: '很低落', emoji: '😢' },
+  { value: 2, label: '低落', emoji: '😔' },
+  { value: 3, label: '平静', emoji: '😐' },
+  { value: 4, label: '开心', emoji: '🙂' },
+  { value: 5, label: '很开心', emoji: '😄' },
+]
+
+function parseMoodRecord(value: unknown): DailyMoodRecord | null {
+  if (!value || typeof value !== 'object') return null
+  const record = value as Record<string, unknown>
+  const mood = Number(record.mood)
+  if (!Number.isInteger(mood) || mood < 1 || mood > 5) return null
+  return {
+    date: String(record.date || ''),
+    mood: mood as MoodValue,
+    note: String(record.note || ''),
+    updatedAt: typeof record.updatedAt === 'number' ? record.updatedAt : Date.now(),
+  }
 }
 
 // ===================== 主组件 =====================
@@ -127,6 +145,14 @@ export default function NoteEditor({
   // 日历弹窗是否打开
   const [calendarOpen, setCalendarOpen] = useState(false)
   const calendarRef = useRef<HTMLDivElement>(null)
+  // 今日心情记录弹窗
+  const [moodOpen, setMoodOpen] = useState(false)
+  const [moodRecord, setMoodRecord] = useState<DailyMoodRecord | null>(null)
+  const [draftMood, setDraftMood] = useState<MoodValue | null>(null)
+  const [draftMoodNote, setDraftMoodNote] = useState('')
+  const [savingMood, setSavingMood] = useState(false)
+  const [moodClearedHint, setMoodClearedHint] = useState(false)
+  const moodPanelRef = useRef<HTMLDivElement>(null)
 
   // 存储每一行 <input> 的 ref，键是行 ID
   const inputRefs = useRef<Map<string, HTMLInputElement>>(new Map())
@@ -134,6 +160,45 @@ export default function NoteEditor({
 
   // 把嵌套的 Task[] 展平为一维行列表
   const lines = useMemo(() => flattenTasks(tasks), [tasks])
+  const moodDate = currentDate || getTodayDateStr()
+  const selectedMoodOption = moodRecord ? MOOD_OPTIONS.find(option => option.value === moodRecord.mood) : null
+
+  useEffect(() => {
+    let cancelled = false
+    if (!isToday) {
+      setMoodOpen(false)
+      setMoodRecord(null)
+      setDraftMood(null)
+      setDraftMoodNote('')
+      return
+    }
+
+    window.electronAPI.loadMoodRecord(moodDate)
+      .then((record) => {
+        if (cancelled) return
+        const parsed = parseMoodRecord(record)
+        setMoodRecord(parsed)
+        setDraftMood(parsed?.mood ?? null)
+        setDraftMoodNote(parsed?.note ?? '')
+      })
+      .catch((error) => {
+        console.warn('[Mood] 加载心情记录失败:', error)
+      })
+
+    return () => { cancelled = true }
+  }, [isToday, moodDate])
+
+  useEffect(() => {
+    if (!moodOpen) return
+    const handlePointerDown = (event: MouseEvent) => {
+      const target = event.target as Node | null
+      if (target && moodPanelRef.current && !moodPanelRef.current.contains(target)) {
+        setMoodOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handlePointerDown)
+    return () => document.removeEventListener('mousedown', handlePointerDown)
+  }, [moodOpen])
 
   // ---- 聚焦管理：当 pendingFocusId 变化时，把光标移到对应输入框 ----
   useEffect(() => {
@@ -152,6 +217,50 @@ export default function NoteEditor({
       setPendingFocusId(null)
     })
   }, [pendingFocusId])
+
+  const handleSaveMood = useCallback(async () => {
+    if (!draftMood || savingMood) return
+    const record: DailyMoodRecord = {
+      date: moodDate,
+      mood: draftMood,
+      note: draftMoodNote.trim(),
+      updatedAt: Date.now(),
+    }
+
+    setSavingMood(true)
+    try {
+      const ok = await window.electronAPI.saveMoodRecord(record)
+      if (ok) {
+        setMoodRecord(record)
+        setMoodOpen(false)
+      }
+    } catch (error) {
+      console.warn('[Mood] 保存心情记录失败:', error)
+    } finally {
+      setSavingMood(false)
+    }
+  }, [draftMood, draftMoodNote, moodDate, savingMood])
+
+  const handleDeleteMood = useCallback(async (event?: React.MouseEvent<HTMLElement>) => {
+    event?.stopPropagation()
+    if (!moodRecord || savingMood) return
+    setSavingMood(true)
+    try {
+      const ok = await window.electronAPI.deleteMoodRecord(moodDate)
+      if (ok) {
+        setMoodRecord(null)
+        setDraftMood(null)
+        setDraftMoodNote('')
+        setMoodOpen(false)
+        setMoodClearedHint(true)
+        setTimeout(() => setMoodClearedHint(false), 1000)
+      }
+    } catch (error) {
+      console.warn('[Mood] 清除心情记录失败:', error)
+    } finally {
+      setSavingMood(false)
+    }
+  }, [moodDate, moodRecord, savingMood])
 
   // ===================== 数据变更 =====================
 
@@ -517,7 +626,7 @@ export default function NoteEditor({
         <div className="flex-1 overflow-y-auto">
           <div className="px-5 py-3">
             {/* 日期行 + 时段问候语 + 左右切换 + 日历弹窗 */}
-            <div className="text-center select-none pt-2 pb-5 relative">
+            <div className="text-center select-none pt-2 pb-2 relative">
               <div className="flex items-center justify-center gap-1">
                 {/* ◀ 前一天 */}
                 {onPrevDate && (
@@ -579,10 +688,107 @@ export default function NoteEditor({
                 />
               )}
 
-              {/* 问候语 / 历史日期提示 */}
-              <div className="mt-1 flex items-center justify-center gap-2">
+              {/* 今日心情入口 / 历史日期提示 */}
+              <div className="mt-2 flex items-center justify-center gap-2">
                 {isToday ? (
-                  <p className="text-xs text-gray-300">{getGreeting()}</p>
+                  <div ref={moodPanelRef} className="relative">
+                    <button
+                      onClick={() => {
+                        setDraftMood(moodRecord?.mood ?? null)
+                        setDraftMoodNote(moodRecord?.note ?? '')
+                        setMoodClearedHint(false)
+                        setMoodOpen(v => !v)
+                      }}
+                      className={`no-drag group inline-flex items-center rounded-full px-2.5 py-1 text-xs transition-all ${
+                        selectedMoodOption
+                          ? 'bg-slate-50 text-slate-500 hover:bg-indigo-50 hover:text-indigo-500'
+                          : 'bg-slate-50 text-slate-400 hover:bg-indigo-50 hover:text-indigo-500'
+                      }`}
+                    >
+                      {moodClearedHint ? (
+                        '已清除'
+                      ) : selectedMoodOption ? (
+                        <>
+                          <span className="mr-1.5">{selectedMoodOption.emoji}</span>
+                          <span>{selectedMoodOption.label}</span>
+                        </>
+                      ) : (
+                        <>
+                          <span className="mr-1.5 text-indigo-300">＋</span>
+                          <span>今天心情怎么样？</span>
+                        </>
+                      )}
+                      {selectedMoodOption && !moodClearedHint && (
+                        <span
+                          onClick={handleDeleteMood}
+                          className="ml-0 flex h-4 w-0 items-center justify-center overflow-hidden rounded-full text-gray-300 opacity-0 transition-all duration-150 hover:bg-white/80 hover:text-gray-500 group-hover:ml-1 group-hover:w-4 group-hover:opacity-100"
+                          title="清除心情记录"
+                        >
+                          ×
+                        </span>
+                      )}
+                    </button>
+
+                    {moodOpen && (
+                      <div className="no-drag absolute left-1/2 top-full z-50 mt-2 w-72 -translate-x-1/2 rounded-2xl border border-gray-100 bg-white/95 p-4 shadow-[0_10px_30px_rgba(15,23,42,0.12)] backdrop-blur">
+                        <p className="text-sm font-semibold text-gray-800 text-center">今天心情怎么样？</p>
+                        <div className="mt-3 grid grid-cols-5 gap-1.5">
+                          {MOOD_OPTIONS.map(option => {
+                            const selected = draftMood === option.value
+                            return (
+                              <button
+                                key={option.value}
+                                onClick={() => setDraftMood(option.value)}
+                                className={`no-drag flex flex-col items-center gap-1 rounded-xl px-1.5 py-2 transition-all ${
+                                  selected
+                                    ? 'bg-indigo-50 text-indigo-600 ring-1 ring-indigo-200 scale-105'
+                                    : 'text-gray-500 hover:bg-gray-50 hover:text-gray-700'
+                                }`}
+                                title={option.label}
+                              >
+                                <span className="text-xl leading-none">{option.emoji}</span>
+                                <span className="text-2xs whitespace-nowrap">{option.label}</span>
+                              </button>
+                            )
+                          })}
+                        </div>
+
+                        <textarea
+                          value={draftMoodNote}
+                          onChange={(e) => setDraftMoodNote(e.target.value)}
+                          placeholder="（可选）发生了什么？可以简单记一两句"
+                          maxLength={240}
+                          className="mt-3 h-20 w-full resize-none rounded-xl border border-gray-100 bg-gray-50 px-3 py-2 text-xs text-gray-700 outline-none transition-colors placeholder:text-gray-400 focus:border-indigo-200 focus:bg-white"
+                        />
+
+                        <div className="mt-3 flex items-center justify-between gap-2">
+                          {moodRecord ? (
+                            <button
+                              onClick={handleDeleteMood}
+                              className="no-drag rounded-full px-2 py-1.5 text-xs text-gray-400 transition-colors hover:text-red-400"
+                            >
+                              清除记录
+                            </button>
+                          ) : <span />}
+                          <div className="flex justify-end gap-2">
+                          <button
+                            onClick={() => setMoodOpen(false)}
+                            className="no-drag rounded-full px-3 py-1.5 text-xs text-gray-400 transition-colors hover:text-gray-600"
+                          >
+                            取消
+                          </button>
+                          <button
+                            onClick={handleSaveMood}
+                            disabled={!draftMood || savingMood}
+                            className="no-drag rounded-full bg-indigo-500 px-3.5 py-1.5 text-xs font-semibold text-white transition-all hover:bg-indigo-600 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400"
+                          >
+                            {savingMood ? '保存中' : moodRecord ? '保存修改' : '保存'}
+                          </button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 ) : (
                   <button
                     onClick={onGoToday}

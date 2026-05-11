@@ -68,30 +68,33 @@ export default function CarryOverBanner({ groups, onCarryOver, onDismiss }: Carr
   // -------- 收起态：一行引导式提示 --------
   if (!expanded) {
     return (
-      <div className="flex items-center justify-center gap-2 py-2.5 select-none">
+      <div className="flex items-center justify-center pt-2 pb-2 select-none">
         <button
           onClick={() => setExpanded(true)}
-          className="flex items-center gap-1.5 text-xxs text-amber-600/80 hover:text-amber-700
-                     transition-colors rounded-xl px-3.5 py-2 bg-amber-50/70 hover:bg-amber-50
-                     border border-amber-200/60 hover:border-amber-300/70 hover:shadow-sm"
+          className="group flex items-center text-xxs text-orange-500/80 hover:text-orange-600
+                     transition-all rounded-full px-3.5 py-2 bg-orange-50/50 hover:bg-orange-50
+                     border border-orange-100/70 hover:border-orange-200/80 hover:shadow-sm"
         >
-          <span className="text-sm">📦</span>
+          <span className="mr-1.5 text-sm">📦</span>
           <span>
             {dayCount === 1
               ? `${dateLabel(groups[0].fromDate)}还有些任务没做完，要加到今天吗`
               : `之前有些任务还没做完，看看要不要加到今天`
             }
           </span>
-          <svg className="w-3 h-3 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <svg className="ml-1.5 w-3 h-3 opacity-45" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
           </svg>
-        </button>
-        <button
-          onClick={onDismiss}
-          className="text-3xs text-gray-300 hover:text-gray-500 transition-colors px-1"
-          title="不需要"
-        >
-          ✕
+          <span
+            onClick={(event) => {
+              event.stopPropagation()
+              onDismiss()
+            }}
+            className="ml-0 flex h-4 w-0 items-center justify-center overflow-hidden rounded-full text-orange-300 opacity-0 transition-all duration-150 hover:bg-white/80 hover:text-orange-500 group-hover:ml-1.5 group-hover:w-4 group-hover:opacity-100"
+            title="忽略搬迁提示"
+          >
+            ×
+          </span>
         </button>
       </div>
     )

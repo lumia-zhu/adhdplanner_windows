@@ -141,7 +141,9 @@ function sanitizeAssistantDisplayText(text: string): string {
     .replace(/^\s*【\s*focus(?::[^】]*)?\s*$/gim, '')
     .replace(/【\s*focus(?::[^】]*)?$/gim, '')
 
-  return normalizeNumberedChartRefs(cleaned).trimEnd()
+  // 把 3 个及以上连续换行压缩为 2 个，保证段落间距统一
+  cleaned = normalizeNumberedChartRefs(cleaned).replace(/\n{3,}/g, '\n\n')
+  return cleaned.trimEnd()
 }
 
 function sanitizeFocusValue(value: string): string | null {

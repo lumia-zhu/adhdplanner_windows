@@ -67,6 +67,14 @@ export const EMPTY_PROFILE: UserProfile = {
   reflectionTime: null,
 }
 
+/** 每日心情记录，按日期保存在本地 moods.json 中 */
+export interface DailyMoodRecord {
+  date: string
+  mood: 1 | 2 | 3 | 4 | 5
+  note: string
+  updatedAt: number
+}
+
 /** 优先级显示配置 */
 export const PRIORITY_CONFIG = {
   high: {

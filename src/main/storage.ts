@@ -74,6 +74,7 @@ export function migrateRootDataToUser(userId: string): void {
       /^tracker-.*\.json$/,
       /^reflection-.*\.json$/,
       /^profile\.json$/,
+      /^moods\.json$/,
       /^ai-config\.json$/,
       /^widget-pos\.json$/,
       /^tasks\.json$/,
@@ -103,6 +104,7 @@ export function migrateRootDataToUser(userId: string): void {
 
 const getAIConfigPath = (): string => join(getUserDir(), 'ai-config.json')
 const getProfilePath = (): string => join(getUserDir(), 'profile.json')
+const getMoodRecordsPath = (): string => join(getUserDir(), 'moods.json')
 const getLegacyTasksPath = (): string => join(getUserDir(), 'tasks.json')
 const getDailyTasksPath = (date: string): string =>
   join(getUserDir(), `tasks-${date}.json`)
@@ -293,6 +295,75 @@ export function saveProfile(profile: Record<string, unknown>): boolean {
     markDirty('profile')
     return true
   } catch (e) { console.error('[saveProfile]', e); return false }
+}
+
+// ===================== 每日心情记录 =====================
+
+export interface DailyMoodRecord {
+  date: string
+  mood: 1 | 2 | 3 | 4 | 5
+  note: string
+  updatedAt: number
+}
+
+export function loadMoodRecords(): Record<string, DailyMoodRecord> {
+  try {
+    const p = getMoodRecordsPath()
+    if (!fs.existsSync(p)) return {}
+    const parsed = JSON.parse(fs.readFileSync(p, 'utf-8'))
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {}
+
+    const result: Record<string, DailyMoodRecord> = {}
+    for (const [date, value] of Object.entries(parsed as Record<string, unknown>)) {
+      if (!value || typeof value !== 'object') continue
+      const record = value as Record<string, unknown>
+      const mood = Number(record.mood)
+      if (!date || !Number.isInteger(mood) || mood < 1 || mood > 5) continue
+      result[date] = {
+        date: String(record.date || date),
+        mood: mood as DailyMoodRecord['mood'],
+        note: String(record.note || ''),
+        updatedAt: typeof record.updatedAt === 'number' ? record.updatedAt : Date.now(),
+      }
+    }
+    return result
+  } catch (e) {
+    console.error('[loadMoodRecords]', e)
+    return {}
+  }
+}
+
+export function loadMoodRecord(date: string): DailyMoodRecord | null {
+  return loadMoodRecords()[date] ?? null
+}
+
+export function saveMoodRecord(record: DailyMoodRecord): boolean {
+  try {
+    const records = loadMoodRecords()
+    records[record.date] = {
+      date: record.date,
+      mood: record.mood,
+      note: record.note,
+      updatedAt: record.updatedAt,
+    }
+    safeWriteJSON(getMoodRecordsPath(), records)
+    return true
+  } catch (e) {
+    console.error('[saveMoodRecord]', e)
+    return false
+  }
+}
+
+export function deleteMoodRecord(date: string): boolean {
+  try {
+    const records = loadMoodRecords()
+    delete records[date]
+    safeWriteJSON(getMoodRecordsPath(), records)
+    return true
+  } catch (e) {
+    console.error('[deleteMoodRecord]', e)
+    return false
+  }
 }
 
 // ===================== 活跃度采样数据 =====================

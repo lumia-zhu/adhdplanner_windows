@@ -12,6 +12,7 @@ import {
   loadTasks, saveTasks,
   findCarryOverTasks, findAllCarryOverTasks, executeCarryOver, executeMultiCarryOver,
   loadProfile, saveProfile,
+  loadMoodRecord, saveMoodRecord, deleteMoodRecord,
   loadActivityData, activitySampler,
   appendTrackerEvents, loadTrackerEvents,
   safeWriteJSON, getReflectionChatPath,
@@ -227,6 +228,16 @@ function setupIPC(): void {
     startPlanTimer()
     return result
   })
+
+  // -------- 每日心情记录 --------
+  ipcMain.handle('mood:load', (_, date: string) => loadMoodRecord(date))
+  ipcMain.handle('mood:save', (_, record: {
+    date: string
+    mood: 1 | 2 | 3 | 4 | 5
+    note: string
+    updatedAt: number
+  }) => saveMoodRecord(record))
+  ipcMain.handle('mood:delete', (_, date: string) => deleteMoodRecord(date))
 
   // -------- AI 配置 --------
   ipcMain.handle('ai:loadConfig', () => loadAIConfig())
