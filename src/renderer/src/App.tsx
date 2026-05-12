@@ -29,6 +29,34 @@ interface AuthUser {
 }
 
 const REFLECTION_REMINDER_STORAGE_KEY = 'reflectionReminderPendingDate'
+const ACTIVE_VIEW_STORAGE_KEY = 'activeView'
+const ACTIVE_VIEW_REFLECTION = 'reflection'
+const MAIN_WIDTH = 480
+const MAIN_HEIGHT = 760
+
+function markReflectionActive(): void {
+  try {
+    localStorage.setItem(ACTIVE_VIEW_STORAGE_KEY, ACTIVE_VIEW_REFLECTION)
+  } catch {
+    // 忽略 localStorage 不可用的情况；最坏只是不恢复反思页。
+  }
+}
+
+function clearActiveView(): void {
+  try {
+    localStorage.removeItem(ACTIVE_VIEW_STORAGE_KEY)
+  } catch {
+    // 忽略 localStorage 不可用的情况。
+  }
+}
+
+function shouldRestoreReflection(): boolean {
+  try {
+    return localStorage.getItem(ACTIVE_VIEW_STORAGE_KEY) === ACTIVE_VIEW_REFLECTION
+  } catch {
+    return false
+  }
+}
 
 export default function App() {
   const [tasks, setTasks] = useState<Task[]>([])
@@ -103,6 +131,7 @@ export default function App() {
 
   const openReflection = useCallback(() => {
     clearReflectionReminder()
+    markReflectionActive()
     widgetMode.setShowReflection(true)
   }, [clearReflectionReminder, widgetMode])
 
@@ -174,6 +203,8 @@ export default function App() {
           if (!savedSession) {
             widgetMode.setIsStandbyMode(true)
           }
+        } else if (authResult.user && shouldRestoreReflection()) {
+          widgetMode.setShowReflection(true)
         }
         if (memoryStore && typeof memoryStore === 'object') {
           const ms = memoryStore as { sessions?: unknown[]; commitments?: unknown[] }
@@ -277,7 +308,8 @@ export default function App() {
         if (loading) {
           const windowMode = await window.electronAPI.getWindowMode()
           const hasSavedSession = !!localStorage.getItem('focusSession')
-          if (windowMode?.isFirstInit && !windowMode?.isWidgetMode && !hasSavedSession) {
+          const hasActiveReflection = shouldRestoreReflection()
+          if (windowMode?.isFirstInit && !windowMode?.isWidgetMode && !hasSavedSession && !hasActiveReflection) {
             window.electronAPI.enterWidget()
             setIsWidgetMode(true)
             widgetMode.setIsStandbyMode(true)
@@ -385,11 +417,24 @@ export default function App() {
   const handleLogout = useCallback(async () => {
     tracker.track('auth.logout', {})
     await window.electronAPI.authSignOut()
+    clearActiveView()
     setCurrentUser(null)
     setTasks([])
     setAuthChecking(false)
     try { localStorage.removeItem(`tasksCache-${currentDate}`) } catch { /* ignore */ }
   }, [currentDate])
+
+  const handleCloseReflection = useCallback(() => {
+    clearActiveView()
+    widgetMode.setShowReflection(false)
+  }, [widgetMode])
+
+  // 如果锁屏/唤醒后 React 状态回到主界面，主动把 Electron 窗口缩回主界面尺寸。
+  useEffect(() => {
+    if (authChecking || !currentUser || loading || isWidgetMode || widgetMode.showReflection) return
+    clearActiveView()
+    window.electronAPI.resizeMainWindow(MAIN_WIDTH, MAIN_HEIGHT)
+  }, [authChecking, currentUser, isWidgetMode, loading, widgetMode.showReflection])
 
   // -------- 检查认证中 --------
   if (authChecking) {
@@ -481,7 +526,7 @@ export default function App() {
           tasks={tasks}
           aiConfig={aiConfig}
           userProfile={userProfile}
-          onClose={() => widgetMode.setShowReflection(false)}
+          onClose={handleCloseReflection}
         />
       </div>
     )

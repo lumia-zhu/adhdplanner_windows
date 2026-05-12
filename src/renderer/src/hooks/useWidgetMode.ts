@@ -3,6 +3,17 @@ import type { FocusSession } from '../components/WidgetView'
 import { getToday } from './useDateNavigation'
 import { tracker } from '../services/tracker'
 
+const ACTIVE_VIEW_STORAGE_KEY = 'activeView'
+const ACTIVE_VIEW_REFLECTION = 'reflection'
+
+function markReflectionActive(): void {
+  try {
+    localStorage.setItem(ACTIVE_VIEW_STORAGE_KEY, ACTIVE_VIEW_REFLECTION)
+  } catch {
+    // 忽略 localStorage 不可用的情况；只影响唤醒后的页面恢复。
+  }
+}
+
 interface UseWidgetModeParams {
   session: FocusSession | null
   setSession: React.Dispatch<React.SetStateAction<FocusSession | null>>
@@ -55,6 +66,7 @@ export function useWidgetMode({
   // 监听主进程发来的"打开反思页"通知
   useEffect(() => {
     window.electronAPI.onNavigateReflection(() => {
+      markReflectionActive()
       setShowReflection(true)
     })
   }, [])

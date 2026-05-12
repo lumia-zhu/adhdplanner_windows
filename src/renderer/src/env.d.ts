@@ -18,7 +18,7 @@ interface Window {
     // 托盘通信
     updateTrayCount: (count: number) => void
     /** 查询当前窗口模式（启动时同步状态） */
-    getWindowMode: () => Promise<{ isWidgetMode: boolean }>
+    getWindowMode: () => Promise<{ isWidgetMode: boolean; isFirstInit?: boolean }>
     onWidgetEnter: (cb: () => void) => void
     onWidgetExit: (cb: () => void) => void
     /** 系统唤醒后同步窗口模式 */

@@ -478,6 +478,7 @@ app.whenReady().then(async () => {
         startWidgetHeartbeat()
       }
       win.webContents.setZoomFactor(S.uiScale)
+      win.webContents.send('window:modeSync', { isWidgetMode: S.isWidgetMode })
 
       // 检测页面是否存活：查询 #root 子元素数量，为 0 则判定白屏
       setTimeout(async () => {
