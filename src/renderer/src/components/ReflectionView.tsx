@@ -465,7 +465,6 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
 
   // ---- 任务 hover 联动热力图 ----
   const [hoveredTask, setHoveredTask] = useState<string | null>(null)
-  const [showAllTaskDistribution, setShowAllTaskDistribution] = useState(false)
 
   // ---- AI 视觉引用高亮：同一时间只保留一个重点位置 ----
   const [activeHighlight, setActiveHighlight] = useState<ActiveHighlight | null>(null)
@@ -1397,7 +1396,7 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
       ? `\n\n精力时间分布（每小时电脑活跃度）：\n${activityTimeDistribution}`
       : ''
     const moodInfo = displayMoodRecord && displayMoodOption
-      ? `\n\n当日心情记录（用户自述状态，只作背景，不要过度解释因果）：\n- 心情：${displayMoodOption.label}${displayMoodNote ? `\n- 备注：${displayMoodNote}` : ''}\n- 使用原则：可以把心情作为理解当天节奏的状态线索，但不要说“因为这个心情所以效率怎样”，也不要用心情评价用户表现好坏。`
+      ? `\n\n当日心情记录（可选背景，非必须引用）：\n- 心情：${displayMoodOption.label}${displayMoodNote ? `\n- 备注：${displayMoodNote}` : ''}\n- 使用原则：这是用户自述状态，只在讨论状态、开始困难、卡顿、停顿、节奏变化或用户主动提到情绪时按需参考；不要为了使用它而使用它，不要用它解释效率高低、任务完成好坏或电脑活跃变化。`
       : ''
     const taskSessionInfo = buildTaskSessionPromptContext(events)
     const appUsageInfo = buildAppUsagePromptContext(activityData)
@@ -2024,18 +2023,6 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
                     <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
                       ⏱ 任务用时
                     </h3>
-                    {taskDurations.length > 1 && (
-                      <button
-                        onClick={() => setShowAllTaskDistribution(v => !v)}
-                        className={`text-2xs px-2 py-1 rounded-full border transition-colors ${
-                          showAllTaskDistribution
-                            ? 'bg-blue-50 border-blue-200 text-blue-600'
-                            : 'bg-white border-gray-200 text-gray-400 hover:border-blue-200 hover:text-blue-500'
-                        }`}
-                      >
-                        {showAllTaskDistribution ? '隐藏全部分布' : '显示全部分布'}
-                      </button>
-                    )}
                   </div>
                   <TaskDurationChart
                     data={taskDurations}
@@ -2081,7 +2068,6 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
                     highlightHour={highlightedHour}
                     highlightHourRange={highlightedHourRange}
                     highlightPulseKey={highlightPulseKey}
-                    showAllTasks={showAllTaskDistribution}
                     taskTitles={taskDurations.map(t => t.title)}
                   />
                 </div>

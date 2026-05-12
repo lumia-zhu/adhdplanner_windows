@@ -26,6 +26,42 @@ import { triggerEffect } from '../effects'
 import AILoadingTips from './AILoadingTips'
 import { getToday } from '../hooks/useDateNavigation'
 
+function TruncatedTextTooltip({
+  text,
+  className,
+  prefix,
+}: {
+  text: string
+  className: string
+  prefix?: string
+}) {
+  const textRef = useRef<HTMLSpanElement>(null)
+  const [showTooltip, setShowTooltip] = useState(false)
+
+  const handleMouseEnter = () => {
+    const el = textRef.current
+    if (!el) return
+    setShowTooltip(el.scrollWidth > el.clientWidth)
+  }
+
+  return (
+    <span
+      className="relative inline-flex min-w-0"
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={() => setShowTooltip(false)}
+    >
+      <span ref={textRef} className={className}>
+        {prefix}{text}
+      </span>
+      {showTooltip && (
+        <span className="pointer-events-none absolute left-0 top-full z-50 mt-1.5 max-w-[260px] rounded-xl bg-gray-800 px-2.5 py-1.5 text-xs leading-relaxed text-white shadow-lg">
+          {text}
+        </span>
+      )}
+    </span>
+  )
+}
+
 // ===================== 常量 =====================
 
 const BAR_W_PANEL = 620
@@ -973,11 +1009,16 @@ function FocusDynamicBar({
                           shadow-[0_2px_12px_rgba(0,0,0,0.035)] hover:shadow-[0_4px_18px_rgba(0,0,0,0.08)]
                           px-3 py-1 select-none overflow-hidden transition-all duration-200">
             <div className="flex-1 min-w-0 flex items-center gap-2">
-              <span className="text-xs text-gray-800 truncate max-w-[96px]" title={taskTitle}>{taskTitle}</span>
+              <TruncatedTextTooltip
+                text={taskTitle}
+                className="text-xs text-gray-800 truncate max-w-[96px]"
+              />
               <span className="text-gray-400 flex-shrink-0">·</span>
-              <span className="text-sm text-gray-950 font-semibold truncate max-w-[230px]" title={currentMicroTask}>
-                🎯 {currentMicroTask}
-              </span>
+              <TruncatedTextTooltip
+                text={currentMicroTask}
+                prefix="🎯 "
+                className="text-sm text-gray-950 font-semibold truncate max-w-[230px]"
+              />
             </div>
 
             <div className="no-drag flex items-center gap-2.5 flex-shrink-0">
@@ -1028,9 +1069,10 @@ function FocusDynamicBar({
             <div className="flex-1 min-w-0 flex items-center gap-2">
               <span className="text-xs text-gray-800 flex-shrink-0">当前任务</span>
               <span className="text-gray-400 flex-shrink-0">·</span>
-              <span className="text-sm text-gray-950 font-semibold truncate max-w-[260px]" title={taskTitle}>
-                {taskTitle}
-              </span>
+              <TruncatedTextTooltip
+                text={taskTitle}
+                className="text-sm text-gray-950 font-semibold truncate max-w-[260px]"
+              />
             </div>
 
             <div className="no-drag flex items-center gap-2.5 flex-shrink-0">

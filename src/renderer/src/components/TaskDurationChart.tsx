@@ -1,3 +1,5 @@
+import { useState } from 'react'
+
 /**
  * TaskDurationChart —— 任务用时横向条形图
  *
@@ -36,6 +38,8 @@ interface TaskDurationChartProps {
   highlightPulseKey?: string
 }
 
+const DEFAULT_SHOW = 5
+
 export function formatTaskDuration(durationSec: number): string {
   if (durationSec < 60) return `${durationSec}s`
 
@@ -47,50 +51,67 @@ export function formatTaskDuration(durationSec: number): string {
 export type { TaskDurationItem, StuckMark }
 
 export default function TaskDurationChart({ data, onTaskHover, highlightTask, highlightPulseKey }: TaskDurationChartProps) {
+  const [showAll, setShowAll] = useState(false)
+
   if (data.length === 0) return null
 
+  const visible = showAll ? data : data.slice(0, DEFAULT_SHOW)
+  const hiddenCount = data.length - DEFAULT_SHOW
   const maxSec = Math.max(...data.map(d => d.durationSec), 1)
 
   return (
-    <div className="space-y-2.5">
-      {data.map((item, i) => {
-        const barWidthPct = Math.max((item.durationSec / maxSec) * 100, 4)
-        const isHighlighted = highlightTask === item.title
+    <div>
+      <div className="space-y-2.5">
+        {visible.map((item, i) => {
+          const barWidthPct = Math.max((item.durationSec / maxSec) * 100, 4)
+          const isHighlighted = highlightTask === item.title
 
-        return (
-          <div
-            key={`${item.title}-${i}-${isHighlighted ? highlightPulseKey ?? 'pulse' : 'idle'}`}
-            className={`rounded-xl transition-all duration-200 ${
-              isHighlighted ? 'ai-focus-pulse px-1.5 py-1' : ''
-            }`}
-          >
+          return (
             <div
-              className="flex items-center gap-2.5"
-              onMouseEnter={() => onTaskHover?.(item.title)}
-              onMouseLeave={() => onTaskHover?.(null)}
+              key={`${item.title}-${i}-${isHighlighted ? highlightPulseKey ?? 'pulse' : 'idle'}`}
+              className={`rounded-xl transition-all duration-200 ${
+                isHighlighted ? 'ai-focus-pulse px-1.5 py-1' : ''
+              }`}
             >
-              <span
-                className="text-xxs text-gray-600 w-[100px] text-right flex-shrink-0 leading-tight break-words"
+              <div
+                className="flex items-center gap-2.5"
+                onMouseEnter={() => onTaskHover?.(item.title)}
+                onMouseLeave={() => onTaskHover?.(null)}
               >
-                {item.title}
-              </span>
+                <span
+                  className="text-xxs text-gray-600 w-[100px] text-right flex-shrink-0 leading-tight break-words"
+                >
+                  {item.title}
+                </span>
 
-              <div className="flex-1 h-[22px] rounded-lg overflow-hidden relative">
-                <div
-                  className={`h-full rounded-lg transition-all duration-700 ease-out ${
-                    isHighlighted ? 'bg-blue-400/80 shadow-[0_0_0_1px_rgba(245,158,11,0.35)]' : 'bg-blue-400/80'
-                  }`}
-                  style={{ width: `${barWidthPct}%` }}
-                />
+                <div className="flex-1 h-[22px] rounded-lg overflow-hidden relative">
+                  <div
+                    className={`h-full rounded-lg transition-all duration-700 ease-out ${
+                      isHighlighted ? 'bg-blue-400/80 shadow-[0_0_0_1px_rgba(245,158,11,0.35)]' : 'bg-blue-400/80'
+                    }`}
+                    style={{ width: `${barWidthPct}%` }}
+                  />
+                </div>
+
+                <span className="text-xxs text-gray-500 w-[56px] flex-shrink-0 text-right font-mono">
+                  {formatTaskDuration(item.durationSec)}
+                </span>
               </div>
-
-              <span className="text-xxs text-gray-500 w-[56px] flex-shrink-0 text-right font-mono">
-                {formatTaskDuration(item.durationSec)}
-              </span>
             </div>
-          </div>
-        )
-      })}
+          )
+        })}
+      </div>
+
+      {hiddenCount > 0 && (
+        <div className="mt-1 flex justify-center">
+          <button
+            onClick={() => setShowAll(v => !v)}
+            className="rounded-full px-2 py-0.5 text-xxs leading-tight text-blue-600 transition-colors hover:bg-blue-50 hover:text-blue-700"
+          >
+            {showAll ? '收起' : `展开剩余 ${hiddenCount} 项`}
+          </button>
+        </div>
+      )}
     </div>
   )
 }

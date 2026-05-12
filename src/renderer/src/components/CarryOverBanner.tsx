@@ -77,10 +77,7 @@ export default function CarryOverBanner({ groups, onCarryOver, onDismiss }: Carr
         >
           <span className="mr-1.5 text-sm">📦</span>
           <span>
-            {dayCount === 1
-              ? `${dateLabel(groups[0].fromDate)}还有些任务没做完，要加到今天吗`
-              : `之前有些任务还没做完，看看要不要加到今天`
-            }
+            之前还有未完成任务，要安排到今天吗？
           </span>
           <svg className="ml-1.5 w-3 h-3 opacity-45" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
