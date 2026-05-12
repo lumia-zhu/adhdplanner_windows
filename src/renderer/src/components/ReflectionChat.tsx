@@ -323,7 +323,7 @@ function normalizeSuggestionDirection(label: string): string {
     .replace(/(列了但没开始的|计划里没写的|做了但没计划的|很快勾掉的|花最久的|顺手做完的|真正开始的)(学习|论文|英语|数学|课程|作业|复习|考试|编程|代码|项目|阅读|写作|实验|报告|文献|研究|开发|工作|课堂|学校|专业|实习)任务/g, '$1任务')
     .replace(/^(论文|英语|数学|课程|作业|复习|考试|编程|代码|项目|阅读|写作|实验|报告|文献|研究|开发|学习)任务(一直没开始|没开始|没推进|总被留下|总被留到后面)$/g, '列了但没开始的任务')
     .replace(/^(Cursor|Edge|Chrome|浏览器|微信|Word|Excel|PowerPoint|VS Code|Visual Studio Code).*(使用|时长|占用)$/i, '电脑开着时在做什么')
-    .replace(/^\d{1,2}[点:：].*(学习|任务|推进).*$/g, '比较集中的推进时间')
+    .replace(/^\d{1,2}[点:：].*(学习|任务|推进|效率).*$/g, '哪些时间效率较高？')
     .replace(/^(上午|中午|下午|晚上|夜里).*(学习|任务|推进).*$/g, '更容易动起来的时间')
 
   normalized = normalized.replace(/\s+/g, ' ').trim()
@@ -1094,14 +1094,14 @@ const ReflectionChat = forwardRef<ReflectionChatHandle, ReflectionChatProps>(fun
   }
 
   const endButtonLabel = endingState === 'saving' ? '正在保存记忆...'
-    : endingState === 'saved' ? '已保存' : '结束反思'
+    : endingState === 'saved' ? '已保存' : '结束复盘'
 
   return (
     <div className="flex flex-col h-full">
-      {/* 顶栏：结束反思按钮 */}
+      {/* 顶栏：结束复盘按钮 */}
       <div className="flex items-center justify-between px-4 py-2.5 border-b border-gray-100 flex-shrink-0">
         <span className="text-xs font-semibold text-gray-500">
-          AI {mode === 'weekly' ? '周' : ''}反思助手
+          AI助手
         </span>
         <button
           onClick={handleEndChat}
@@ -1198,7 +1198,7 @@ const ReflectionChat = forwardRef<ReflectionChatHandle, ReflectionChatProps>(fun
         {suggestions.length > 0 && !isBusy && (
           <div className="pl-1 space-y-2">
             <div className="text-[11px] text-gray-400">
-              几个或许值得探索的方向：
+              可以聊聊这几个方向：
             </div>
             <div className="flex flex-wrap gap-2">
               {suggestions.map((q, i) => (
