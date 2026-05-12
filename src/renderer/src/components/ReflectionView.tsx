@@ -7,7 +7,7 @@
  */
 
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
-import type { Task, UserProfile } from '../types'
+import type { DailyMoodRecord, Task, UserProfile } from '../types'
 import type { AIConfig, VisualTarget } from '../services/ai'
 import { buildReflectionSystemPrompt, buildWeeklyReflectionSystemPrompt, extractMemoryFromChat } from '../services/ai'
 import type { TrackEvent, DailySummary } from '../services/tracker'
@@ -32,6 +32,7 @@ import WeekView from './WeekView'
 import type { WeekDayData } from './WeekView'
 import { getWeekDates } from './WeekView'
 import { tracker } from '../services/tracker'
+import { getMoodOptionForDate, parseMoodRecord } from '../utils/mood'
 
 interface ReflectionViewProps {
   tasks: Task[]
@@ -70,9 +71,9 @@ const BUBBLE_HINTS_WEEK = [
   '找找跨天的规律，下周更高效 🚀',
 ]
 
-/** 主窗口默认宽度（和 main/index.ts 里的 MAIN_WIDTH 一致） */
+/** 主窗口默认尺寸（和 src/main/window.ts 里的 MAIN_WIDTH / MAIN_HEIGHT 一致） */
 const MAIN_WIDTH = 480
-const MAIN_HEIGHT = 680
+const MAIN_HEIGHT = 760
 /** 侧边栏展开时窗口总宽度 */
 const EXPANDED_WIDTH = 880
 /** 反思页大窗口模式：尽量接近屏幕尺寸，但图表内容仍用 max-width 防止变形 */
@@ -487,6 +488,9 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
   const [displaySummary, setDisplaySummary] = useState<DailySummary | null>(null)
   const [displayActivityData, setDisplayActivityData] = useState<ActivityRecord[]>([])
   const [displayTasks, setDisplayTasks] = useState<Task[]>(propTasks)
+  const [displayMoodRecord, setDisplayMoodRecord] = useState<DailyMoodRecord | null>(null)
+  const [moodNoteExpanded, setMoodNoteExpanded] = useState(false)
+  const moodPillRef = useRef<HTMLDivElement>(null)
   const [isDataTransitioning, setIsDataTransitioning] = useState(false)
   const [contentVisible, setContentVisible] = useState(true)
   const displayIsToday = displayDate === today
@@ -574,10 +578,11 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
           await tracker.flushAsync()
         }
 
-        const [raw, rawActivity, rawTasks] = await Promise.all([
+        const [raw, rawActivity, rawTasks, rawMood] = await Promise.all([
           window.electronAPI.loadTrackerEvents(selectedDate),
           window.electronAPI.loadActivityData(selectedDate),
           window.electronAPI.loadTasks(selectedDate),
+          window.electronAPI.loadMoodRecord(selectedDate),
         ])
 
         if (cancelled) return  // 防止切换日期后旧请求覆盖新数据
@@ -592,6 +597,8 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
         setDisplayEvents(typedEvents)
         setDisplayActivityData(rawActivity as ActivityRecord[])
         setDisplayTasks(rawTasks as Task[])
+        setDisplayMoodRecord(parseMoodRecord(rawMood))
+        setMoodNoteExpanded(false)
         setDisplaySummary(s)
         hasDisplayDataRef.current = true
         setSummary(s)
@@ -823,6 +830,18 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
       clearTimeout(hideTimer)
     }
   }, [chatOpen])
+
+  useEffect(() => {
+    if (!moodNoteExpanded) return
+    const handlePointerDown = (event: MouseEvent) => {
+      const target = event.target as Node | null
+      if (target && moodPillRef.current && !moodPillRef.current.contains(target)) {
+        setMoodNoteExpanded(false)
+      }
+    }
+    document.addEventListener('mousedown', handlePointerDown)
+    return () => document.removeEventListener('mousedown', handlePointerDown)
+  }, [moodNoteExpanded])
 
   // 计算任务完成率
   const completionRate = useMemo(() => {
@@ -1336,6 +1355,13 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
     return { value: totalUsageMinutes, unit: '分钟' }
   }, [totalUsageMinutes])
 
+  const displayMoodOption = useMemo(() => {
+    return displayMoodRecord ? getMoodOptionForDate(displayDate, displayMoodRecord.mood) : null
+  }, [displayDate, displayMoodRecord])
+
+  const displayMoodNote = displayMoodRecord?.note.trim() ?? ''
+  const hasMoodNote = displayMoodNote.length > 0
+
   /**
    * 将 activityData 按小时聚合为精力分布描述。
    * 例如："9点-10点 活跃、14点-16点 基本空闲"
@@ -1370,6 +1396,9 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
     const activityInfo = activityTimeDistribution
       ? `\n\n精力时间分布（每小时电脑活跃度）：\n${activityTimeDistribution}`
       : ''
+    const moodInfo = displayMoodRecord && displayMoodOption
+      ? `\n\n当日心情记录（用户自述状态，只作背景，不要过度解释因果）：\n- 心情：${displayMoodOption.label}${displayMoodNote ? `\n- 备注：${displayMoodNote}` : ''}\n- 使用原则：可以把心情作为理解当天节奏的状态线索，但不要说“因为这个心情所以效率怎样”，也不要用心情评价用户表现好坏。`
+      : ''
     const taskSessionInfo = buildTaskSessionPromptContext(events)
     const appUsageInfo = buildAppUsagePromptContext(activityData)
 
@@ -1391,10 +1420,10 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
     const visualMarkerInfo = `\n\n${buildVisualMarkerPromptContext(visualTargets)}`
     const taskSessionContext = taskSessionInfo ? `\n\n${taskSessionInfo}` : ''
     const appUsageContext = appUsageInfo ? `\n\n${appUsageInfo}` : ''
-    const prompt = buildReflectionSystemPrompt(context + taskInfo + productivityInfo + activityInfo + taskSessionContext + appUsageContext + taskDurationInfo + insightInfo + visualMarkerInfo, false, isToday, memoryContext, selectedDate, userProfile.preferredName ?? '')
+    const prompt = buildReflectionSystemPrompt(context + taskInfo + productivityInfo + activityInfo + moodInfo + taskSessionContext + appUsageContext + taskDurationInfo + insightInfo + visualMarkerInfo, false, isToday, memoryContext, selectedDate, userProfile.preferredName ?? '')
     console.log('[Memory Debug] systemPrompt 构建完成, 包含记忆:', prompt.includes('对话记忆'), ', memoryContext长度:', memoryContext.length)
     return prompt
-  }, [summary, events, localTasks, completionRate, totalUsageMinutes, productivityRatio, flowRatio, activityTimeDistribution, activityData, taskDurations, visualTargets, isToday, memoryContext, memoryLoaded, insightContext, insightLoaded, selectedDate])
+  }, [summary, events, localTasks, completionRate, totalUsageMinutes, productivityRatio, flowRatio, activityTimeDistribution, displayMoodRecord, displayMoodOption, displayMoodNote, activityData, taskDurations, visualTargets, isToday, memoryContext, memoryLoaded, insightContext, insightLoaded, selectedDate])
 
   // ---- 周视图数据回调 ----
   const handleWeekDataReady = useCallback((data: WeekDayData[]) => {
@@ -1671,6 +1700,83 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
     }`
   }
 
+  const metricCards = (
+    <>
+      <div
+        key={highlightedMetric === 'completed-tasks' ? highlightPulseKey : 'completed-tasks'}
+        className={metricCardClass('completed-tasks', 'text-center bg-gray-100 rounded-xl py-2.5 px-2')}
+      >
+        <p className="text-lg font-bold text-gray-600">
+          {displayTasks.filter(t => t.completed).length}
+        </p>
+        <p className="text-2xs text-gray-500 mt-0.5">完成任务数</p>
+      </div>
+      <div
+        key={highlightedMetric === 'computer-usage' ? highlightPulseKey : 'computer-usage'}
+        className={metricCardClass('computer-usage', 'text-center bg-emerald-50 rounded-xl py-2.5 px-2')}
+      >
+        <p className="text-lg font-bold text-emerald-600">
+          {usageDurationStr.value}
+          <span className="text-xs font-normal ml-0.5">{usageDurationStr.unit}</span>
+        </p>
+        <p className="text-2xs text-emerald-500 mt-0.5">电脑使用时长</p>
+      </div>
+      <div
+        key={highlightedMetric === 'focus-minutes' ? highlightPulseKey : 'focus-minutes'}
+        className={metricCardClass('focus-minutes', 'text-center bg-blue-50 rounded-xl py-2.5 px-2')}
+      >
+        <p className="text-lg font-bold text-blue-600">
+          {displaySummary?.stats.totalFocusMinutes ?? 0}
+          <span className="text-xs font-normal ml-0.5">分钟</span>
+        </p>
+        <p className="text-2xs text-blue-500 mt-0.5">任务时长</p>
+      </div>
+    </>
+  )
+
+  const moodLabel = displayIsToday ? '今日心情' : '当日心情'
+  const shouldShowMoodPill = !!displayMoodRecord || displayIsToday
+  const moodPill = shouldShowMoodPill ? (
+    <div ref={moodPillRef} id="chart-daily-mood" className="relative inline-flex max-w-full flex-col items-start">
+      {displayMoodRecord && displayMoodOption ? (
+        <>
+          <button
+            type="button"
+            onClick={hasMoodNote ? () => setMoodNoteExpanded(v => !v) : undefined}
+            title={hasMoodNote ? (moodNoteExpanded ? '收起心情记录' : '查看心情记录') : undefined}
+            className={`inline-flex max-w-full items-center gap-1.5 rounded-full bg-slate-50/70 px-2.5 py-1 text-xs transition-colors ${
+              hasMoodNote ? 'cursor-pointer hover:bg-emerald-50/70' : 'cursor-default'
+            }`}
+          >
+            <span className="font-medium text-gray-400">{moodLabel}</span>
+            <span className="text-sm leading-none">{displayMoodOption.emoji}</span>
+            <span className="font-medium text-gray-700">{displayMoodOption.label}</span>
+            {hasMoodNote && (
+              <span
+                className="h-1.5 w-1.5 flex-shrink-0 rounded-full bg-emerald-300"
+                aria-label="有心情记录"
+              />
+            )}
+          </button>
+          {hasMoodNote && moodNoteExpanded && (
+            <div className="absolute left-0 top-full z-50 mt-2 w-56 rounded-2xl border border-gray-100 bg-white/95 px-3 py-2.5 text-left shadow-[0_10px_30px_rgba(15,23,42,0.12)]">
+              <p className="text-2xs font-medium text-gray-400">心情记录</p>
+              <p className="mt-1 max-h-24 overflow-y-auto text-xs leading-relaxed text-gray-600">
+                {displayMoodNote}
+              </p>
+            </div>
+          )}
+        </>
+      ) : (
+        <div className="inline-flex items-center gap-1.5 rounded-full bg-slate-50/70 px-2.5 py-1 text-xs">
+          <span className="font-medium text-gray-400">{moodLabel}</span>
+          <span className="text-gray-300">＋</span>
+          <span className="text-gray-400">还没有记录</span>
+        </div>
+      )}
+    </div>
+  ) : null
+
   return (
     <div className="h-full flex flex-col bg-white overflow-hidden">
       {/* ====== 顶部标题栏 ====== */}
@@ -1886,88 +1992,27 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
                 contentVisible ? 'opacity-100 translate-y-0' : 'opacity-70 translate-y-1'
               }`}
             >
-              {/* 圆环图 + 核心指标并排（chatOpen 时节省纵向空间） */}
-              {displayIsToday && (
-                <div id="chart-completion-rate" className={`${
-                  chatOpen
-                    ? 'flex items-center gap-6'
-                    : 'flex flex-col items-center'
-                }`}>
+              {/* 圆环图 + 核心指标 + 心情状态，所有日视图日期保持同一结构 */}
+              <div className={chatOpen ? 'flex items-center gap-6' : 'space-y-4'}>
+                <div id="chart-completion-rate" className={chatOpen ? 'flex-shrink-0' : 'flex justify-center'}>
                   <DonutChart
                     percentage={completionRate}
                     size={chatOpen ? 120 : 180}
                     strokeWidth={chatOpen ? 10 : 14}
                     label="任务完成率"
                   />
-                  {/* chatOpen 时把指标卡片内联到圆环右侧 */}
-                  {chatOpen && (
-                    <div id="chart-key-metrics" className="grid grid-cols-3 gap-3 flex-1">
-                      <div
-                        key={highlightedMetric === 'completed-tasks' ? highlightPulseKey : 'completed-tasks'}
-                        className={metricCardClass('completed-tasks', 'text-center bg-gray-100 rounded-xl py-2.5 px-2')}
-                      >
-                        <p className="text-lg font-bold text-gray-600">{displayTasks.filter(t => t.completed).length}</p>
-                        <p className="text-2xs text-gray-500 mt-0.5">完成任务数</p>
-                      </div>
-                      <div
-                        key={highlightedMetric === 'computer-usage' ? highlightPulseKey : 'computer-usage'}
-                        className={metricCardClass('computer-usage', 'text-center bg-emerald-50 rounded-xl py-2.5 px-2')}
-                      >
-                        <p className="text-lg font-bold text-emerald-600">
-                          {usageDurationStr.value}
-                          <span className="text-xs font-normal ml-0.5">{usageDurationStr.unit}</span>
-                        </p>
-                        <p className="text-2xs text-emerald-500 mt-0.5">电脑使用时长</p>
-                      </div>
-                      <div
-                        key={highlightedMetric === 'focus-minutes' ? highlightPulseKey : 'focus-minutes'}
-                        className={metricCardClass('focus-minutes', 'text-center bg-blue-50 rounded-xl py-2.5 px-2')}
-                      >
-                        <p className="text-lg font-bold text-blue-600">
-                          {displaySummary?.stats.totalFocusMinutes ?? 0}
-                          <span className="text-xs font-normal ml-0.5">分钟</span>
-                        </p>
-                        <p className="text-2xs text-blue-500 mt-0.5">任务时长</p>
-                      </div>
+                </div>
+                <div className={chatOpen ? 'min-w-0 flex-1 space-y-2' : 'space-y-2'}>
+                  <div id="chart-key-metrics" className="grid grid-cols-3 gap-3 w-full">
+                    {metricCards}
+                  </div>
+                  {moodPill && (
+                    <div className="flex justify-start">
+                      {moodPill}
                     </div>
                   )}
                 </div>
-              )}
-
-              {/* 核心指标卡片（仅 chatOpen=false 时独立显示） */}
-              {(!chatOpen || !displayIsToday) && (
-              <div id="chart-key-metrics" className="grid grid-cols-3 gap-3 w-full">
-                <div
-                  key={highlightedMetric === 'completed-tasks' ? highlightPulseKey : 'completed-tasks'}
-                  className={metricCardClass('completed-tasks', 'text-center bg-gray-100 rounded-xl py-2.5 px-2')}
-                >
-                  <p className="text-lg font-bold text-gray-600">
-                    {displayTasks.filter(t => t.completed).length}
-                  </p>
-                  <p className="text-2xs text-gray-500 mt-0.5">完成任务数</p>
-                </div>
-                <div
-                  key={highlightedMetric === 'computer-usage' ? highlightPulseKey : 'computer-usage'}
-                  className={metricCardClass('computer-usage', 'text-center bg-emerald-50 rounded-xl py-2.5 px-2')}
-                >
-                  <p className="text-lg font-bold text-emerald-600">
-                    {usageDurationStr.value}
-                    <span className="text-xs font-normal ml-0.5">{usageDurationStr.unit}</span>
-                  </p>
-                  <p className="text-2xs text-emerald-500 mt-0.5">电脑使用时长</p>
-                </div>
-                <div
-                  key={highlightedMetric === 'focus-minutes' ? highlightPulseKey : 'focus-minutes'}
-                  className={metricCardClass('focus-minutes', 'text-center bg-blue-50 rounded-xl py-2.5 px-2')}
-                >
-                  <p className="text-lg font-bold text-blue-600">
-                    {displaySummary?.stats.totalFocusMinutes ?? 0}
-                    <span className="text-xs font-normal ml-0.5">分钟</span>
-                  </p>
-                  <p className="text-2xs text-blue-500 mt-0.5">任务时长</p>
-                </div>
               </div>
-              )}
 
               {/* 分隔线 */}
               <div className="border-t border-gray-100" />

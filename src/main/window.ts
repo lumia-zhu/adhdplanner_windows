@@ -10,7 +10,7 @@ import { loadProfile, getTodayStr, getNowHHMM } from './storage'
 // ===================== 窗口尺寸常量 =====================
 
 export const MAIN_WIDTH  = 480
-export const MAIN_HEIGHT = 680
+export const MAIN_HEIGHT = 760
 export const WIDGET_WIDTH  = 560
 export const WIDGET_HEIGHT = 52
 

@@ -29,6 +29,8 @@ import { triggerEffect } from '../effects'
 import MiniCalendar from './MiniCalendar'
 import CarryOverBanner from './CarryOverBanner'
 import type { CarryOverGroup } from './CarryOverBanner'
+import { getMoodOptions, getMoodThemeForDate, parseMoodRecord } from '../utils/mood'
+import type { MoodValue } from '../utils/mood'
 
 // ===================== 类型 =====================
 
@@ -88,8 +90,6 @@ const uid = (prefix = 't') => `${prefix}-${Date.now()}-${Math.random().toString(
 
 // ===================== 日期 & 心情记录 =====================
 
-type MoodValue = DailyMoodRecord['mood']
-
 /** 获取日期的友好显示，如 "3月8日 · 周日" */
 function getDateLabel(dateStr?: string): string {
   const now = dateStr ? new Date(dateStr + 'T00:00:00') : new Date()
@@ -102,27 +102,6 @@ function getDateLabel(dateStr?: string): string {
 function getTodayDateStr(): string {
   const now = new Date()
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
-}
-
-const MOOD_OPTIONS: Array<{ value: MoodValue; label: string; emoji: string }> = [
-  { value: 1, label: '很低落', emoji: '😢' },
-  { value: 2, label: '低落', emoji: '😔' },
-  { value: 3, label: '平静', emoji: '😐' },
-  { value: 4, label: '开心', emoji: '🙂' },
-  { value: 5, label: '很开心', emoji: '😄' },
-]
-
-function parseMoodRecord(value: unknown): DailyMoodRecord | null {
-  if (!value || typeof value !== 'object') return null
-  const record = value as Record<string, unknown>
-  const mood = Number(record.mood)
-  if (!Number.isInteger(mood) || mood < 1 || mood > 5) return null
-  return {
-    date: String(record.date || ''),
-    mood: mood as MoodValue,
-    note: String(record.note || ''),
-    updatedAt: typeof record.updatedAt === 'number' ? record.updatedAt : Date.now(),
-  }
 }
 
 // ===================== 主组件 =====================
@@ -161,7 +140,9 @@ export default function NoteEditor({
   // 把嵌套的 Task[] 展平为一维行列表
   const lines = useMemo(() => flattenTasks(tasks), [tasks])
   const moodDate = currentDate || getTodayDateStr()
-  const selectedMoodOption = moodRecord ? MOOD_OPTIONS.find(option => option.value === moodRecord.mood) : null
+  const moodTheme = getMoodThemeForDate(moodDate)
+  const moodOptions = useMemo(() => getMoodOptions(moodTheme), [moodTheme])
+  const selectedMoodOption = moodRecord ? moodOptions.find(option => option.value === moodRecord.mood) : null
 
   useEffect(() => {
     let cancelled = false
@@ -733,7 +714,7 @@ export default function NoteEditor({
                       <div className="no-drag absolute left-1/2 top-full z-50 mt-2 w-72 -translate-x-1/2 rounded-2xl border border-gray-100 bg-white/95 p-4 shadow-[0_10px_30px_rgba(15,23,42,0.12)] backdrop-blur">
                         <p className="text-sm font-semibold text-gray-800 text-center">今天心情怎么样？</p>
                         <div className="mt-3 grid grid-cols-5 gap-1.5">
-                          {MOOD_OPTIONS.map(option => {
+                          {moodOptions.map(option => {
                             const selected = draftMood === option.value
                             return (
                               <button
@@ -982,7 +963,7 @@ interface TaskBlockProps {
   task: Task
   taskIndex: number
   lines: FlatLine[]
-  inputRefs: React.RefObject<Map<string, HTMLInputElement>>
+  inputRefs: React.MutableRefObject<Map<string, HTMLInputElement>>
   onTextChange: (line: FlatLine, text: string) => void
   onKeyDown: (e: React.KeyboardEvent, line: FlatLine) => void
   onToggle: (line: FlatLine) => void
@@ -1012,13 +993,15 @@ function TaskBlock({
   }))
 
   const hasSubtasks = subtaskLines.length > 0
+  const isPaused = !!task.pausedSession
+  const pausedStep = task.pausedSession?.currentMicroTask?.trim()
 
   return (
     <div
       ref={setNodeRef}
       style={style}
       // ★ 整行 hover 预加载：鼠标进入任务行区域就触发，比只 hover ▶ 按钮更早
-      onMouseEnter={!task.completed && onPrefetchTask ? () => onPrefetchTask(task.id) : undefined}
+      onMouseEnter={!task.completed && !isPaused && onPrefetchTask ? () => onPrefetchTask(task.id) : undefined}
       className={`rounded-lg mb-2.5 transition-all ${
         isDragging
           ? 'opacity-40 scale-[1.02]'
@@ -1038,8 +1021,11 @@ function TaskBlock({
         onKeyDown={onKeyDown}
         onToggle={onToggle}
         onCyclePriority={onCyclePriority}
-        onFocus={isToday && !task.completed ? () => onFocusTask(task.id) : undefined}
-        onHoverFocus={isToday && !task.completed && onPrefetchTask ? () => onPrefetchTask(task.id) : undefined}
+        onFocus={isToday && !task.completed ? () => {
+          if (isPaused) onResumePaused(task.id)
+          else onFocusTask(task.id)
+        } : undefined}
+        onHoverFocus={isToday && !task.completed && !isPaused && onPrefetchTask ? () => onPrefetchTask(task.id) : undefined}
         onDelete={() => onDeleteLine(taskLine)}
       />
       {/* 备注 */}
@@ -1048,20 +1034,17 @@ function TaskBlock({
           <span className="text-xxs text-gray-400 italic leading-tight">{task.note}</span>
         </div>
       )}
-      {/* 暂停态：点击恢复 */}
-      {task.pausedSession && !task.completed && isToday && (
-        <div className="ml-[52px] mb-1.5">
-          <button
-            onClick={() => onResumePaused(task.id)}
-            className="group flex items-center gap-1 px-2 py-[3px] rounded-full
-                       bg-blue-50 hover:bg-blue-500
-                       active:scale-95 transition-all duration-200 cursor-pointer"
-          >
-            <svg className="w-3 h-3 text-blue-400 group-hover:text-white transition-colors" viewBox="0 0 20 20" fill="currentColor">
-              <path d="M6.3 2.84A1.5 1.5 0 004 4.11v11.78a1.5 1.5 0 002.3 1.27l9.344-5.891a1.5 1.5 0 000-2.538L6.3 2.84z" />
-            </svg>
-            <span className="text-xxs text-blue-500 group-hover:text-white transition-colors">继续</span>
-          </button>
+      {/* 暂停态：只保留状态提示，恢复入口统一放在右侧琥珀色播放按钮 */}
+      {isPaused && !task.completed && isToday && (
+        <div className="ml-[52px] -mt-0.5 mb-1 flex min-w-0 items-center gap-1 text-2xs leading-none">
+          <span className="font-medium text-amber-500">
+            暂停中
+          </span>
+          {pausedStep && (
+            <span className="min-w-0 truncate text-gray-400">
+              · {pausedStep}
+            </span>
+          )}
         </div>
       )}
       {/* 子任务区域 */}
@@ -1090,9 +1073,9 @@ function TaskBlock({
 interface LineRowProps {
   line: FlatLine
   task: Task
-  inputRefs: React.RefObject<Map<string, HTMLInputElement>>
-  dragAttrs?: Record<string, unknown>
-  dragListeners?: Record<string, unknown>
+  inputRefs: React.MutableRefObject<Map<string, HTMLInputElement>>
+  dragAttrs?: ReturnType<typeof useSortable>['attributes']
+  dragListeners?: ReturnType<typeof useSortable>['listeners']
   onTextChange: (line: FlatLine, text: string) => void
   onKeyDown: (e: React.KeyboardEvent, line: FlatLine) => void
   onToggle: (line: FlatLine) => void
@@ -1112,6 +1095,7 @@ function LineRow({
   const text = isSub ? (sub?.title ?? '') : task.title
   const completed = isSub ? (sub?.completed ?? false) : task.completed
   const dotColor = PRIORITY_CONFIG[task.priority].dot
+  const isResumeAction = !isSub && !!task.pausedSession && !task.completed
 
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
 
@@ -1195,12 +1179,14 @@ function LineRow({
         <button
           onClick={onFocus}
           onMouseEnter={onHoverFocus}
-          className="w-7 h-7 rounded-lg flex items-center justify-center
-                     bg-emerald-50 text-emerald-500 border border-emerald-200
-                     hover:bg-emerald-500 hover:text-white hover:border-emerald-500
-                     hover:shadow-sm hover:shadow-emerald-200/50
-                     active:scale-90 transition-all flex-shrink-0"
-          title="专注此任务"
+          className={`w-7 h-7 rounded-lg flex items-center justify-center border
+                     hover:text-white hover:shadow-sm
+                     active:scale-90 transition-all flex-shrink-0 ${
+                       isResumeAction
+                         ? 'bg-amber-50 text-amber-500 border-amber-200 hover:bg-amber-500 hover:border-amber-500 hover:shadow-amber-200/50'
+                         : 'bg-emerald-50 text-emerald-500 border-emerald-200 hover:bg-emerald-500 hover:border-emerald-500 hover:shadow-emerald-200/50'
+                     }`}
+          title={isResumeAction ? '继续上次任务' : '专注此任务'}
         >
           <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor">
             <path d="M8 5v14l11-7z" />
