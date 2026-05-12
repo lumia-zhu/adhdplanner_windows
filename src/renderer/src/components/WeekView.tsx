@@ -13,7 +13,7 @@ import { buildDailySummary } from '../services/tracker'
 import type { ActivityRecord } from './ActivityHeatmap'
 import { getActiveRatio } from './ActivityHeatmap'
 import type { TaskDurationItem, StuckMark } from './TaskDurationChart'
-import WeekCompletionBars from './WeekCompletionBars'
+import WeekCompletionBars, { DEMO_MOOD_EMOJIS, DEMO_MOOD_LABELS } from './WeekCompletionBars'
 import WeekMetricCards from './WeekMetricCards'
 import WeekTaskRanking from './WeekTaskRanking'
 import WeekHeatmapGrid, { computeWeekActiveTimeRange } from './WeekHeatmapGrid'
@@ -185,6 +185,104 @@ interface WeekViewProps {
   chatOpen?: boolean
 }
 
+function WeekCompletionSection({ days, showMoodDemo = false }: { days: WeekDayData[]; showMoodDemo?: boolean }) {
+  return (
+    <>
+      <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+        📊 每日任务完成率
+        <span className="relative group">
+          <span className="inline-flex items-center justify-center w-4 h-4 rounded-full border border-gray-300 text-gray-400 text-[10px] leading-none cursor-help group-hover:text-gray-600 group-hover:border-gray-400 transition-colors">?</span>
+          <span className="pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-150 absolute left-1/2 -translate-x-1/2 top-full mt-1.5 z-50 w-[240px] bg-gray-800 text-white text-[11px] leading-relaxed rounded-lg px-3 py-2.5 shadow-lg normal-case tracking-normal font-normal">
+            <b>每日任务完成率</b> = 当天已完成的任务数 ÷ 当天全部任务数 × 100%。
+          </span>
+        </span>
+      </h3>
+      <WeekCompletionBars days={days} showMoodDemo={showMoodDemo} />
+    </>
+  )
+}
+
+function WeekMoodCompletionDemo({ days }: { days: WeekDayData[] }) {
+  const ranking = DEMO_MOOD_EMOJIS.reduce<Array<{
+    emoji: string
+    label: string
+    completed: number
+    total: number
+    days: number
+    rate: number
+  }>>((items, emoji, i) => {
+    const day = days[i]
+    if (!day) return items
+
+    const existing = items.find(item => item.emoji === emoji)
+    const target = existing ?? {
+      emoji,
+      label: DEMO_MOOD_LABELS[i % DEMO_MOOD_LABELS.length],
+      completed: 0,
+      total: 0,
+      days: 0,
+      rate: 0,
+    }
+
+    target.completed += day.summary.stats.completedMicroSteps
+    target.total += day.summary.stats.totalMicroSteps
+    target.days += 1
+
+    if (!existing) items.push(target)
+    return items
+  }, [])
+    .map(item => ({
+      ...item,
+      rate: item.total > 0 ? Math.round((item.completed / item.total) * 100) : 0,
+    }))
+    .sort((a, b) => b.rate - a.rate || b.total - a.total)
+
+  return (
+    <div id="chart-week-mood-completion-demo" className="space-y-3">
+      <div>
+        <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider flex items-center gap-1.5">
+          🌿 不同心情下的任务完成率
+          <span className="relative group">
+            <span className="inline-flex items-center justify-center w-4 h-4 rounded-full border border-gray-300 text-gray-400 text-[10px] leading-none cursor-help group-hover:text-gray-600 group-hover:border-gray-400 transition-colors">?</span>
+            <span className="pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-150 absolute left-1/2 -translate-x-1/2 top-full mt-1.5 z-50 w-[260px] bg-gray-800 text-white text-[11px] leading-relaxed rounded-lg px-3 py-2.5 shadow-lg normal-case tracking-normal font-normal">
+              按模拟心情聚合同类日期的完成数 / 总任务数，仅用于样式预览。
+            </span>
+          </span>
+        </h3>
+      </div>
+
+      <div className="space-y-2">
+        {ranking.map(item => {
+          const barWidthPct = Math.max(item.rate, item.rate > 0 ? 4 : 0)
+
+          return (
+            <div
+              key={item.emoji}
+              className="group relative flex items-center gap-2.5"
+            >
+              <span className="w-7 flex-shrink-0 text-center text-base" title={item.label}>
+                {item.emoji}
+              </span>
+              <div className="h-[22px] flex-1 overflow-hidden rounded-lg">
+                <div
+                  className="h-full rounded-lg bg-indigo-400/80 transition-all duration-700 ease-out"
+                  style={{ width: `${barWidthPct}%` }}
+                />
+              </div>
+              <span className="w-9 flex-shrink-0 text-right font-mono text-xxs text-gray-500 tabular-nums">
+                {item.rate}%
+              </span>
+              <span className="pointer-events-none absolute right-12 top-1/2 z-50 -translate-y-1/2 whitespace-nowrap rounded-lg bg-gray-800 px-2.5 py-1.5 text-[11px] leading-none text-white opacity-0 shadow-lg transition-opacity duration-150 group-hover:opacity-100">
+                完成 {item.completed} 个 / 共 {item.total} 个 · 覆盖 {item.days} 天
+              </span>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 // ===================== 主组件 =====================
 
 export default function WeekView({ weekEndDate, onDataReady, chatOpen }: WeekViewProps) {
@@ -297,16 +395,7 @@ export default function WeekView({ weekEndDate, onDataReady, chatOpen }: WeekVie
     <div className="p-6 space-y-6 transition-all duration-400 max-w-xl mx-auto">
       {/* 每日完成率条形图 */}
       <div id="chart-week-completion">
-        <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-1.5">
-          📊 每日任务完成率
-          <span className="relative group">
-            <span className="inline-flex items-center justify-center w-4 h-4 rounded-full border border-gray-300 text-gray-400 text-[10px] leading-none cursor-help group-hover:text-gray-600 group-hover:border-gray-400 transition-colors">?</span>
-            <span className="pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-150 absolute left-1/2 -translate-x-1/2 top-full mt-1.5 z-50 w-[240px] bg-gray-800 text-white text-[11px] leading-relaxed rounded-lg px-3 py-2.5 shadow-lg normal-case tracking-normal font-normal">
-              <b>每日任务完成率</b> = 当天已完成的任务数 ÷ 当天全部任务数 × 100%。
-            </span>
-          </span>
-        </h3>
-        <WeekCompletionBars days={weekData} />
+        <WeekCompletionSection days={weekData} />
       </div>
 
       {/* 周汇总指标卡片 */}
@@ -363,6 +452,16 @@ export default function WeekView({ weekEndDate, onDataReady, chatOpen }: WeekVie
         </h3>
         <AppUsageRanking data={weekData.flatMap((d) => d.activity)} />
       </div>
+
+      {/* 分隔线 */}
+      <div className="border-t border-gray-100" />
+
+      {/* 底部重复展示，方便看完周视图后回看每日完成率 */}
+      <div id="chart-week-completion-bottom">
+        <WeekCompletionSection days={weekData} showMoodDemo />
+      </div>
+
+      <WeekMoodCompletionDemo days={weekData} />
     </div>
   )
 }

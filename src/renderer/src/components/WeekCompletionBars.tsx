@@ -11,14 +11,18 @@ import type { WeekDayData } from './WeekView'
 
 interface Props {
   days: WeekDayData[]
+  /** 临时演示用：在日期上方展示 7 天心情头像，后续删掉调用处即可隐藏 */
+  showMoodDemo?: boolean
 }
 
 /** 柱状图高度（px） */
 const BAR_AREA_H = 100
 /** 顶部留白，给标签腾出空间 */
 const BAR_PAD_TOP = 18
+export const DEMO_MOOD_EMOJIS = ['😊', '🙂', '😐', '🙁', '😔', '🙂', '😊']
+export const DEMO_MOOD_LABELS = ['很开心', '还不错', '一般', '有点低', '很低落', '还不错', '很开心']
 
-export default function WeekCompletionBars({ days }: Props) {
+export default function WeekCompletionBars({ days, showMoodDemo = false }: Props) {
 
   return (
     <div>
@@ -91,8 +95,17 @@ export default function WeekCompletionBars({ days }: Props) {
 
       {/* X 轴：日期标签 */}
       <div className="flex ml-[28px]">
-        {days.map(day => (
+        {days.map((day, i) => (
           <div key={day.date} className="flex-1 text-center">
+            {showMoodDemo && (
+              <span
+                className="mb-1 inline-flex h-6 w-6 items-center justify-center text-sm"
+                title={`模拟心情：${DEMO_MOOD_LABELS[i % DEMO_MOOD_LABELS.length]}`}
+              >
+                {DEMO_MOOD_EMOJIS[i % DEMO_MOOD_EMOJIS.length]}
+              </span>
+            )}
+            {showMoodDemo && <br />}
             <span className="text-2xs text-gray-500 tabular-nums leading-tight">
               {day.dateLabel}
             </span>
