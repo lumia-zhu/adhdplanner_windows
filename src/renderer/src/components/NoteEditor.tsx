@@ -737,7 +737,7 @@ export default function NoteEditor({
                         <textarea
                           value={draftMoodNote}
                           onChange={(e) => setDraftMoodNote(e.target.value)}
-                          placeholder="（可选）发生了什么？可以简单记一两句"
+                          placeholder="（可选）这种感受来自于什么？可以简单说说吗"
                           maxLength={240}
                           className="mt-3 h-20 w-full resize-none rounded-xl border border-gray-100 bg-gray-50 px-3 py-2 text-xs text-gray-700 outline-none transition-colors placeholder:text-gray-400 focus:border-indigo-200 focus:bg-white"
                         />

@@ -9,7 +9,9 @@
 import { useMemo, useState, useRef, useCallback } from 'react'
 import type { ActivityRecord } from './ActivityHeatmap'
 import { getActiveRatio } from './ActivityHeatmap'
+import { getEffectiveMoodForWeekDayIndex } from './WeekCompletionBars'
 import { WEEK_PAD_LEFT_PCT, WEEK_PAD_RIGHT_PCT } from './WeekRhythmChart'
+import { MOOD_LABELS } from '../utils/mood'
 
 import type { WeekDayData } from './WeekView'
 
@@ -37,6 +39,13 @@ const LEVEL_BG = [
   'bg-emerald-700',     // 4: > 75%
 ]
 const LEVEL_LABELS = ['未使用', '< 25%', '25%~50%', '50%~75%', '> 75%']
+const WEATHER_MOOD_EMOJI: Record<number, string> = {
+  1: '⛈️',
+  2: '🌧️',
+  3: '☁️',
+  4: '🌤️',
+  5: '☀️',
+}
 
 // ===================== 工具函数 =====================
 
@@ -64,6 +73,10 @@ function aggregateToHourlyPercent(data: ActivityRecord[]): number[] {
 
 function fmtHour(h: number): string {
   return `${String(h % 24).padStart(2, '0')}:00`
+}
+
+function getMoodLabel(mood: number): string {
+  return MOOD_LABELS.find(item => item.value === mood)?.label ?? '未记录'
 }
 
 /* ratioToPercentStr 暂时隐藏 */
@@ -138,15 +151,22 @@ export default function WeekHeatmapGrid({ days, rangeStart: propStart, rangeEnd:
 
   // 计算每天的 24 小时 level
   const dayLevels = useMemo(() => {
-    return days.map(d => ({
-      date: d.date,
-      dateLabel: d.dateLabel,
-      weekdayShort: d.weekdayShort,
-      dateFull: d.dateFull,
-      hasData: d.hasData,
-      levels: aggregateToHourlyLevels(d.activity),
-      percent: aggregateToHourlyPercent(d.activity),
-    }))
+    return days.map((d, index) => {
+      const recordedMood = d.moodRecord?.mood
+      const mood = getEffectiveMoodForWeekDayIndex(index, recordedMood)
+      return {
+        date: d.date,
+        dateLabel: d.dateLabel,
+        weekdayShort: d.weekdayShort,
+        dateFull: d.dateFull,
+        hasData: d.hasData,
+        levels: aggregateToHourlyLevels(d.activity),
+        percent: aggregateToHourlyPercent(d.activity),
+        moodEmoji: WEATHER_MOOD_EMOJI[mood] ?? '☁️',
+        moodLabel: getMoodLabel(mood),
+        isDemoMood: recordedMood == null,
+      }
+    })
   }, [days])
 
   // ---- 自适应时间范围（优先使用外部传入的值） ----
@@ -201,12 +221,19 @@ export default function WeekHeatmapGrid({ days, rangeStart: propStart, rangeEnd:
       <div className="space-y-0.5">
         {dayLevels.map((dl) => (
           <div key={dl.date}>
-            <div className="flex items-center rounded-md py-0.5 transition-colors hover:bg-gray-50">
+            <div className="relative flex items-center rounded-md py-0.5 transition-colors hover:bg-gray-50">
               <span
-                className="flex-shrink-0 text-2xs text-gray-500 text-right pr-1 tabular-nums"
+                className="flex flex-shrink-0 items-center justify-end gap-1 whitespace-nowrap pr-1 text-2xs text-gray-500 tabular-nums"
                 style={{ width: WEEK_PAD_LEFT_PCT }}
               >
-                {dl.dateLabel} {dl.weekdayShort}
+                <span>{dl.dateLabel} {dl.weekdayShort}</span>
+                <span
+                  className="pointer-events-auto inline-flex h-4 w-4 flex-shrink-0 items-center justify-center text-xs leading-none opacity-90 transition-opacity hover:opacity-100"
+                  title={`${dl.isDemoMood ? '心情（示例）' : '心情'}：${dl.moodLabel}`}
+                  aria-label={`${dl.dateLabel} ${dl.weekdayShort} ${dl.isDemoMood ? '示例心情' : '心情'}：${dl.moodLabel}`}
+                >
+                  {dl.moodEmoji}
+                </span>
               </span>
               <div className="flex flex-1" style={{ marginRight: WEEK_PAD_RIGHT_PCT }}>
                 {dl.levels.slice(rangeStart, rangeEnd).map((lv, i) => {

@@ -465,6 +465,7 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
 
   // ---- 任务 hover 联动热力图 ----
   const [hoveredTask, setHoveredTask] = useState<string | null>(null)
+  const [showAllTaskDistribution, setShowAllTaskDistribution] = useState(false)
 
   // ---- AI 视觉引用高亮：同一时间只保留一个重点位置 ----
   const [activeHighlight, setActiveHighlight] = useState<ActiveHighlight | null>(null)
@@ -546,6 +547,12 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
   useEffect(() => {
     tracker.track('reflect.opened', { date: selectedDate, mode: viewMode })
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 切换日期或视图后收起全部任务分布，避免把上一页的查看状态带到新数据上
+  useEffect(() => {
+    setShowAllTaskDistribution(false)
+    setHoveredTask(null)
+  }, [selectedDate, viewMode])
 
   // 追踪反思页面关闭（组件卸载时，覆盖所有退出路径）
   useEffect(() => {
@@ -2023,6 +2030,16 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
                     <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
                       ⏱ 任务用时
                     </h3>
+                    <button
+                      onClick={() => setShowAllTaskDistribution(v => !v)}
+                      className={`rounded-full border px-2.5 py-1 text-xxs font-medium shadow-sm transition-colors ${
+                        showAllTaskDistribution
+                          ? 'border-blue-200 bg-blue-50 text-blue-600 hover:border-blue-300 hover:bg-blue-100'
+                          : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300 hover:bg-gray-50 hover:text-gray-700'
+                      }`}
+                    >
+                      {showAllTaskDistribution ? '收起全部分布' : '显示全部分布'}
+                    </button>
                   </div>
                   <TaskDurationChart
                     data={taskDurations}
@@ -2068,6 +2085,7 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
                     highlightHour={highlightedHour}
                     highlightHourRange={highlightedHourRange}
                     highlightPulseKey={highlightPulseKey}
+                    showAllTasks={showAllTaskDistribution && taskDurations.length > 0}
                     taskTitles={taskDurations.map(t => t.title)}
                   />
                 </div>

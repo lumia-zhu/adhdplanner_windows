@@ -8,18 +8,21 @@
  */
 
 import { useState, useEffect, useMemo } from 'react'
+import type { ReactNode } from 'react'
 import type { TrackEvent, DailySummary } from '../services/tracker'
 import { buildDailySummary } from '../services/tracker'
 import type { ActivityRecord } from './ActivityHeatmap'
 import { getActiveRatio } from './ActivityHeatmap'
 import type { TaskDurationItem, StuckMark } from './TaskDurationChart'
-import WeekCompletionBars, { DEMO_MOOD_EMOJIS, DEMO_MOOD_LABELS } from './WeekCompletionBars'
+import WeekCompletionBars, { getEffectiveMoodForWeekDayIndex, getMoodBarFillColor } from './WeekCompletionBars'
 import WeekMetricCards from './WeekMetricCards'
 import WeekTaskRanking from './WeekTaskRanking'
 import WeekHeatmapGrid, { computeWeekActiveTimeRange } from './WeekHeatmapGrid'
 import WeekRhythmChart from './WeekRhythmChart'
 import AppUsageRanking from './AppUsageRanking'
 import { tracker } from '../services/tracker'
+import type { DailyMoodRecord } from '../types'
+import { MOOD_LABELS, parseMoodRecord, type MoodValue } from '../utils/mood'
 
 // ===================== 类型 =====================
 
@@ -39,12 +42,16 @@ export interface WeekDayData {
   hasData: boolean
   /** 该天的任务用时列表（带日期标签） */
   taskDurations: (TaskDurationItem & { date: string; weekday: string; dateLabel: string; dateFull: string })[]
+  /** 该天的心情记录，缺失时为 null */
+  moodRecord: DailyMoodRecord | null
 }
 
 // ===================== 常量 =====================
 
 const WEEKDAYS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
 const WEEKDAYS_SHORT = ['日', '一', '二', '三', '四', '五', '六']
+const MOOD_SATURATION_PREVIEW_VALUES: readonly (MoodValue | null)[] = [1, 3, 5, null, 4, null, 2]
+const MOOD_LINE_MISSING_PREVIEW_VALUES: readonly (MoodValue | null)[] = [5, 4, null, 2, null, 4, 5]
 
 // ===================== 工具函数 =====================
 
@@ -185,55 +192,125 @@ interface WeekViewProps {
   chatOpen?: boolean
 }
 
-function WeekCompletionSection({ days, showMoodDemo = false }: { days: WeekDayData[]; showMoodDemo?: boolean }) {
+function WeekCompletionSection({
+  days,
+  barsOnly,
+  colorMode,
+  moodPreviewValues,
+  lineMoodPreviewValues,
+  lineMissingMoodMode,
+  moodPointsOnly,
+  hidePctLabels,
+  moodAxisLabelMode,
+  toggleMoodTrend = false,
+  initialShowMoodTrend = false,
+  missingMoodStyle,
+  showMoodLegend,
+  heading = '📊 每日任务完成率',
+}: {
+  days: WeekDayData[]
+  /** 为 true 时与 WeekCompletionBars 的 barsOnly 一致，仅柱状图 */
+  barsOnly?: boolean
+  /** 柱子颜色模式，预览用来展示心情色阶 */
+  colorMode?: 'single' | 'moodSaturation'
+  /** 预览用模拟心情：null 表示未记录 */
+  moodPreviewValues?: readonly (MoodValue | null)[]
+  /** 折线预览用模拟心情：null 表示未记录 */
+  lineMoodPreviewValues?: readonly (MoodValue | null)[]
+  /** 折线遇到未记录心情时的处理方式 */
+  lineMissingMoodMode?: 'fillDemo' | 'breakOnMissing'
+  /** 为 true 时只展示心情点，不绘制点之间的连线 */
+  moodPointsOnly?: boolean
+  /** 为 true 时隐藏完成率数字标签，避免遮挡心情点 */
+  hidePctLabels?: boolean
+  /** 右侧心情轴标签样式 */
+  moodAxisLabelMode?: 'numeric' | 'textOnly'
+  /** 是否显示“显示/隐藏心情趋势”切换按钮 */
+  toggleMoodTrend?: boolean
+  /** 切换按钮模式下是否初始显示心情趋势 */
+  initialShowMoodTrend?: boolean
+  /** 未记录心情的视觉样式 */
+  missingMoodStyle?: 'gray' | 'whiteDashed'
+  /** 是否展示心情色阶图例 */
+  showMoodLegend?: boolean
+  /** 区块标题（默认同上） */
+  heading?: ReactNode
+}) {
+  const [showMoodTrend, setShowMoodTrend] = useState(initialShowMoodTrend)
+  const effectiveBarsOnly = toggleMoodTrend ? !showMoodTrend : barsOnly
+  const effectiveHidePctLabels = toggleMoodTrend && showMoodTrend ? true : hidePctLabels
+  const effectiveMoodAxisLabelMode = toggleMoodTrend ? 'textOnly' : moodAxisLabelMode
+  const reserveMoodAxisSpace = toggleMoodTrend
+
   return (
     <>
-      <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-1.5">
-        📊 每日任务完成率
-        <span className="relative group">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <h3 className="flex items-center gap-1.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+          {heading}
+          <span className="relative group">
           <span className="inline-flex items-center justify-center w-4 h-4 rounded-full border border-gray-300 text-gray-400 text-[10px] leading-none cursor-help group-hover:text-gray-600 group-hover:border-gray-400 transition-colors">?</span>
           <span className="pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-150 absolute left-1/2 -translate-x-1/2 top-full mt-1.5 z-50 w-[240px] bg-gray-800 text-white text-[11px] leading-relaxed rounded-lg px-3 py-2.5 shadow-lg normal-case tracking-normal font-normal">
-            <b>每日任务完成率</b> = 当天已完成的任务数 ÷ 当天全部任务数 × 100%。
+            {barsOnly ? (
+              <>
+                <b>每日任务完成率</b> = 当天已完成的任务数 ÷ 当天全部任务数 × 100%。<br/><span className="text-gray-300">{colorMode === 'moodSaturation' ? '本区块为心情色阶预览：柱子颜色来自模拟心情记录，灰色表示当天未记录心情。' : '本区块为仅柱状图样式预览，不含心情折线与右侧刻度，方便你对比和改版。'}</span>
+              </>
+            ) : (
+              <>
+                <b>每日任务完成率</b> = 当天已完成的任务数 ÷ 当天全部任务数 × 100%。<br/><span className="text-gray-300">{moodPointsOnly ? '本区块为心情散点预览：只显示有心情记录日期的点，不绘制点之间的连线。' : lineMissingMoodMode === 'breakOnMissing' ? '本区块为折线缺失预览：未记录心情的日期不显示心情点，折线会在缺失日期前后断开。' : '柱子表示完成率；折线表示 1–5 级心情，真实记录优先，没有记录时用示例心情补齐。右侧 1 表示很低落，5 表示很开心。'}</span>
+              </>
+            )}
           </span>
-        </span>
-      </h3>
-      <WeekCompletionBars days={days} showMoodDemo={showMoodDemo} />
+          </span>
+        </h3>
+        {toggleMoodTrend ? (
+          <button
+            type="button"
+            className={`shrink-0 rounded-full border px-2.5 py-1 text-[11px] font-medium leading-none transition-colors ${showMoodTrend ? 'border-indigo-200 bg-indigo-50 text-indigo-600 hover:bg-indigo-100' : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300 hover:text-gray-700'}`}
+            onClick={() => setShowMoodTrend(value => !value)}
+          >
+            {showMoodTrend ? '隐藏心情趋势' : '显示心情趋势'}
+          </button>
+        ) : null}
+      </div>
+      <WeekCompletionBars
+        days={days}
+        barsOnly={effectiveBarsOnly}
+        colorMode={colorMode}
+        moodPreviewValues={moodPreviewValues}
+        lineMoodPreviewValues={lineMoodPreviewValues}
+        lineMissingMoodMode={lineMissingMoodMode}
+        moodPointsOnly={moodPointsOnly}
+        hidePctLabels={effectiveHidePctLabels}
+        moodAxisLabelMode={effectiveMoodAxisLabelMode}
+        reserveMoodAxisSpace={reserveMoodAxisSpace}
+        missingMoodStyle={missingMoodStyle}
+        showMoodLegend={showMoodLegend}
+      />
     </>
   )
 }
 
 function WeekMoodCompletionDemo({ days }: { days: WeekDayData[] }) {
-  const ranking = DEMO_MOOD_EMOJIS.reduce<Array<{
-    emoji: string
-    label: string
-    completed: number
-    total: number
-    days: number
-    rate: number
-  }>>((items, emoji, i) => {
-    const day = days[i]
-    if (!day) return items
+  type Agg = { mood: number; completed: number; total: number; dayCount: number }
 
-    const existing = items.find(item => item.emoji === emoji)
-    const target = existing ?? {
-      emoji,
-      label: DEMO_MOOD_LABELS[i % DEMO_MOOD_LABELS.length],
-      completed: 0,
-      total: 0,
-      days: 0,
-      rate: 0,
+  const byMood = new Map<number, Agg>()
+  days.forEach((day, i) => {
+    const mood = getEffectiveMoodForWeekDayIndex(i, day.moodRecord?.mood)
+    let row = byMood.get(mood)
+    if (!row) {
+      row = { mood, completed: 0, total: 0, dayCount: 0 }
+      byMood.set(mood, row)
     }
+    row.completed += day.summary.stats.completedMicroSteps
+    row.total += day.summary.stats.totalMicroSteps
+    row.dayCount += 1
+  })
 
-    target.completed += day.summary.stats.completedMicroSteps
-    target.total += day.summary.stats.totalMicroSteps
-    target.days += 1
-
-    if (!existing) items.push(target)
-    return items
-  }, [])
-    .map(item => ({
-      ...item,
-      rate: item.total > 0 ? Math.round((item.completed / item.total) * 100) : 0,
+  const ranking = Array.from(byMood.values())
+    .map(row => ({
+      ...row,
+      label: MOOD_LABELS.find(m => m.value === row.mood)?.label ?? `档位 ${row.mood}`,
+      rate: row.total > 0 ? Math.round((row.completed / row.total) * 100) : 0,
     }))
     .sort((a, b) => b.rate - a.rate || b.total - a.total)
 
@@ -244,8 +321,8 @@ function WeekMoodCompletionDemo({ days }: { days: WeekDayData[] }) {
           🌿 不同心情下的任务完成率
           <span className="relative group">
             <span className="inline-flex items-center justify-center w-4 h-4 rounded-full border border-gray-300 text-gray-400 text-[10px] leading-none cursor-help group-hover:text-gray-600 group-hover:border-gray-400 transition-colors">?</span>
-            <span className="pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-150 absolute left-1/2 -translate-x-1/2 top-full mt-1.5 z-50 w-[260px] bg-gray-800 text-white text-[11px] leading-relaxed rounded-lg px-3 py-2.5 shadow-lg normal-case tracking-normal font-normal">
-              按模拟心情聚合同类日期的完成数 / 总任务数，仅用于样式预览。
+            <span className="pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-150 absolute left-1/2 -translate-x-1/2 top-full mt-1.5 z-50 w-[280px] bg-gray-800 text-white text-[11px] leading-relaxed rounded-lg px-3 py-2.5 shadow-lg normal-case tracking-normal font-normal">
+              按 5 档心情汇总本周每天的完成步数 ÷ 总步数。某天若未记心情，则用与上方柱状图相同的「从左到右示例档位」归入对应心情后再汇总。
             </span>
           </span>
         </h3>
@@ -254,26 +331,31 @@ function WeekMoodCompletionDemo({ days }: { days: WeekDayData[] }) {
       <div className="space-y-2">
         {ranking.map(item => {
           const barWidthPct = Math.max(item.rate, item.rate > 0 ? 4 : 0)
+          const fill = getMoodBarFillColor(item.mood)
 
           return (
             <div
-              key={item.emoji}
-              className="group relative flex items-center gap-2.5"
+              key={item.mood}
+              className="group relative flex items-center gap-2"
             >
-              <span className="w-7 flex-shrink-0 text-center text-base" title={item.label}>
-                {item.emoji}
+              <span className="flex w-[72px] flex-shrink-0 items-center gap-1.5" title={item.label}>
+                <span
+                  className="h-5 w-5 flex-shrink-0 rounded-full border border-black/10 shadow-inner"
+                  style={{ backgroundColor: fill }}
+                />
+                <span className="truncate text-2xs text-gray-600">{item.label}</span>
               </span>
-              <div className="h-[22px] flex-1 overflow-hidden rounded-lg">
+              <div className="h-[22px] flex-1 overflow-hidden rounded-lg bg-gray-100">
                 <div
-                  className="h-full rounded-lg bg-indigo-400/80 transition-all duration-700 ease-out"
-                  style={{ width: `${barWidthPct}%` }}
+                  className="h-full rounded-lg transition-all duration-700 ease-out"
+                  style={{ width: `${barWidthPct}%`, backgroundColor: fill }}
                 />
               </div>
               <span className="w-9 flex-shrink-0 text-right font-mono text-xxs text-gray-500 tabular-nums">
                 {item.rate}%
               </span>
               <span className="pointer-events-none absolute right-12 top-1/2 z-50 -translate-y-1/2 whitespace-nowrap rounded-lg bg-gray-800 px-2.5 py-1.5 text-[11px] leading-none text-white opacity-0 shadow-lg transition-opacity duration-150 group-hover:opacity-100">
-                完成 {item.completed} 个 / 共 {item.total} 个 · 覆盖 {item.days} 天
+                完成 {item.completed} 个 / 共 {item.total} 个 · 覆盖 {item.dayCount} 天
               </span>
             </div>
           )
@@ -306,17 +388,18 @@ export default function WeekView({ weekEndDate, onDataReady, chatOpen }: WeekVie
 
         const results = await Promise.all(
           weekDates.map(async (date) => {
-            const [rawEvents, rawActivity] = await Promise.all([
+            const [rawEvents, rawActivity, rawMood] = await Promise.all([
               window.electronAPI.loadTrackerEvents(date),
               window.electronAPI.loadActivityData(date),
+              window.electronAPI.loadMoodRecord(date),
             ])
-            return { date, rawEvents, rawActivity }
+            return { date, rawEvents, rawActivity, rawMood }
           })
         )
 
         if (cancelled) return
 
-        const days: WeekDayData[] = results.map(({ date, rawEvents, rawActivity }) => {
+        const days: WeekDayData[] = results.map(({ date, rawEvents, rawActivity, rawMood }) => {
           const events = rawEvents as TrackEvent[]
           const activity = rawActivity as ActivityRecord[]
           const summary = buildDailySummary(date, events)
@@ -337,6 +420,7 @@ export default function WeekView({ weekEndDate, onDataReady, chatOpen }: WeekVie
             totalUsageMinutes,
             hasData: events.length > 0 || activity.length > 0,
             taskDurations,
+            moodRecord: parseMoodRecord(rawMood),
           }
         })
 
@@ -395,7 +479,11 @@ export default function WeekView({ weekEndDate, onDataReady, chatOpen }: WeekVie
     <div className="p-6 space-y-6 transition-all duration-400 max-w-xl mx-auto">
       {/* 每日完成率条形图 */}
       <div id="chart-week-completion">
-        <WeekCompletionSection days={weekData} />
+        <WeekCompletionSection
+          days={weekData}
+          toggleMoodTrend
+          lineMissingMoodMode="breakOnMissing"
+        />
       </div>
 
       {/* 周汇总指标卡片 */}
@@ -458,10 +546,69 @@ export default function WeekView({ weekEndDate, onDataReady, chatOpen }: WeekVie
 
       {/* 底部重复展示，方便看完周视图后回看每日完成率 */}
       <div id="chart-week-completion-bottom">
-        <WeekCompletionSection days={weekData} showMoodDemo />
+        <WeekCompletionSection
+          days={weekData}
+          toggleMoodTrend
+          lineMissingMoodMode="breakOnMissing"
+        />
       </div>
 
       <WeekMoodCompletionDemo days={weekData} />
+
+      {/* 底部：复制原折线图后做缺失心情预览，不影响原图 */}
+      <div className="border-t border-gray-100" />
+      <div id="chart-week-completion-line-missing-preview" className="space-y-0">
+        <WeekCompletionSection
+          days={weekData}
+          lineMoodPreviewValues={MOOD_LINE_MISSING_PREVIEW_VALUES}
+          lineMissingMoodMode="breakOnMissing"
+          heading="📊 每日任务完成率"
+        />
+      </div>
+      <div className="border-t border-gray-100" />
+      <div id="chart-week-completion-line-missing-preview-copy" className="space-y-0">
+        <WeekCompletionSection
+          days={weekData}
+          lineMoodPreviewValues={MOOD_LINE_MISSING_PREVIEW_VALUES}
+          lineMissingMoodMode="breakOnMissing"
+          moodPointsOnly
+          hidePctLabels
+          heading="📊 每日任务完成率"
+        />
+      </div>
+
+      {/* 底部：两份仅柱状图样式副本，便于对比改版（数据与上方相同） */}
+      <div className="border-t border-gray-100" />
+      <div id="chart-week-completion-bars-only-preview-1" className="space-y-0">
+        <WeekCompletionSection
+          days={weekData}
+          barsOnly
+          colorMode="moodSaturation"
+          moodPreviewValues={MOOD_SATURATION_PREVIEW_VALUES}
+          showMoodLegend
+          heading="📊 每日任务完成率"
+        />
+      </div>
+      <div className="border-t border-gray-100" />
+      <div id="chart-week-completion-bars-only-preview-1-white-dashed" className="space-y-0">
+        <WeekCompletionSection
+          days={weekData}
+          barsOnly
+          colorMode="moodSaturation"
+          moodPreviewValues={MOOD_SATURATION_PREVIEW_VALUES}
+          missingMoodStyle="whiteDashed"
+          showMoodLegend
+          heading="📊 每日任务完成率"
+        />
+      </div>
+      <div className="border-t border-gray-100" />
+      <div id="chart-week-completion-bars-only-preview-2" className="space-y-0">
+        <WeekCompletionSection
+          days={weekData}
+          barsOnly
+          heading="📊 每日任务完成率（仅柱状·预览 2）"
+        />
+      </div>
     </div>
   )
 }

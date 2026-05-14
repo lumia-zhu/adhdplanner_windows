@@ -113,6 +113,7 @@ const STUCK_COMMON_REASONS = [
   '这一步太难/复杂了，不知道从哪开始',
   '不确定去哪找需要的信息',
   '总是被其他事情分心',
+  '担心做出来不够好',
   '心情不好，不太想做',
 ]
 
@@ -591,18 +592,21 @@ function FocusDynamicBar({
   }
 
   const fallbackStuckFirstReply = (context: StuckChatContext): string => {
+    const namePrefix = context.preferredName?.trim() ? `${context.preferredName.trim()}，` : ''
+    const taskRef = context.taskTitle ? `「${context.taskTitle}」` : '这个任务'
     if (context.stuckResponseMode === 'direct_action') {
-      return `可以，先处理这个。\n\n回来后从这里继续：${context.currentStep}`
+      return `${namePrefix}可以，先处理这个。\n\n回来后从 ${taskRef} 的「${context.currentStep}」这里继续。`
     }
     if (context.stuckResponseMode === 'emotion_elaboration') {
-      return '这会儿的 **心情** 是什么样的？可以随便描述一点。'
+      return `${namePrefix}你现在面对的是 ${taskRef}，先把这会儿的感受说出来也可以。\n\n做这个任务时，这会儿的 **心情** 更像什么？可以随便描述一点。`
     }
     const questionByCategory: Record<StuckChatContext['stuckCategory'], string> = {
-      task_understanding: '刚才你看着这个任务时，脑子里第一个冒出来的 **疑问** 是什么？',
-      task_load: '刚才你觉得它变复杂的时候，最先冒出来的是 **哪一块**？',
-      attention: '刚才注意力被带走前，手上这一步发生了 **什么变化**？',
-      emotion_motivation: '这会儿的 **心情** 是什么样的？可以随便描述一点。',
-      context_conflict: '刚才除了这个任务，还有什么事情一直在你脑子里 **占位置**？',
+      task_understanding: `${namePrefix}你已经在看 ${taskRef} 这一步了，我们先把不清楚的地方找出来。\n\n刚才最让你拿不准的 **疑问** 是什么？`,
+      task_load: `${namePrefix}你已经开始处理 ${taskRef} 了，这一步可能只是内容有点多。\n\n刚才最先让你觉得难处理的是 **哪一块**？`,
+      attention: `${namePrefix}你刚才已经在 ${taskRef} 这个任务里了。\n\n是什么事情让你刚刚分心了？能简单说下吗？`,
+      quality_pressure: `${namePrefix}你已经在认真想 ${taskRef} 要怎么做好了。\n\n刚才最让你停住的 **不够好**，具体是担心哪里不够好？`,
+      emotion_motivation: `${namePrefix}你现在面对的是 ${taskRef}，先把这会儿的感受说出来也可以。\n\n做这个任务时，这会儿的 **心情** 更像什么？可以随便描述一点。`,
+      context_conflict: `${namePrefix}你现在还记得 ${taskRef} 这件事，这一点已经很好了。\n\n刚刚还有什么事情在占你的 **注意力**？`,
     }
     return questionByCategory[context.stuckCategory]
   }
@@ -614,23 +618,29 @@ function FocusDynamicBar({
     return visibleUserReplyCount === 1
   }
 
-  const fallbackEmotionSourceReply = (): string => {
-    return '这种心情大概是从哪里来的？可以只说一点点。'
+  const fallbackEmotionSourceReply = (context?: StuckChatContext, lastUserText = ''): string => {
+    const taskRef = context?.taskTitle ? `「${context.taskTitle}」` : '这个任务'
+    const emotionText = lastUserText.trim().replace(/\s+/g, ' ').slice(0, 12)
+    const emotionPart = emotionText ? `这个“${emotionText}”` : '这种情绪'
+    return `听起来${emotionPart}已经挡在 ${taskRef} 前面了。\n\n是发生了什么让你有这种情绪吗？可以描述一下吗？`
   }
 
   const fallbackStuckSecondReply = (context: StuckChatContext): string => {
     if (context.stuckCategory === 'emotion_motivation') {
       const pendingTask = context.todayTasks.find(task => !task.completed && task.title !== context.taskTitle)
       const switchTaskText = pendingTask
-        ? `> 可以先这样试试：把「${context.taskTitle}」停在现在这个位置，换到「${pendingTask.title}」试 **5 分钟**。`
-        : `> 可以先这样试试：把「${context.taskTitle}」停在现在这个位置，离开屏幕 **3 分钟**。`
+        ? `> 或许可以先这样试试：把「${context.taskTitle}」停在现在这个位置，换到「${pendingTask.title}」试 **5 分钟**。`
+        : `> 或许可以先这样试试：把「${context.taskTitle}」停在现在这个位置，离开屏幕 **3 分钟**。`
       return `听起来现在更需要先把阻力降下来，而不是硬推完整任务。\n\n${switchTaskText}\n\n目的只是让自己不要完全断掉，不需要马上恢复满格状态。`
     }
-    return `听起来真正卡住的是进入方式还不够小，不是你不努力。\n\n> 可以先这样试试：回到「${context.taskTitle}」，做一个 **1 分钟** 动作。\n\n打开当前材料或任务页，停在最容易继续的那个位置就可以。`
+    if (context.stuckCategory === 'quality_pressure') {
+      return `听起来这里卡住的不是能力，而是你在一开始就想做出比较正式的版本。\n\n> 或许可以先这样试试：用 **3 分钟** 做一个“可以改的草稿版”，只留下最粗的内容。\n\n这个版本不用拿来交，只是为了更快看见哪里需要调整。`
+    }
+    return `听起来这里需要一个更容易进入的起点。\n\n> 或许可以先这样试试：回到「${context.taskTitle}」，做一个 **1 分钟** 动作。\n\n打开当前材料或任务页，停在最容易继续的那个位置就可以。`
   }
 
   const renderStuckMessageContent = (text: string) => {
-    const normalizedText = text.replace(/\s*>\s*(可以先这样试试[:：])/g, '\n\n> $1')
+    const normalizedText = text.replace(/\s*>\s*((?:可以先这样试试|或许可以先这样试试)[:：])/g, '\n\n> $1')
     const paragraphs = normalizedText.split(/\n{2,}/).map(part => part.trim()).filter(Boolean)
     const renderInlineContent = (paragraph: string) => {
       const parts = paragraph.split(/(\*\*[^*]+\*\*)/g)
@@ -682,12 +692,12 @@ function FocusDynamicBar({
     const fallbackText = isFirstRound
       ? fallbackStuckFirstReply(context)
       : isEmotionSourceRound
-        ? fallbackEmotionSourceReply()
+        ? fallbackEmotionSourceReply(context, visibleMessages.filter(message => message.role === 'user').at(-1)?.content ?? '')
         : fallbackStuckSecondReply(context)
     const requestMessages: StuckChatMessage[] = isEmotionSourceRound
       ? [
           ...messages,
-          { role: 'user', content: '【情绪来源追问】用户刚才已经描述了心情。请只轻问这种心情大概是从哪里来的，不要给建议。' },
+          { role: 'user', content: '【情绪来源追问】用户刚才已经描述了心情。请先承接用户刚才的情绪词，再问“是发生了什么让你有这种情绪吗？可以描述一下吗？”不要给建议。' },
         ]
       : messages
 
@@ -723,12 +733,12 @@ function FocusDynamicBar({
           finish(fullText)
         },
         (error) => {
-          finish(streamedText, error || 'AI 暂时没有回复，先给你一个备用小步骤。')
+          finish(streamedText, error || 'AI 暂时没有回复，先给你一个备用想法。')
         },
       ).then((cleanup) => {
         if (!settled) stuckStreamCleanupRef.current = cleanup
       }).catch(() => {
-        finish(streamedText, 'AI 暂时没有回复，先给你一个备用小步骤。')
+        finish(streamedText, 'AI 暂时没有回复，先给你一个备用想法。')
       })
     })
   }
@@ -743,14 +753,14 @@ function FocusDynamicBar({
     setStuckMessages(nextMessages)
     setStuckChatInput('')
     const fallbackText = shouldAskEmotionSource(nextMessages, stuckChatContext)
-      ? fallbackEmotionSourceReply()
+      ? fallbackEmotionSourceReply(stuckChatContext, text)
       : fallbackStuckSecondReply(stuckChatContext)
     requestStuckChatReply(nextMessages, stuckChatContext).catch(() => {
       setStuckMessages([
         ...nextMessages,
         { role: 'assistant', content: fallbackText },
       ])
-      setStuckChatError('AI 暂时没有回复，先给你一个备用小步骤。')
+      setStuckChatError('AI 暂时没有回复，先给你一个备用想法。')
       setLoadingStuckChat(false)
       setStreamingStuckChat(false)
     })
@@ -807,6 +817,7 @@ function FocusDynamicBar({
           taskTitle,
           currentStep: currentMicroTask,
           currentSubtaskTitle,
+          preferredName,
           stuckReason: trimmedReason,
           stuckCategory,
           stuckResponseMode,
@@ -829,8 +840,8 @@ function FocusDynamicBar({
         const initialInstruction = stuckResponseMode === 'direct_action'
           ? '请你直接允许用户先处理这个现实事务或阻碍，并给一个很短的回来点，不要追问。'
           : stuckResponseMode === 'emotion_elaboration'
-            ? '请你只问一个开放问题：这会儿的心情是什么样的？可以随便描述一点。不要给建议。'
-            : '请你主动发起第一条反思对话，只问一个白话开放问题，不要直接给建议。'
+            ? '请你先用称呼和当前任务名接住用户，再问“做这个任务时，这会儿的心情更像什么？可以随便描述一点。”不要给建议。'
+            : '请你主动发起第一条反思对话，先用称呼和当前任务名自然开场，再问一个白话开放问题，不要直接给建议。'
         const initialMessages: StuckChatMessage[] = [{
           role: 'user',
           content: `【首轮卡住反思】用户刚才选择/输入的卡住原因是：「${trimmedReason}」。${initialInstruction}`,
@@ -843,6 +854,7 @@ function FocusDynamicBar({
           taskTitle,
           currentStep: currentMicroTask,
           currentSubtaskTitle,
+          preferredName,
           stuckReason: trimmedReason,
           stuckCategory,
           stuckResponseMode,
@@ -860,8 +872,8 @@ function FocusDynamicBar({
         const initialInstruction = stuckResponseMode === 'direct_action'
           ? '请你直接允许用户先处理这个现实事务或阻碍，并给一个很短的回来点，不要追问。'
           : stuckResponseMode === 'emotion_elaboration'
-            ? '请你只问一个开放问题：这会儿的心情是什么样的？可以随便描述一点。不要给建议。'
-            : '请你主动发起第一条反思对话，只问一个白话开放问题，不要直接给建议。'
+            ? '请你先用称呼和当前任务名接住用户，再问“做这个任务时，这会儿的心情更像什么？可以随便描述一点。”不要给建议。'
+            : '请你主动发起第一条反思对话，先用称呼和当前任务名自然开场，再问一个白话开放问题，不要直接给建议。'
         const initialMessages: StuckChatMessage[] = [{
           role: 'user',
           content: `【首轮卡住反思】用户刚才选择/输入的卡住原因是：「${trimmedReason}」。${initialInstruction}`,
@@ -871,7 +883,7 @@ function FocusDynamicBar({
           setStuckMessages([
             { role: 'assistant', content: fallbackStuckFirstReply(context) },
           ])
-          setStuckChatError('AI 暂时没有回复，先给你一个备用小步骤。')
+          setStuckChatError('AI 暂时没有回复，先给你一个备用想法。')
           setLoadingStuckChat(false)
           setStreamingStuckChat(false)
         })

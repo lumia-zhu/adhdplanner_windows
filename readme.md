@@ -24,7 +24,7 @@
 | 📊 日反思任务用时 | 任务用时排行默认只展示前 5 项，任务较多时可一键展开剩余内容，避免图表过长挤压后续分析 |
 | 💬 反思回复精简 | AI 反思的策略回复会收敛为一个清楚动作，避免正文和引用块重复总结 |
 | 🔎 反思开场引导 | AI 开场先用开心表情做具体肯定，再用更短的话邀请用户看左侧图表；底部 Tag 尽量按“有效经验 / 卡点观察 / 中性探索”各给 1 个 |
-| 📈 周视图回看 | 周视图底部会重复展示每日任务完成率，方便用户看完排行和活动分布后快速回到一周完成节奏 |
+| 📈 周视图回看 | 周视图底部会重复展示每日任务完成率；完成率图支持右侧 1–5 心情轴和折线，真实心情优先、缺失时用示例心情补齐 7 天 |
 | 🔒 锁屏恢复 | 从反思页锁屏/解锁后会优先恢复反思页；如果回到主界面，也会自动校正为正常主窗口宽度 |
 
 ---
@@ -70,7 +70,10 @@ npm run build:portable
 
 - `docs/flowchart.md`：核心交互流程，理解计划、执行、反思三阶段如何串起来
 - `docs/data-visualization-reflection-prompt.md`：Data Visualization and Reflection 最新 AI prompt 与回答规则
+- `docs/reflection-ai-flow-and-tag-logic.md`：AI 反思三步对话流程、分析方向 Tag 分类和展示逻辑
 - `docs/stuck-support-prompt.md`：卡住了（Stuck Support）最新 AI prompt、分类规则与两轮式回复策略
+- `docs/mood-emoji-metaphor.md`：每日心情记录的 5 级心情、4 套 emoji metaphor 与日期轮换规则
+- `docs/mood-data-visualization-design.md`：情绪数据在完成率、启动率、卡住恢复和活跃节奏中的可视化设计思路
 - `docs/pilot-interview-outline.md`：3 天预实验后的访谈提纲
 - `docs/pretest-p1-behavior-analysis.md`：P1（studentpretest01）预实验行为数据分析总结
 - `docs/pretest-p2-behavior-analysis.md`：P2（user2）预实验行为数据分析总结
@@ -168,6 +171,14 @@ C:\Users\{用户名}\AppData\Roaming\task-manager\tasks.json
 ## 🛠️ 最近修复
 
 - **2026-05-11**：
+  - 继续优化 Widget「需要帮助」的首轮开场：所有常见原因都会先用积极、中性的方式承认用户已经在尝试当前任务，再进入问题；注意力分心类问题改为“是什么事情让你刚刚分心了？能简单说下吗？”，避免“干扰项”“被带走”等研究感或负面表达。
+  - 涉及文件：`src/renderer/src/components/WidgetView.tsx`、`src/renderer/src/services/ai.ts`、`docs/stuck-support-prompt.md`。
+  - 优化 Widget「需要帮助」所有卡住原因的开场方式：AI 首轮会尽量带上用户称呼和当前任务名，再用一句更像真人的承接语进入问题；情绪类卡顿会先接住用户说出的情绪词，再问“是发生了什么让你有这种情绪吗？可以描述一下吗？”，减少机械追问感。
+  - 涉及文件：`src/renderer/src/components/WidgetView.tsx`、`src/renderer/src/services/ai.ts`、`src/renderer/src/services/tracker/types.ts`、`docs/stuck-support-prompt.md`。
+  - Widget「需要帮助」常见原因新增「担心做出来不够好」：内部归为质量压力类卡顿，不在界面上使用“完美主义”这类标签；AI 会先追问用户具体担心哪里不够好，再给出“先做一个可以改的草稿版”的低压力可选想法。
+  - 涉及文件：`src/renderer/src/components/WidgetView.tsx`、`src/renderer/src/services/ai.ts`、`docs/stuck-support-prompt.md`。
+  - 优化 Widget「需要帮助」后的 AI 支持语气：当 AI 需要给下一步支持时，会从“给建议”改成“递一个可选想法”，优先使用“或许可以先这样试试”这类更委婉的表达，避免让用户感觉被命令或被纠正。
+  - 涉及文件：`src/renderer/src/services/ai.ts`、`src/renderer/src/components/WidgetView.tsx`、`docs/stuck-support-prompt.md`。
   - 主界面日期下方新增「今天心情怎么样？」入口，用户可以选择“很低落、低落、平静、开心、很开心”5 档心情，并可补充一段文字记录当天发生了什么。
   - 每日心情记录按日期保存到本地 `moods.json`，重启后仍会保留；当天已记录时入口会展示为紧凑心情胶囊，点击可继续修改，悬停时可用 `×` 清除当天记录。
   - 涉及文件：`src/main/storage.ts`、`src/main/index.ts`、`src/preload/index.ts`、`src/renderer/src/env.d.ts`、`src/renderer/src/types/index.ts`、`src/renderer/src/components/NoteEditor.tsx`。
