@@ -33,7 +33,6 @@ interface Window {
     // 每日心情记录
     loadMoodRecord: (date: string) => Promise<unknown | null>
     saveMoodRecord: (record: unknown) => Promise<boolean>
-    deleteMoodRecord: (date: string) => Promise<boolean>
     // AI 配置 & 请求
     loadAIConfig: () => Promise<Record<string, string>>
     saveAIConfig: (config: Record<string, string>) => Promise<boolean>

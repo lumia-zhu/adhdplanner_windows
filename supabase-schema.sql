@@ -11,6 +11,7 @@ drop table if exists reflection_chats cascade;
 drop table if exists tracker_events cascade;
 drop table if exists activity_records cascade;
 drop table if exists tasks cascade;
+drop table if exists mood_records cascade;
 drop table if exists ai_configs cascade;
 drop table if exists profiles cascade;
 
@@ -74,7 +75,24 @@ create policy "tasks_user_policy" on tasks
 
 create index if not exists idx_tasks_user_date on tasks(user_id, date);
 
--- 4. 活跃度采样
+-- 4. 每日心情记录
+create table if not exists mood_records (
+  user_id uuid not null references auth.users(id) on delete cascade,
+  date text not null,
+  mood integer not null check (mood between 1 and 5),
+  note text default '',
+  updated_at bigint default 0,
+  primary key (user_id, date)
+);
+
+alter table mood_records enable row level security;
+create policy "mood_records_user_policy" on mood_records
+  for all using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
+create index if not exists idx_mood_records_user_date on mood_records(user_id, date);
+
+-- 5. 活跃度采样
 create table if not exists activity_records (
   id bigserial primary key,
   user_id uuid not null references auth.users(id) on delete cascade,
@@ -96,8 +114,10 @@ create policy "activity_user_policy" on activity_records
   with check (auth.uid() = user_id);
 
 create index if not exists idx_activity_user_date on activity_records(user_id, date);
+create unique index if not exists activity_records_user_date_ts_unique
+  on activity_records(user_id, date, ts);
 
--- 5. 行为追踪事件
+-- 6. 行为追踪事件
 create table if not exists tracker_events (
   id bigserial primary key,
   user_id uuid not null references auth.users(id) on delete cascade,
@@ -115,7 +135,7 @@ create policy "tracker_user_policy" on tracker_events
 
 create index if not exists idx_tracker_user_date on tracker_events(user_id, date);
 
--- 6. 反思聊天
+-- 7. 反思聊天
 create table if not exists reflection_chats (
   user_id uuid not null references auth.users(id) on delete cascade,
   chat_key text not null,
@@ -131,7 +151,7 @@ create policy "reflection_user_policy" on reflection_chats
   for all using (auth.uid() = user_id)
   with check (auth.uid() = user_id);
 
--- 7. 反思原始会话（Memory Raw Session）
+-- 8. 反思原始会话（Memory Raw Session）
 create table if not exists reflection_sessions (
   user_id uuid not null references auth.users(id) on delete cascade,
   session_key text not null,
@@ -149,14 +169,24 @@ create policy "reflection_sessions_user_policy" on reflection_sessions
   for all using (auth.uid() = user_id)
   with check (auth.uid() = user_id);
 
--- 8. 结构化记忆（Memory Store）
+-- 9. 结构化记忆（Memory Store）
 create table if not exists memory_store (
   user_id uuid primary key references auth.users(id) on delete cascade,
   sessions jsonb default '[]',
   commitments jsonb default '[]',
+  first_steps jsonb default '[]',
+  stable_first_steps jsonb default '[]',
+  stuck_reasons jsonb default '[]',
+  hint_feedback jsonb default '[]',
   last_updated bigint default 0,
   saved_at bigint
 );
+
+-- 已建库的用户：补加记忆扩展列（多次执行不会报错）
+alter table memory_store add column if not exists first_steps jsonb default '[]';
+alter table memory_store add column if not exists stable_first_steps jsonb default '[]';
+alter table memory_store add column if not exists stuck_reasons jsonb default '[]';
+alter table memory_store add column if not exists hint_feedback jsonb default '[]';
 
 alter table memory_store enable row level security;
 create policy "memory_store_user_policy" on memory_store

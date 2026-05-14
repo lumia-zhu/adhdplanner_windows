@@ -79,8 +79,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('mood:load', date),
   saveMoodRecord: (record: unknown): Promise<boolean> =>
     ipcRenderer.invoke('mood:save', record),
-  deleteMoodRecord: (date: string): Promise<boolean> =>
-    ipcRenderer.invoke('mood:delete', date),
 
   // -------- AI 配置 & 请求 --------
   loadAIConfig: (): Promise<Record<string, string>> => ipcRenderer.invoke('ai:loadConfig'),

@@ -13,6 +13,7 @@ import {
   loadTasks, loadProfile, loadAIConfig,
   loadActivityData, loadTrackerEvents,
   loadRawSession, loadMemoryStore,
+  loadMoodRecords,
   safeWriteJSON, getUserDir,
 } from './storage'
 import { getReflectionChatPath } from './storage'
@@ -20,9 +21,13 @@ import { join } from 'path'
 import fs from 'fs'
 
 const SYNC_INTERVAL = 30_000
+const ACTIVITY_PULL_TIMEOUT_MS = 30_000
+const ACTIVITY_PULL_DAYS = 30
+const ACTIVITY_PULL_MAX_ROWS = 100_000
 
 const dirtySet = new Map<string, Set<string>>()
 let syncTimer: ReturnType<typeof setInterval> | null = null
+let pullInProgress = false
 
 function getErrorMessage(error: unknown): string {
   if (error instanceof Error) return error.message
@@ -40,6 +45,46 @@ function isMissingAppUsageColumn(error: unknown): boolean {
 function isMissingPlanTimeColumn(error: unknown): boolean {
   const msg = getErrorMessage(error)
   return msg.includes('plan_time') && msg.includes('schema cache')
+}
+
+function isMissingMoodRecordsTable(error: unknown): boolean {
+  const msg = getErrorMessage(error)
+  return msg.includes('mood_records') && (
+    msg.includes('schema cache') ||
+    msg.includes('relation') ||
+    msg.includes('does not exist')
+  )
+}
+
+function isMissingMemoryExtendedColumn(error: unknown): boolean {
+  const msg = getErrorMessage(error)
+  return ['first_steps', 'stable_first_steps', 'stuck_reasons', 'hint_feedback'].some(col => msg.includes(col)) &&
+    msg.includes('schema cache')
+}
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(`${label} timed out after ${timeoutMs}ms`))
+    }, timeoutMs)
+
+    promise.then(
+      (value) => {
+        clearTimeout(timer)
+        resolve(value)
+      },
+      (error) => {
+        clearTimeout(timer)
+        reject(error)
+      },
+    )
+  })
+}
+
+function getDateDaysAgo(days: number): string {
+  const d = new Date()
+  d.setDate(d.getDate() - days)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
 /** 标记某个实体有变更，需要同步到云端。不阻塞调用方。 */
@@ -73,6 +118,10 @@ async function syncLoop(): Promise<void> {
   const userId = getCurrentUserId()
   if (!userId) return
   if (dirtySet.size === 0) return
+  if (pullInProgress) {
+    console.log('[Sync] Push skipped while initial pull is running')
+    return
+  }
 
   const snapshot = new Map(dirtySet)
   dirtySet.clear()
@@ -185,6 +234,29 @@ async function pushToCloud(userId: string, entity: string, key: string): Promise
       break
     }
 
+    case 'moods': {
+      const recordsByDate = loadMoodRecords()
+      const records = key ? [recordsByDate[key]].filter(Boolean) : Object.values(recordsByDate)
+      if (records.length === 0) break
+
+      const rows = records.map(record => ({
+        user_id: userId,
+        date: record.date,
+        mood: record.mood,
+        note: record.note,
+        updated_at: record.updatedAt,
+      }))
+
+      const { error } = await sb.from('mood_records').upsert(rows, { onConflict: 'user_id,date' })
+      if (error) {
+        if (!isMissingMoodRecordsTable(error)) throw error
+        console.warn('[Sync] moods skipped: mood_records table unavailable')
+        break
+      }
+      console.log(`[Sync] moods: upserted ${rows.length} records`)
+      break
+    }
+
     case 'reflection': {
       const chatKey = key
       try {
@@ -218,12 +290,6 @@ async function pushToCloud(userId: string, entity: string, key: string): Promise
       const records = loadActivityData(date)
       if (records.length === 0) break
 
-      // 先删除云端该天的全部记录，再插入本地的全量数据（避免分页去重缺陷导致重复膨胀）
-      const { error: delErr } = await sb
-        .from('activity_records').delete()
-        .eq('user_id', userId).eq('date', date)
-      if (delErr) throw delErr
-
       const rows = records.map(r => ({
         user_id: userId, date,
         ts: r.ts, idle: r.idle,
@@ -233,18 +299,20 @@ async function pushToCloud(userId: string, entity: string, key: string): Promise
         app_usage: r.appUsage || {},
       }))
 
-      // 分批插入（Supabase 单次 insert 有体积限制）
+      // 分批 upsert，依赖数据库唯一索引 (user_id, date, ts) 防止重复膨胀。
       const BATCH = 500
-      const insertRows = async (payloadRows: Array<Record<string, unknown>>) => {
+      const upsertRows = async (payloadRows: Array<Record<string, unknown>>) => {
         for (let i = 0; i < payloadRows.length; i += BATCH) {
           const batch = payloadRows.slice(i, i + BATCH)
-          const { error } = await sb.from('activity_records').insert(batch)
+          const { error } = await sb
+            .from('activity_records')
+            .upsert(batch, { onConflict: 'user_id,date,ts' })
           if (error) throw error
         }
       }
 
       try {
-        await insertRows(rows)
+        await upsertRows(rows)
       } catch (error) {
         if (!isMissingAppUsageColumn(error)) throw error
 
@@ -252,10 +320,9 @@ async function pushToCloud(userId: string, entity: string, key: string): Promise
         // 等数据库列补上后，新版本会自动恢复上传 app_usage。
         console.warn(`[Sync] activity/${date}: app_usage column unavailable, retrying without app usage`)
         const rowsWithoutAppUsage = rows.map(({ app_usage: _appUsage, ...rest }) => rest)
-        await sb.from('activity_records').delete().eq('user_id', userId).eq('date', date)
-        await insertRows(rowsWithoutAppUsage)
+        await upsertRows(rowsWithoutAppUsage)
       }
-      console.log(`[Sync] activity/${date}: replaced with ${rows.length} records`)
+      console.log(`[Sync] activity/${date}: upserted ${rows.length} records`)
       break
     }
 
@@ -309,14 +376,33 @@ async function pushToCloud(userId: string, entity: string, key: string): Promise
 
     case 'memory': {
       const store = loadMemoryStore()
-      const { error } = await sb.from('memory_store').upsert({
+      const row = {
         user_id: userId,
         sessions: store.sessions,
         commitments: store.commitments,
+        first_steps: store.firstSteps,
+        stable_first_steps: store.stableFirstSteps,
+        stuck_reasons: store.stuckReasons,
+        hint_feedback: store.hintFeedback,
         last_updated: store.lastUpdated,
         saved_at: Date.now(),
-      })
-      if (error) throw error
+      }
+      const { error } = await sb.from('memory_store').upsert(row)
+      if (error) {
+        if (!isMissingMemoryExtendedColumn(error)) throw error
+
+        // 线上库还没执行 memory_store 扩展列 migration 时，先同步旧字段。
+        console.warn('[Sync] memory_store: extended columns unavailable, retrying with legacy fields')
+        const {
+          first_steps: _firstSteps,
+          stable_first_steps: _stableFirstSteps,
+          stuck_reasons: _stuckReasons,
+          hint_feedback: _hintFeedback,
+          ...legacyRow
+        } = row
+        const { error: retryError } = await sb.from('memory_store').upsert(legacyRow)
+        if (retryError) throw retryError
+      }
       console.log('[Sync] memory store synced')
       break
     }
@@ -339,6 +425,7 @@ async function fetchAllRows(
   const sb = getSupabase()
   const all: Record<string, unknown>[] = []
   let from = 0
+  console.log(`[Pull] ${table}: fetching...`)
   while (true) {
     const { data, error } = await sb
       .from(table).select(selectCols)
@@ -347,9 +434,45 @@ async function fetchAllRows(
     if (error) throw error
     if (!data || data.length === 0) break
     all.push(...(data as Record<string, unknown>[]))
+    console.log(`[Pull] ${table}: fetched ${all.length} rows`)
     if (data.length < PULL_PAGE_SIZE) break
     from += PULL_PAGE_SIZE
   }
+  console.log(`[Pull] ${table}: done (${all.length} rows)`)
+  return all
+}
+
+async function fetchRecentActivityRows(userId: string): Promise<Record<string, unknown>[]> {
+  const sb = getSupabase()
+  const cutoffDate = getDateDaysAgo(ACTIVITY_PULL_DAYS)
+  const all: Record<string, unknown>[] = []
+  let from = 0
+
+  console.log(`[Pull] activity_records: fetching since ${cutoffDate}...`)
+  while (all.length < ACTIVITY_PULL_MAX_ROWS) {
+    const remaining = ACTIVITY_PULL_MAX_ROWS - all.length
+    const pageSize = Math.min(PULL_PAGE_SIZE, remaining)
+    const { data, error } = await sb
+      .from('activity_records')
+      .select('*')
+      .eq('user_id', userId)
+      .gte('date', cutoffDate)
+      .order('date', { ascending: true })
+      .order('ts', { ascending: true })
+      .range(from, from + pageSize - 1)
+
+    if (error) throw error
+    if (!data || data.length === 0) break
+    all.push(...(data as Record<string, unknown>[]))
+    console.log(`[Pull] activity_records: fetched ${all.length} recent rows`)
+    if (data.length < pageSize) break
+    from += pageSize
+  }
+
+  if (all.length >= ACTIVITY_PULL_MAX_ROWS) {
+    console.warn(`[Pull] activity_records: reached ${ACTIVITY_PULL_MAX_ROWS} row cap, older/remaining rows skipped`)
+  }
+  console.log(`[Pull] activity_records: done (${all.length} rows since ${cutoffDate})`)
   return all
 }
 
@@ -362,7 +485,12 @@ export async function pullFromCloud(userId: string): Promise<void> {
   const userDir = getUserDir()
   const markerPath = join(userDir, '.cloud-pulled')
   if (fs.existsSync(markerPath)) return
+  if (pullInProgress) {
+    console.log('[Sync] Pull from cloud already running, skip duplicate request')
+    return
+  }
 
+  pullInProgress = true
   console.log('[Sync] Pull from cloud started for user:', userId)
   const startTime = Date.now()
 
@@ -396,7 +524,31 @@ export async function pullFromCloud(userId: string): Promise<void> {
       console.log('[Pull] aiConfig restored')
     }
 
-    // 3. Memory Store
+    // 3. Daily Moods
+    try {
+      const moodRows = await fetchAllRows('mood_records', userId)
+      const moods: Record<string, unknown> = {}
+      for (const row of moodRows) {
+        const date = String(row.date || '')
+        const mood = Number(row.mood)
+        if (!date || !Number.isInteger(mood) || mood < 1 || mood > 5) continue
+        moods[date] = {
+          date,
+          mood,
+          note: String(row.note || ''),
+          updatedAt: typeof row.updated_at === 'number' ? row.updated_at : Date.now(),
+        }
+      }
+      if (Object.keys(moods).length > 0) {
+        safeWriteJSON(join(userDir, 'moods.json'), moods)
+      }
+      console.log(`[Pull] moods restored: ${Object.keys(moods).length} records`)
+    } catch (moodError) {
+      if (!isMissingMoodRecordsTable(moodError)) throw moodError
+      console.warn('[Pull] mood_records skipped: table unavailable')
+    }
+
+    // 4. Memory Store
     const memRows = await fetchAllRows('memory_store', userId)
     if (memRows.length > 0) {
       const m = memRows[0]
@@ -405,12 +557,16 @@ export async function pullFromCloud(userId: string): Promise<void> {
       safeWriteJSON(join(memDir, 'memory.json'), {
         sessions: m.sessions ?? [],
         commitments: m.commitments ?? [],
+        firstSteps: m.first_steps ?? [],
+        stableFirstSteps: m.stable_first_steps ?? [],
+        stuckReasons: m.stuck_reasons ?? [],
+        hintFeedback: m.hint_feedback ?? [],
         lastUpdated: m.last_updated ?? 0,
       })
       console.log('[Pull] memory store restored')
     }
 
-    // 4. Tasks（按 date 分组写文件）
+    // 5. Tasks（按 date 分组写文件）
     const allTasks = await fetchAllRows('tasks', userId)
     const tasksByDate = new Map<string, unknown[]>()
     for (const row of allTasks) {
@@ -434,7 +590,7 @@ export async function pullFromCloud(userId: string): Promise<void> {
     }
     console.log(`[Pull] tasks restored: ${allTasks.length} items across ${tasksByDate.size} days`)
 
-    // 5. Tracker Events（按 date 分组，按 event_id 去重后写文件）
+    // 6. Tracker Events（按 date 分组，按 event_id 去重后写文件）
     const allEvents = await fetchAllRows('tracker_events', userId)
     const eventsByDate = new Map<string, Map<string, unknown>>()
     for (const row of allEvents) {
@@ -459,36 +615,44 @@ export async function pullFromCloud(userId: string): Promise<void> {
     }
     console.log(`[Pull] tracker events restored: ${trackerDeduped} unique (${allEvents.length} raw) across ${eventsByDate.size} days`)
 
-    // 6. Activity Records（按 date 分组，按 ts 去重后写文件，不 pretty-print）
-    const allActivity = await fetchAllRows('activity_records', userId)
-    const actByDate = new Map<string, Map<number, unknown>>()
-    for (const row of allActivity) {
-      const date = String(row.date)
-      const ts = Number(row.ts)
-      if (!actByDate.has(date)) actByDate.set(date, new Map())
-      if (!actByDate.get(date)!.has(ts)) {
-        const appUsage = row.app_usage && typeof row.app_usage === 'object' && Object.keys(row.app_usage).length > 0
-          ? row.app_usage
-          : undefined
-        actByDate.get(date)!.set(ts, {
-          ts,
-          idle: row.idle,
-          activeSamples: row.active_samples,
-          totalSamples: row.total_samples,
-          activeRatio: row.active_ratio,
-          ...(appUsage ? { appUsage } : {}),
-        })
+    // 7. Activity Records（按 date 分组，按 ts 去重后写文件，不 pretty-print）
+    try {
+      const allActivity = await withTimeout(
+        fetchRecentActivityRows(userId),
+        ACTIVITY_PULL_TIMEOUT_MS,
+        'activity_records pull',
+      )
+      const actByDate = new Map<string, Map<number, unknown>>()
+      for (const row of allActivity) {
+        const date = String(row.date)
+        const ts = Number(row.ts)
+        if (!actByDate.has(date)) actByDate.set(date, new Map())
+        if (!actByDate.get(date)!.has(ts)) {
+          const appUsage = row.app_usage && typeof row.app_usage === 'object' && Object.keys(row.app_usage).length > 0
+            ? row.app_usage
+            : undefined
+          actByDate.get(date)!.set(ts, {
+            ts,
+            idle: row.idle,
+            activeSamples: row.active_samples,
+            totalSamples: row.total_samples,
+            activeRatio: row.active_ratio,
+            ...(appUsage ? { appUsage } : {}),
+          })
+        }
       }
+      let actDeduped = 0
+      for (const [date, tsMap] of actByDate) {
+        const records = [...tsMap.values()]
+        actDeduped += records.length
+        safeWriteJSON(join(userDir, `activity-${date}.json`), records, false)
+      }
+      console.log(`[Pull] activity restored: ${actDeduped} unique (${allActivity.length} raw) across ${actByDate.size} days`)
+    } catch (activityError) {
+      console.error('[Pull] activity_records skipped:', activityError)
     }
-    let actDeduped = 0
-    for (const [date, tsMap] of actByDate) {
-      const records = [...tsMap.values()]
-      actDeduped += records.length
-      safeWriteJSON(join(userDir, `activity-${date}.json`), records, false)
-    }
-    console.log(`[Pull] activity restored: ${actDeduped} unique (${allActivity.length} raw) across ${actByDate.size} days`)
 
-    // 7. Reflection Chats
+    // 8. Reflection Chats
     const allChats = await fetchAllRows('reflection_chats', userId)
     for (const row of allChats) {
       const chatKey = String(row.chat_key)
@@ -501,7 +665,7 @@ export async function pullFromCloud(userId: string): Promise<void> {
     }
     console.log(`[Pull] reflection chats restored: ${allChats.length}`)
 
-    // 8. Raw Sessions（反思对话原始记录）
+    // 9. Raw Sessions（反思对话原始记录）
     const allSessions = await fetchAllRows('reflection_sessions', userId)
     if (allSessions.length > 0) {
       const memDir = join(userDir, 'memory')
@@ -524,5 +688,7 @@ export async function pullFromCloud(userId: string): Promise<void> {
     console.log(`[Sync] Pull from cloud completed in ${Date.now() - startTime}ms`)
   } catch (e) {
     console.error('[Sync] Pull from cloud failed:', e)
+  } finally {
+    pullInProgress = false
   }
 }

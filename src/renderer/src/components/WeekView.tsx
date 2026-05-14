@@ -53,6 +53,20 @@ const WEEKDAYS_SHORT = ['日', '一', '二', '三', '四', '五', '六']
 const MOOD_SATURATION_PREVIEW_VALUES: readonly (MoodValue | null)[] = [1, 3, 5, null, 4, null, 2]
 const MOOD_LINE_MISSING_PREVIEW_VALUES: readonly (MoodValue | null)[] = [5, 4, null, 2, null, 4, 5]
 
+function ChartFocusSection({
+  id,
+  children,
+}: {
+  id: string
+  children: ReactNode
+}) {
+  return (
+    <div id={id} className="relative rounded-xl transition-[filter] duration-200">
+      {children}
+    </div>
+  )
+}
+
 // ===================== 工具函数 =====================
 
 /** 日期加减 n 天，返回 YYYY-MM-DD */
@@ -478,35 +492,35 @@ export default function WeekView({ weekEndDate, onDataReady, chatOpen }: WeekVie
   return (
     <div className="p-6 space-y-6 transition-all duration-400 max-w-xl mx-auto">
       {/* 每日完成率条形图 */}
-      <div id="chart-week-completion">
+      <ChartFocusSection id="chart-week-completion">
         <WeekCompletionSection
           days={weekData}
           toggleMoodTrend
           lineMissingMoodMode="breakOnMissing"
         />
-      </div>
+      </ChartFocusSection>
 
       {/* 周汇总指标卡片 */}
-      <div id="chart-week-metrics">
+      <ChartFocusSection id="chart-week-metrics">
         <WeekMetricCards days={weekData} />
-      </div>
+      </ChartFocusSection>
 
       {/* 分隔线 */}
       <div className="border-t border-gray-100" />
 
       {/* 周任务用时排行 Top 10 */}
-      <div id="chart-week-ranking">
+      <ChartFocusSection id="chart-week-ranking">
         <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
           🏆 周任务用时排行
         </h3>
         <WeekTaskRanking days={weekData} />
-      </div>
+      </ChartFocusSection>
 
       {/* 分隔线 */}
       <div className="border-t border-gray-100" />
 
       {/* 电脑活动分布（折线图 + 热力网格，共享 x 轴） */}
-      <div id="chart-week-heatmap">
+      <ChartFocusSection id="chart-week-heatmap">
         <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-1.5">
           🔍 电脑活动分布
           <span className="relative group">
@@ -522,13 +536,13 @@ export default function WeekView({ weekEndDate, onDataReady, chatOpen }: WeekVie
         <div className="mt-0">
           <WeekHeatmapGrid days={weekData} rangeStart={weekRangeStart} rangeEnd={weekRangeEnd} />
         </div>
-      </div>
+      </ChartFocusSection>
 
       {/* 分隔线 */}
       <div className="border-t border-gray-100" />
 
       {/* 应用使用时长排行（周聚合，默认 Top 5，可展开） */}
-      <div id="chart-week-app-usage">
+      <ChartFocusSection id="chart-week-app-usage">
         <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-1.5">
           📱 应用使用时长（本周）
           <span className="relative group">
@@ -539,7 +553,7 @@ export default function WeekView({ weekEndDate, onDataReady, chatOpen }: WeekVie
           </span>
         </h3>
         <AppUsageRanking data={weekData.flatMap((d) => d.activity)} />
-      </div>
+      </ChartFocusSection>
 
 
     </div>

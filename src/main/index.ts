@@ -12,7 +12,7 @@ import {
   loadTasks, saveTasks,
   findCarryOverTasks, findAllCarryOverTasks, executeCarryOver, executeMultiCarryOver,
   loadProfile, saveProfile,
-  loadMoodRecord, saveMoodRecord, deleteMoodRecord,
+  loadMoodRecord, saveMoodRecord,
   loadActivityData, activitySampler,
   appendTrackerEvents, loadTrackerEvents,
   safeWriteJSON, getReflectionChatPath,
@@ -75,13 +75,13 @@ function setupIPC(): void {
         setCachedUserId(data.user.id)
         setUserDataDir(data.user.id)
         migrateRootDataToUser(data.user.id)
-        await pullFromCloud(data.user.id)
         if (data.session) {
           persistSession({
             access_token: data.session.access_token,
             refresh_token: data.session.refresh_token,
           })
         }
+        void pullFromCloud(data.user.id)
         return { ok: true, user: { id: data.user.id, email: username } }
       }
       return { ok: true }
@@ -99,11 +99,11 @@ function setupIPC(): void {
         setCachedUserId(data.user.id)
         setUserDataDir(data.user.id)
         migrateRootDataToUser(data.user.id)
-        await pullFromCloud(data.user.id)
         persistSession({
           access_token: data.session.access_token,
           refresh_token: data.session.refresh_token,
         })
+        void pullFromCloud(data.user.id)
       }
       return { ok: true, user: { id: data.user?.id, email: username } }
     } catch (e) {
@@ -237,7 +237,6 @@ function setupIPC(): void {
     note: string
     updatedAt: number
   }) => saveMoodRecord(record))
-  ipcMain.handle('mood:delete', (_, date: string) => deleteMoodRecord(date))
 
   // -------- AI 配置 --------
   ipcMain.handle('ai:loadConfig', () => loadAIConfig())
@@ -437,7 +436,7 @@ app.whenReady().then(async () => {
   if (restored) {
     setUserDataDir(restored.id)
     migrateRootDataToUser(restored.id)
-    await pullFromCloud(restored.id)
+    void pullFromCloud(restored.id)
     console.log('[Auth] Auto-login restored for:', restored.email)
   }
 

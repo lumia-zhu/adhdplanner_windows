@@ -309,7 +309,7 @@ export default function InteractiveActivityHeatmap({
           {highlightFrame && (
             <div
               key={`ai-heatmap-highlight-${highlightPulseKey ?? 'pulse'}`}
-              className="absolute top-0 h-7 rounded-[5px] ai-focus-pulse pointer-events-none z-20"
+              className="ai-focus-target pointer-events-none absolute top-0 z-20 h-7 rounded-[5px]"
               style={{
                 left: `${highlightFrame.leftPct}%`,
                 width: `${highlightFrame.widthPct}%`,

@@ -246,7 +246,7 @@ export default function ActivityRhythmChart({ data, events, rangeStart: rs, rang
         {/* 面积填充 */}
         <path d={stepAreaPath} fill="url(#usageGradient)" opacity={0.4} />
 
-        {/* AI 重点小时/小时段高亮：连续时段只画一个整体空心框 */}
+        {/* AI 重点小时/小时段定位：只给遮罩留洞，不额外绘制彩色框 */}
         {highlightFrame && (
           <g key={`ai-highlight-${highlightPulseKey ?? 'pulse'}`} pointerEvents="none">
             <rect
@@ -255,10 +255,8 @@ export default function ActivityRhythmChart({ data, events, rangeStart: rs, rang
               width={highlightFrame.width}
               height={CHART_H}
               rx={2}
-              fill="none"
-              stroke="#f59e0b"
-              strokeWidth={1.6}
-              className="ai-focus-pulse-svg"
+              fill="transparent"
+              className="ai-focus-target"
             />
           </g>
         )}

@@ -7,6 +7,7 @@
  */
 
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
+import type { ReactNode } from 'react'
 import type { DailyMoodRecord, Task, UserProfile } from '../types'
 import type { AIConfig, VisualTarget } from '../services/ai'
 import { buildReflectionSystemPrompt, buildWeeklyReflectionSystemPrompt, extractMemoryFromChat } from '../services/ai'
@@ -226,6 +227,7 @@ const PROMPT_EXCLUDED_APP_NAMES = new Set([
 
 const HIGHLIGHT_DURATION_MS = 5000
 const HIGHLIGHT_START_DELAY_MS = 160
+const SPOTLIGHT_FADE_OUT_MS = 500
 
 const FOCUS_FALLBACK_CHARTS: Record<VisualFocusType, string> = {
   'activity-hour': 'chart-activity-heatmap',
@@ -243,6 +245,11 @@ const WEEK_FOCUS_FALLBACK_CHARTS: Record<VisualFocusType, string> = {
   'app-usage': 'chart-week-app-usage',
 }
 
+const CHART_FOCUS_ROOTS: Record<string, string> = {
+  'chart-rhythm': 'chart-activity-heatmap',
+  'chart-week-rhythm': 'chart-week-heatmap',
+}
+
 const METRIC_KEYS = new Set(['completed-tasks', 'computer-usage', 'focus-minutes'])
 
 interface ActiveHighlight {
@@ -254,6 +261,16 @@ interface ActiveHighlight {
   endHour?: number
   /** 并列多个应用（方案 A） */
   appNames?: string[]
+}
+
+interface SpotlightRect {
+  top: number
+  left: number
+  right: number
+  bottom: number
+  panelWidth: number
+  panelHeight: number
+  scrollTop: number
 }
 
 function formatClockTime(ts: number): string {
@@ -439,6 +456,26 @@ function buildAppUsagePromptContext(records: ActivityRecord[]): string {
   ].filter(Boolean).join('\n')
 }
 
+function getChartFocusRootId(chartId: string): string {
+  return CHART_FOCUS_ROOTS[chartId] ?? chartId
+}
+
+function ChartFocusSection({
+  id,
+  className = '',
+  children,
+}: {
+  id: string
+  className?: string
+  children: ReactNode
+}) {
+  return (
+    <div id={id} className={`relative rounded-xl transition-[filter] duration-200 ${className}`}>
+      {children}
+    </div>
+  )
+}
+
 // ===================== 主组件 =====================
 
 export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile, onClose }: ReflectionViewProps) {
@@ -469,6 +506,11 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
 
   // ---- AI 视觉引用高亮：同一时间只保留一个重点位置 ----
   const [activeHighlight, setActiveHighlight] = useState<ActiveHighlight | null>(null)
+  const [focusedChartId, setFocusedChartId] = useState<string | null>(null)
+  const [spotlightRect, setSpotlightRect] = useState<SpotlightRect | null>(null)
+  const [spotlightVisible, setSpotlightVisible] = useState(false)
+  const spotlightTargetRef = useRef<Element | null>(null)
+  const spotlightFadeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const highlightStartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const chartHighlightRef = useRef<string | null>(null)
@@ -1134,6 +1176,71 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
     return true
   }, [])
 
+  const hideSpotlight = useCallback((immediate = false) => {
+    if (spotlightFadeTimerRef.current) {
+      clearTimeout(spotlightFadeTimerRef.current)
+      spotlightFadeTimerRef.current = null
+    }
+
+    spotlightTargetRef.current = null
+    setSpotlightVisible(false)
+
+    if (immediate) {
+      setSpotlightRect(null)
+      return
+    }
+
+    spotlightFadeTimerRef.current = setTimeout(() => {
+      setSpotlightRect(null)
+      spotlightFadeTimerRef.current = null
+    }, SPOTLIGHT_FADE_OUT_MS)
+  }, [])
+
+  const updateSpotlightFromElement = useCallback((target: Element | null) => {
+    const panel = dataPanelRef.current
+    if (!panel || !target || !panel.contains(target)) {
+      hideSpotlight()
+      return
+    }
+
+    const panelRect = panel.getBoundingClientRect()
+    const targetRect = target.getBoundingClientRect()
+    const padding = 8
+    const left = Math.max(0, targetRect.left - panelRect.left - padding)
+    const top = Math.max(0, targetRect.top - panelRect.top - padding)
+    const right = Math.min(panel.clientWidth, targetRect.right - panelRect.left + padding)
+    const bottom = Math.min(panel.clientHeight, targetRect.bottom - panelRect.top + padding)
+
+    if (right <= left || bottom <= top) {
+      hideSpotlight()
+      return
+    }
+
+    if (spotlightFadeTimerRef.current) {
+      clearTimeout(spotlightFadeTimerRef.current)
+      spotlightFadeTimerRef.current = null
+    }
+
+    spotlightTargetRef.current = target
+    setSpotlightRect({
+      top,
+      left,
+      right,
+      bottom,
+      panelWidth: panel.clientWidth,
+      panelHeight: panel.clientHeight,
+      scrollTop: panel.scrollTop,
+    })
+    setSpotlightVisible(true)
+  }, [hideSpotlight])
+
+  const findSpotlightTarget = useCallback((fallbackChartId?: string) => {
+    const panel = dataPanelRef.current
+    if (!panel) return null
+    return panel.querySelector('.ai-focus-target') ??
+      (fallbackChartId ? document.getElementById(fallbackChartId) : null)
+  }, [])
+
   const handleVisualRef = useCallback((ref: VisualRef) => {
     if (highlightStartTimerRef.current) {
       clearTimeout(highlightStartTimerRef.current)
@@ -1146,23 +1253,35 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
     }
 
     if (chartHighlightRef.current) {
-      document.getElementById(chartHighlightRef.current)?.classList.remove('chart-highlight')
       chartHighlightRef.current = null
     }
 
     setActiveHighlight(null)
+    setFocusedChartId(null)
+    hideSpotlight(true)
+
+    const focusChartSection = (chartId: string) => {
+      const focusRootChartId = getChartFocusRootId(chartId)
+      if (!document.getElementById(focusRootChartId) && !document.getElementById(chartId)) return null
+      setFocusedChartId(focusRootChartId)
+      return focusRootChartId
+    }
 
     const pulseChart = (chartId: string) => {
       const el = document.getElementById(chartId)
       if (!el) return false
+      const focusRootChartId = focusChartSection(chartId) ?? getChartFocusRootId(chartId)
       scrollChartIntoDataPanel(chartId)
       highlightStartTimerRef.current = setTimeout(() => {
-        el.classList.add('chart-highlight')
+        updateSpotlightFromElement(el)
         chartHighlightRef.current = chartId
         highlightStartTimerRef.current = null
         highlightTimerRef.current = setTimeout(() => {
-          el.classList.remove('chart-highlight')
           if (chartHighlightRef.current === chartId) chartHighlightRef.current = null
+          setFocusedChartId(current => current === focusRootChartId ? null : current)
+          if (spotlightTargetRef.current === el) {
+            hideSpotlight()
+          }
         }, HIGHLIGHT_DURATION_MS)
       }, HIGHLIGHT_START_DELAY_MS)
       return true
@@ -1207,6 +1326,7 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
       })
 
       scrollChartIntoDataPanel(fallbackChartId)
+      const focusRootChartId = focusChartSection(fallbackChartId)
 
       if (uniqueApps.length === 0) {
         pulseChart(fallbackChartId)
@@ -1224,6 +1344,8 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
         highlightStartTimerRef.current = null
         highlightTimerRef.current = setTimeout(() => {
           setActiveHighlight(null)
+          if (focusRootChartId) setFocusedChartId(current => current === focusRootChartId ? null : current)
+          hideSpotlight()
           highlightTimerRef.current = null
         }, HIGHLIGHT_DURATION_MS)
       }, HIGHLIGHT_START_DELAY_MS)
@@ -1284,6 +1406,7 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
     })
 
     scrollChartIntoDataPanel(fallbackChartId)
+    const focusRootChartId = focusChartSection(fallbackChartId)
 
     if (!matched) {
       pulseChart(fallbackChartId)
@@ -1302,13 +1425,43 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
       highlightStartTimerRef.current = null
       highlightTimerRef.current = setTimeout(() => {
         setActiveHighlight(null)
+        if (focusRootChartId) setFocusedChartId(current => current === focusRootChartId ? null : current)
+        hideSpotlight()
         highlightTimerRef.current = null
       }, HIGHLIGHT_DURATION_MS)
     }, HIGHLIGHT_START_DELAY_MS)
-  }, [displayActivityData, scrollChartIntoDataPanel, sharedRangeEnd, sharedRangeStart, taskDurations, viewMode])
+  }, [displayActivityData, hideSpotlight, scrollChartIntoDataPanel, sharedRangeEnd, sharedRangeStart, taskDurations, updateSpotlightFromElement, viewMode])
+
+  useEffect(() => {
+    if (!activeHighlight) return
+    const timer = window.setTimeout(() => {
+      window.requestAnimationFrame(() => {
+        updateSpotlightFromElement(findSpotlightTarget(focusedChartId ?? undefined))
+      })
+    }, 0)
+    return () => window.clearTimeout(timer)
+  }, [activeHighlight, findSpotlightTarget, focusedChartId, updateSpotlightFromElement])
+
+  useEffect(() => {
+    const panel = dataPanelRef.current
+    if (!panel) return
+
+    const refreshSpotlight = () => {
+      if (spotlightTargetRef.current) updateSpotlightFromElement(spotlightTargetRef.current)
+    }
+
+    panel.addEventListener('scroll', refreshSpotlight, { passive: true })
+    window.addEventListener('resize', refreshSpotlight)
+    return () => {
+      panel.removeEventListener('scroll', refreshSpotlight)
+      window.removeEventListener('resize', refreshSpotlight)
+    }
+  }, [updateSpotlightFromElement])
 
   useEffect(() => {
     setActiveHighlight(null)
+    setFocusedChartId(null)
+    hideSpotlight(true)
     if (highlightStartTimerRef.current) {
       clearTimeout(highlightStartTimerRef.current)
       highlightStartTimerRef.current = null
@@ -1318,17 +1471,17 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
       highlightTimerRef.current = null
     }
     if (chartHighlightRef.current) {
-      document.getElementById(chartHighlightRef.current)?.classList.remove('chart-highlight')
       chartHighlightRef.current = null
     }
-  }, [displayDate, viewMode])
+  }, [displayDate, hideSpotlight, viewMode])
 
   useEffect(() => {
     return () => {
       if (highlightStartTimerRef.current) clearTimeout(highlightStartTimerRef.current)
       if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current)
+      if (spotlightFadeTimerRef.current) clearTimeout(spotlightFadeTimerRef.current)
       if (chartHighlightRef.current) {
-        document.getElementById(chartHighlightRef.current)?.classList.remove('chart-highlight')
+        chartHighlightRef.current = null
       }
     }
   }, [])
@@ -1702,7 +1855,7 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
   const metricCardClass = (metricKey: string, baseClass: string) => {
     const isHighlighted = highlightedMetric === metricKey
     return `${baseClass} transition-all duration-200 ${
-      isHighlighted ? 'ai-focus-pulse' : ''
+      isHighlighted ? 'ai-focus-target' : ''
     }`
   }
 
@@ -1990,7 +2143,11 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
         >
           {viewMode === 'week' ? (
             /* ---- 周视图 ---- */
-            <WeekView weekEndDate={weekEndDate} onDataReady={handleWeekDataReady} chatOpen={chatOpen} />
+            <WeekView
+              weekEndDate={weekEndDate}
+              onDataReady={handleWeekDataReady}
+              chatOpen={chatOpen}
+            />
           ) : (
             /* ---- 日视图 ---- */
             <div
@@ -2000,16 +2157,22 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
             >
               {/* 圆环图 + 核心指标 + 心情状态，所有日视图日期保持同一结构 */}
               <div className={chatOpen ? 'flex items-center gap-6' : 'space-y-4'}>
-                <div id="chart-completion-rate" className={chatOpen ? 'flex-shrink-0' : 'flex justify-center'}>
+                <ChartFocusSection
+                  id="chart-completion-rate"
+                  className={chatOpen ? 'flex-shrink-0' : 'flex justify-center'}
+                >
                   <DonutChart
                     percentage={completionRate}
                     size={chatOpen ? 120 : 180}
                     strokeWidth={chatOpen ? 10 : 14}
                     label="任务完成率"
                   />
-                </div>
-                <div className={chatOpen ? 'min-w-0 flex-1 space-y-2' : 'space-y-2'}>
-                  <div id="chart-key-metrics" className="grid grid-cols-3 gap-3 w-full">
+                </ChartFocusSection>
+                <ChartFocusSection
+                  id="chart-key-metrics"
+                  className={chatOpen ? 'min-w-0 flex-1 space-y-2' : 'space-y-2'}
+                >
+                  <div className="grid grid-cols-3 gap-3 w-full">
                     {metricCards}
                   </div>
                   {moodPill && (
@@ -2017,7 +2180,7 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
                       {moodPill}
                     </div>
                   )}
-                </div>
+                </ChartFocusSection>
               </div>
 
               {/* 分隔线 */}
@@ -2025,7 +2188,7 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
 
               {/* 任务用时条形图 */}
               {taskDurations.length > 0 && (
-                <div id="chart-task-duration">
+                <ChartFocusSection id="chart-task-duration">
                   <div className="flex items-center justify-between mb-3">
                     <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
                       ⏱ 任务用时
@@ -2047,14 +2210,14 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
                     highlightTask={highlightedTask}
                     highlightPulseKey={highlightPulseKey}
                   />
-                </div>
+                </ChartFocusSection>
               )}
 
               {/* 分隔线 */}
               {taskDurations.length > 0 && <div className="border-t border-gray-100" />}
 
               {/* 电脑活动分布（折线图 + 热力条，共享 x 轴） */}
-              <div id="chart-activity-heatmap">
+              <ChartFocusSection id="chart-activity-heatmap">
                 <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-1.5">
                   🔍 电脑活动分布
                   <span className="relative group">
@@ -2089,11 +2252,11 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
                     taskTitles={taskDurations.map(t => t.title)}
                   />
                 </div>
-              </div>
+              </ChartFocusSection>
 
               {/* 应用使用时长（按分钟展示，少于 1 分钟显示「< 1 分钟」；默认 Top 5，可展开） */}
               <div className="border-t border-gray-100" />
-              <div id="chart-app-usage">
+              <ChartFocusSection id="chart-app-usage">
                 <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-1.5">
                   📱 应用使用时长
                   <span className="relative group">
@@ -2108,7 +2271,7 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
                   highlightApps={highlightedApps}
                   highlightPulseKey={highlightPulseKey}
                 />
-              </div>
+              </ChartFocusSection>
 
               {/* 遗留任务（仅今天显示，历史日期没有任务快照） */}
               {displayIsToday && displaySummary && displaySummary.leftoverTasks.length > 0 && (
@@ -2140,6 +2303,48 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
                 selectedDate={selectedDate}
                 onConfirm={handleManualEntry}
                 onExpandChange={setManualEntryExpanded}
+              />
+            </div>
+          )}
+          {spotlightRect && (
+            <div
+              className={`pointer-events-none absolute left-0 z-20 transition-opacity duration-500 ease-out ${
+                spotlightVisible ? 'opacity-100' : 'opacity-0'
+              }`}
+              style={{
+                top: spotlightRect.scrollTop,
+                width: spotlightRect.panelWidth,
+                height: spotlightRect.panelHeight,
+              }}
+            >
+              <div
+                className="absolute left-0 top-0 bg-slate-950/35"
+                style={{ width: spotlightRect.panelWidth, height: spotlightRect.top }}
+              />
+              <div
+                className="absolute left-0 bg-slate-950/35"
+                style={{
+                  top: spotlightRect.top,
+                  width: spotlightRect.left,
+                  height: spotlightRect.bottom - spotlightRect.top,
+                }}
+              />
+              <div
+                className="absolute bg-slate-950/35"
+                style={{
+                  top: spotlightRect.top,
+                  left: spotlightRect.right,
+                  width: spotlightRect.panelWidth - spotlightRect.right,
+                  height: spotlightRect.bottom - spotlightRect.top,
+                }}
+              />
+              <div
+                className="absolute left-0 bg-slate-950/35"
+                style={{
+                  top: spotlightRect.bottom,
+                  width: spotlightRect.panelWidth,
+                  height: spotlightRect.panelHeight - spotlightRect.bottom,
+                }}
               />
             </div>
           )}

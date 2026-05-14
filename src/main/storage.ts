@@ -347,21 +347,10 @@ export function saveMoodRecord(record: DailyMoodRecord): boolean {
       updatedAt: record.updatedAt,
     }
     safeWriteJSON(getMoodRecordsPath(), records)
+    markDirty('moods')
     return true
   } catch (e) {
     console.error('[saveMoodRecord]', e)
-    return false
-  }
-}
-
-export function deleteMoodRecord(date: string): boolean {
-  try {
-    const records = loadMoodRecords()
-    delete records[date]
-    safeWriteJSON(getMoodRecordsPath(), records)
-    return true
-  } catch (e) {
-    console.error('[deleteMoodRecord]', e)
     return false
   }
 }
