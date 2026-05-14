@@ -127,11 +127,26 @@ export default function NoteEditor({
   // 今日心情记录弹窗
   const [moodOpen, setMoodOpen] = useState(false)
   const [moodRecord, setMoodRecord] = useState<DailyMoodRecord | null>(null)
+  const [moodLoaded, setMoodLoaded] = useState(false)
   const [draftMood, setDraftMood] = useState<MoodValue | null>(null)
   const [draftMoodNote, setDraftMoodNote] = useState('')
   const [savingMood, setSavingMood] = useState(false)
   const [moodClearedHint, setMoodClearedHint] = useState(false)
+  const [moodToast, setMoodToast] = useState<string | null>(null)
+  const moodToastTimerRef = useRef<number | null>(null)
   const moodPanelRef = useRef<HTMLDivElement>(null)
+  const MOOD_GATE_MESSAGE = '开始前，先花几秒记录一下今天的心情吧。'
+
+  const showMoodGateToast = useCallback((message?: string) => {
+    setMoodToast(typeof message === 'string' ? message : MOOD_GATE_MESSAGE)
+    if (moodToastTimerRef.current != null) {
+      window.clearTimeout(moodToastTimerRef.current)
+    }
+    moodToastTimerRef.current = window.setTimeout(() => {
+      setMoodToast(null)
+      moodToastTimerRef.current = null
+    }, 1800)
+  }, [])
 
   // 存储每一行 <input> 的 ref，键是行 ID
   const inputRefs = useRef<Map<string, HTMLInputElement>>(new Map())
@@ -143,9 +158,12 @@ export default function NoteEditor({
   const moodTheme = getMoodThemeForDate(moodDate)
   const moodOptions = useMemo(() => getMoodOptions(moodTheme), [moodTheme])
   const selectedMoodOption = moodRecord ? moodOptions.find(option => option.value === moodRecord.mood) : null
+  const isStartupMoodGateActive = isToday && moodLoaded && !moodRecord
+  const isMoodGateBlocking = moodOpen && isStartupMoodGateActive
 
   useEffect(() => {
     let cancelled = false
+    setMoodLoaded(false)
     if (!isToday) {
       setMoodOpen(false)
       setMoodRecord(null)
@@ -163,23 +181,63 @@ export default function NoteEditor({
         setDraftMoodNote(parsed?.note ?? '')
       })
       .catch((error) => {
+        if (cancelled) return
         console.warn('[Mood] 加载心情记录失败:', error)
+        setMoodRecord(null)
+        setDraftMood(null)
+        setDraftMoodNote('')
+      })
+      .finally(() => {
+        if (!cancelled) setMoodLoaded(true)
       })
 
     return () => { cancelled = true }
   }, [isToday, moodDate])
 
   useEffect(() => {
+    return () => {
+      if (moodToastTimerRef.current != null) {
+        window.clearTimeout(moodToastTimerRef.current)
+      }
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!isStartupMoodGateActive) return
+    setDraftMood(null)
+    setDraftMoodNote('')
+    setMoodClearedHint(false)
+    setMoodOpen(true)
+  }, [isStartupMoodGateActive])
+
+  useEffect(() => {
     if (!moodOpen) return
     const handlePointerDown = (event: MouseEvent) => {
       const target = event.target as Node | null
       if (target && moodPanelRef.current && !moodPanelRef.current.contains(target)) {
+        if (isMoodGateBlocking) {
+          event.preventDefault()
+          showMoodGateToast()
+          return
+        }
         setMoodOpen(false)
       }
     }
     document.addEventListener('mousedown', handlePointerDown)
     return () => document.removeEventListener('mousedown', handlePointerDown)
-  }, [moodOpen])
+  }, [moodOpen, isMoodGateBlocking, showMoodGateToast])
+
+  useEffect(() => {
+    if (!isMoodGateBlocking) return
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        showMoodGateToast()
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [isMoodGateBlocking, showMoodGateToast])
 
   // ---- 聚焦管理：当 pendingFocusId 变化时，把光标移到对应输入框 ----
   useEffect(() => {
@@ -699,20 +757,35 @@ export default function NoteEditor({
                           <span>今天心情怎么样？</span>
                         </>
                       )}
-                      {selectedMoodOption && !moodClearedHint && (
-                        <span
-                          onClick={handleDeleteMood}
-                          className="ml-0 flex h-4 w-0 items-center justify-center overflow-hidden rounded-full text-gray-300 opacity-0 transition-all duration-150 hover:bg-white/80 hover:text-gray-500 group-hover:ml-1 group-hover:w-4 group-hover:opacity-100"
-                          title="清除心情记录"
-                        >
-                          ×
-                        </span>
-                      )}
+
                     </button>
 
+                    {isMoodGateBlocking ? (
+                      <button
+                        type="button"
+                        className="fixed inset-0 z-40 cursor-default bg-white/35 backdrop-blur-[1px]"
+                        aria-label="心情输入前置遮罩"
+                        onClick={() => showMoodGateToast()}
+                      />
+                    ) : null}
+
+                    {moodToast ? (
+                      <div className="fixed left-1/2 top-14 z-[70] -translate-x-1/2 animate-in fade-in slide-in-from-top-1 duration-150">
+                        <div className="flex items-center gap-2 rounded-2xl border border-indigo-100 bg-white/95 px-3.5 py-2 text-xs font-medium text-slate-700 shadow-[0_12px_32px_rgba(79,70,229,0.16)] backdrop-blur-md">
+                          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-indigo-50 text-sm leading-none text-indigo-500">✦</span>
+                          <span>{moodToast}</span>
+                        </div>
+                      </div>
+                    ) : null}
+
                     {moodOpen && (
-                      <div className="no-drag absolute left-1/2 top-full z-50 mt-2 w-72 -translate-x-1/2 rounded-2xl border border-gray-100 bg-white/95 p-4 shadow-[0_10px_30px_rgba(15,23,42,0.12)] backdrop-blur">
+                      <div className={`no-drag z-50 w-72 rounded-2xl border border-gray-100 bg-white/95 p-4 shadow-[0_10px_30px_rgba(15,23,42,0.12)] backdrop-blur ${isMoodGateBlocking ? 'fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2' : 'absolute left-1/2 top-full mt-2 -translate-x-1/2'}`}>
                         <p className="text-sm font-semibold text-gray-800 text-center">今天心情怎么样？</p>
+                        {isMoodGateBlocking ? (
+                          <p className="mt-1 text-center text-2xs leading-relaxed text-gray-400">
+                            开始前，先记录一下今天的状态。
+                          </p>
+                        ) : null}
                         <div className="mt-3 grid grid-cols-5 gap-1.5">
                           {moodOptions.map(option => {
                             const selected = draftMood === option.value
@@ -742,29 +815,23 @@ export default function NoteEditor({
                           className="mt-3 h-20 w-full resize-none rounded-xl border border-gray-100 bg-gray-50 px-3 py-2 text-xs text-gray-700 outline-none transition-colors placeholder:text-gray-400 focus:border-indigo-200 focus:bg-white"
                         />
 
-                        <div className="mt-3 flex items-center justify-between gap-2">
-                          {moodRecord ? (
-                            <button
-                              onClick={handleDeleteMood}
-                              className="no-drag rounded-full px-2 py-1.5 text-xs text-gray-400 transition-colors hover:text-red-400"
-                            >
-                              清除记录
-                            </button>
-                          ) : <span />}
+                        <div className="mt-3 flex items-center justify-end gap-2">
                           <div className="flex justify-end gap-2">
-                          <button
-                            onClick={() => setMoodOpen(false)}
-                            className="no-drag rounded-full px-3 py-1.5 text-xs text-gray-400 transition-colors hover:text-gray-600"
-                          >
-                            取消
-                          </button>
-                          <button
-                            onClick={handleSaveMood}
-                            disabled={!draftMood || savingMood}
-                            className="no-drag rounded-full bg-indigo-500 px-3.5 py-1.5 text-xs font-semibold text-white transition-all hover:bg-indigo-600 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400"
-                          >
-                            {savingMood ? '保存中' : moodRecord ? '保存修改' : '保存'}
-                          </button>
+                            {moodRecord ? (
+                              <button
+                                onClick={() => setMoodOpen(false)}
+                                className="no-drag rounded-full px-3 py-1.5 text-xs text-gray-400 transition-colors hover:text-gray-600"
+                              >
+                                取消
+                              </button>
+                            ) : null}
+                            <button
+                              onClick={handleSaveMood}
+                              disabled={!draftMood || savingMood}
+                              className="no-drag rounded-full bg-indigo-500 px-3.5 py-1.5 text-xs font-semibold text-white transition-all hover:bg-indigo-600 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400"
+                            >
+                              {savingMood ? '保存中' : moodRecord ? '保存修改' : '保存'}
+                            </button>
                           </div>
                         </div>
                       </div>
