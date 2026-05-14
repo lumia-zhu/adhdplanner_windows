@@ -541,74 +541,7 @@ export default function WeekView({ weekEndDate, onDataReady, chatOpen }: WeekVie
         <AppUsageRanking data={weekData.flatMap((d) => d.activity)} />
       </div>
 
-      {/* 分隔线 */}
-      <div className="border-t border-gray-100" />
 
-      {/* 底部重复展示，方便看完周视图后回看每日完成率 */}
-      <div id="chart-week-completion-bottom">
-        <WeekCompletionSection
-          days={weekData}
-          toggleMoodTrend
-          lineMissingMoodMode="breakOnMissing"
-        />
-      </div>
-
-      <WeekMoodCompletionDemo days={weekData} />
-
-      {/* 底部：复制原折线图后做缺失心情预览，不影响原图 */}
-      <div className="border-t border-gray-100" />
-      <div id="chart-week-completion-line-missing-preview" className="space-y-0">
-        <WeekCompletionSection
-          days={weekData}
-          lineMoodPreviewValues={MOOD_LINE_MISSING_PREVIEW_VALUES}
-          lineMissingMoodMode="breakOnMissing"
-          heading="📊 每日任务完成率"
-        />
-      </div>
-      <div className="border-t border-gray-100" />
-      <div id="chart-week-completion-line-missing-preview-copy" className="space-y-0">
-        <WeekCompletionSection
-          days={weekData}
-          lineMoodPreviewValues={MOOD_LINE_MISSING_PREVIEW_VALUES}
-          lineMissingMoodMode="breakOnMissing"
-          moodPointsOnly
-          hidePctLabels
-          heading="📊 每日任务完成率"
-        />
-      </div>
-
-      {/* 底部：两份仅柱状图样式副本，便于对比改版（数据与上方相同） */}
-      <div className="border-t border-gray-100" />
-      <div id="chart-week-completion-bars-only-preview-1" className="space-y-0">
-        <WeekCompletionSection
-          days={weekData}
-          barsOnly
-          colorMode="moodSaturation"
-          moodPreviewValues={MOOD_SATURATION_PREVIEW_VALUES}
-          showMoodLegend
-          heading="📊 每日任务完成率"
-        />
-      </div>
-      <div className="border-t border-gray-100" />
-      <div id="chart-week-completion-bars-only-preview-1-white-dashed" className="space-y-0">
-        <WeekCompletionSection
-          days={weekData}
-          barsOnly
-          colorMode="moodSaturation"
-          moodPreviewValues={MOOD_SATURATION_PREVIEW_VALUES}
-          missingMoodStyle="whiteDashed"
-          showMoodLegend
-          heading="📊 每日任务完成率"
-        />
-      </div>
-      <div className="border-t border-gray-100" />
-      <div id="chart-week-completion-bars-only-preview-2" className="space-y-0">
-        <WeekCompletionSection
-          days={weekData}
-          barsOnly
-          heading="📊 每日任务完成率（仅柱状·预览 2）"
-        />
-      </div>
     </div>
   )
 }

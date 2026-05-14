@@ -297,7 +297,7 @@ export default function WeekCompletionBars({
                   maxWidth: Math.max(180, hoveredBarRect.width * 2),
                 }}
               >
-                <div className="font-medium">完成率 {stat.pct}%</div>
+                <div className="font-medium">任务完成率：{stat.pct}%</div>
                 {stat.hasData ? (
                   <div className="text-gray-200">{stat.moodTitle}</div>
                 ) : (

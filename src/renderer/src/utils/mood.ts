@@ -13,24 +13,14 @@ export const MOOD_LABELS: Array<{ value: MoodValue; label: string }> = [
 ]
 
 const MOOD_THEMES: Record<MoodThemeId, readonly string[]> = {
-  face: ['😔', '🙁', '😐', '🙂', '😊'],
+  face: ['😭', '😟', '😶', '😃', '🤩'],
   weather: ['⛈️', '🌧️', '☁️', '🌤️', '☀️'],
   plant: ['🥀', '🍂', '🌱', '🌿', '🌸'],
   moon: ['🌑', '🌒', '🌓', '🌔', '🌕'],
 }
 
-const MOOD_THEME_ROTATION: readonly MoodThemeId[] = ['face', 'face', 'face', 'weather', 'plant', 'moon']
-
-function getStableDateIndex(dateStr: string): number {
-  let hash = 0
-  for (let i = 0; i < dateStr.length; i += 1) {
-    hash = (hash * 31 + dateStr.charCodeAt(i)) >>> 0
-  }
-  return hash
-}
-
-export function getMoodThemeForDate(dateStr: string): MoodThemeId {
-  return MOOD_THEME_ROTATION[getStableDateIndex(dateStr) % MOOD_THEME_ROTATION.length]
+export function getMoodThemeForDate(_dateStr: string): MoodThemeId {
+  return 'face'
 }
 
 export function getMoodOptions(themeId: MoodThemeId): MoodOption[] {

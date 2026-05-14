@@ -39,12 +39,12 @@ const LEVEL_BG = [
   'bg-emerald-700',     // 4: > 75%
 ]
 const LEVEL_LABELS = ['未使用', '< 25%', '25%~50%', '50%~75%', '> 75%']
-const WEATHER_MOOD_EMOJI: Record<number, string> = {
-  1: '⛈️',
-  2: '🌧️',
-  3: '☁️',
-  4: '🌤️',
-  5: '☀️',
+const MOOD_EMOJI: Record<number, string> = {
+  1: '😭',
+  2: '😟',
+  3: '😶',
+  4: '😃',
+  5: '🤩',
 }
 
 // ===================== 工具函数 =====================
@@ -162,7 +162,7 @@ export default function WeekHeatmapGrid({ days, rangeStart: propStart, rangeEnd:
         hasData: d.hasData,
         levels: aggregateToHourlyLevels(d.activity),
         percent: aggregateToHourlyPercent(d.activity),
-        moodEmoji: WEATHER_MOOD_EMOJI[mood] ?? '☁️',
+        moodEmoji: MOOD_EMOJI[mood] ?? '😶',
         moodLabel: getMoodLabel(mood),
         isDemoMood: recordedMood == null,
       }
@@ -227,12 +227,16 @@ export default function WeekHeatmapGrid({ days, rangeStart: propStart, rangeEnd:
                 style={{ width: WEEK_PAD_LEFT_PCT }}
               >
                 <span>{dl.dateLabel} {dl.weekdayShort}</span>
-                <span
-                  className="pointer-events-auto inline-flex h-4 w-4 flex-shrink-0 items-center justify-center text-xs leading-none opacity-90 transition-opacity hover:opacity-100"
-                  title={`${dl.isDemoMood ? '心情（示例）' : '心情'}：${dl.moodLabel}`}
-                  aria-label={`${dl.dateLabel} ${dl.weekdayShort} ${dl.isDemoMood ? '示例心情' : '心情'}：${dl.moodLabel}`}
-                >
-                  {dl.moodEmoji}
+                <span className="relative group/mood inline-flex">
+                  <span
+                    className="pointer-events-auto inline-flex h-5 w-5 flex-shrink-0 items-center justify-center text-base leading-none opacity-95 transition-transform hover:scale-110 hover:opacity-100"
+                    aria-label={`${dl.dateLabel} ${dl.weekdayShort} ${dl.isDemoMood ? '示例心情' : '心情'}：${dl.moodLabel}`}
+                  >
+                    {dl.moodEmoji}
+                  </span>
+                  <span className="pointer-events-none absolute left-1/2 top-full z-50 mt-1.5 -translate-x-1/2 whitespace-nowrap rounded-md bg-gray-800 px-2 py-1 text-[10px] font-normal leading-none text-white opacity-0 shadow-lg transition-opacity group-hover/mood:opacity-100">
+                    {dl.isDemoMood ? '示例心情' : '心情'}：{dl.moodLabel}
+                  </span>
                 </span>
               </span>
               <div className="flex flex-1" style={{ marginRight: WEEK_PAD_RIGHT_PCT }}>
