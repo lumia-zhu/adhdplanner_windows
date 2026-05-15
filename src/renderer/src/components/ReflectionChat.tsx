@@ -8,7 +8,7 @@
 import { useState, useEffect, useRef, useCallback, useImperativeHandle, forwardRef } from 'react'
 import { tracker } from '../services/tracker'
 import type { AIConfig, ReflectionMessage, MessageContentPart, VisualTarget } from '../services/ai'
-import { chatReflectionStream, extractMemoryFromChat, selectReflectionVisualFocus } from '../services/ai'
+import { chatReflectionStream, extractMemoryFromChat, generateSuggestions, selectReflectionVisualFocus } from '../services/ai'
 
 interface ChatBubble {
   role: 'user' | 'assistant'
@@ -44,6 +44,11 @@ const CHART_ID_MAP: Record<string, { domId: string; label: string }> = {
 }
 
 const STREAM_CHART_FALLBACK_DELAY_MS = 700
+
+const FALLBACK_SUGGESTIONS: Record<'daily' | 'weekly', string[]> = {
+  daily: ['哪些做法值得保留？', '哪些任务还停在计划里？', '电脑开着时在做什么？'],
+  weekly: ['哪些做法值得保留？', '哪些任务还停在计划里？', '电脑开着时在做什么？'],
+}
 
 export type VisualFocusType = 'activity-hour' | 'activity-range' | 'task-duration' | 'metric' | 'app-usage'
 
@@ -130,6 +135,18 @@ function sanitizeAssistantDisplayText(text: string): string {
   const suggestionStart = cleaned.search(/<!--\s*SUGGESTIONS:/i)
   if (suggestionStart >= 0) {
     cleaned = cleaned.slice(0, suggestionStart)
+  }
+
+  // 模型偶尔会把隐藏注释写坏，例如 "<!--SUG这周前半段GESTIONS..."。
+  // 只要控制注释开始泄漏到正文，就从显示文本中截掉，避免暴露协议细节。
+  const commentStart = cleaned.search(/<!--|<!|<\s*!--/i)
+  if (commentStart >= 0) {
+    cleaned = cleaned.slice(0, commentStart)
+  }
+
+  const brokenSuggestionsStart = cleaned.search(/SUG[\s\S]{0,80}?GESTIONS\s*:/i)
+  if (brokenSuggestionsStart >= 0) {
+    cleaned = cleaned.slice(0, brokenSuggestionsStart)
   }
 
   cleaned = cleaned
@@ -311,6 +328,10 @@ function extractSuggestions(rawText: string): string[] {
     console.warn('[ReflectionChat] 解析探索方向失败:', e, match[1])
     return []
   }
+}
+
+function hasSuggestionMarkerIntent(rawText: string): boolean {
+  return /<!--\s*SUG/i.test(rawText) || /SUG[\s\S]{0,80}?GESTIONS\s*:/i.test(rawText)
 }
 
 function normalizeSuggestionDirection(label: string): string {
@@ -686,6 +707,27 @@ const ReflectionChat = forwardRef<ReflectionChatHandle, ReflectionChatProps>(fun
           if (cleanedSuggestions.length > 0) {
             console.log('[ReflectionChat] 内嵌探索方向:', cleanedSuggestions)
             setSuggestions(cleanedSuggestions)
+          } else {
+            const shouldFallbackOnEmpty = hasSuggestionMarkerIntent(rawContent)
+            void generateSuggestions(
+              [
+                ...newMessages,
+                { role: 'assistant', content },
+              ],
+              aiConfig,
+              mode,
+            ).then(generated => {
+              const nextSuggestions = generated
+                .map(cleanSuggestionLabel)
+                .filter((item): item is string => Boolean(item))
+                .slice(0, 3)
+              setSuggestions(nextSuggestions.length > 0
+                ? nextSuggestions
+                : shouldFallbackOnEmpty ? FALLBACK_SUGGESTIONS[mode] : [])
+            }).catch(error => {
+              console.warn('[ReflectionChat] 探索方向兜底生成失败:', error)
+              setSuggestions(FALLBACK_SUGGESTIONS[mode])
+            })
           }
         }
 
@@ -830,7 +872,7 @@ const ReflectionChat = forwardRef<ReflectionChatHandle, ReflectionChatProps>(fun
         })
       })()
     })
-  }, [aiConfig, onVisualRef, visualTargets])
+  }, [aiConfig, mode, onVisualRef, visualTargets])
 
   // ---- 加载历史聊天记录 ----
   useEffect(() => {

@@ -3,7 +3,7 @@
  *
  * X 轴：日期从左到右（M/d 周几缩写）
  * 左 Y 轴：完成率 0-100%
- * 右 Y 轴：心情 1-5，真实心情优先，缺失时用示例心情补齐 7 天。
+ * 右 Y 轴：心情 1-5，真实心情优先，缺失时按配置断开或用灰色占位延续。
  * hover 时 tooltip 显示 "完成 X/Y 步" 和当天心情。
  * 无数据天显示虚线占位 + "--"。
  */
@@ -23,7 +23,7 @@ interface Props {
   /** 折线预览用心情序列：1-5 为模拟心情，null 为模拟未记录 */
   lineMoodPreviewValues?: readonly (MoodValue | null)[]
   /** 折线遇到未记录心情时的处理方式：默认沿用示例心情补齐 */
-  lineMissingMoodMode?: 'fillDemo' | 'breakOnMissing'
+  lineMissingMoodMode?: 'fillDemo' | 'breakOnMissing' | 'carryForwardDotted'
   /** 为 true 时只展示心情点，不绘制点之间的连线 */
   moodPointsOnly?: boolean
   /** 为 true 时隐藏完成率数字标签，避免遮挡心情点 */
@@ -55,6 +55,7 @@ const MOOD_AXIS_LABELS = [5, 4, 3, 2, 1]
 const PCT_LABEL_OFFSET_PX = 20
 const PCT_LABEL_MIN_TOP_PX = -12
 const MISSING_MOOD_BAR_COLOR = '#d1d5db'
+const MISSING_MOOD_LINE_COLOR = '#9ca3af'
 const MOOD_SATURATION_COLORS: Record<MoodValue, string> = {
   1: '#eff3ff',
   2: '#bdd7e7',
@@ -119,19 +120,41 @@ export default function WeekCompletionBars({
   const moodToY = (mood: number) => ((5 - mood) / 4) * 100
   const useMoodSaturation = colorMode === 'moodSaturation'
   const shouldBreakOnMissingLineMood = lineMissingMoodMode === 'breakOnMissing'
+  const shouldCarryForwardMissingMood = lineMissingMoodMode === 'carryForwardDotted'
 
   const moodPoints = barsOnly
     ? []
-    : days.map((day, index) => {
+    : (() => {
+      let lastKnownMood: number | null = null
+      return days.map((day, index) => {
         const previewMood = lineMoodPreviewValues?.[index]
         const hasPreviewMood = previewMood !== undefined
         const recordedMood = day.moodRecord?.mood
-        const mood = hasPreviewMood
-          ? previewMood
-          : getEffectiveMoodForWeekDayIndex(index, recordedMood)
+        const hasRecordedMood = recordedMood != null
+        const mood = hasPreviewMood ? previewMood : (hasRecordedMood ? recordedMood : null)
         const isMissing = mood == null
-        const fallbackMood = getEffectiveMoodForWeekDayIndex(index, recordedMood)
+        const carriedMood = shouldCarryForwardMissingMood ? lastKnownMood : null
+        const fallbackMood = shouldCarryForwardMissingMood
+          ? carriedMood
+          : getEffectiveMoodForWeekDayIndex(index, recordedMood)
         const displayMood = isMissing ? fallbackMood : mood
+
+        if (!isMissing && displayMood != null) {
+          lastKnownMood = displayMood
+        }
+
+        if (displayMood == null) {
+          return {
+            x: dayToX(index),
+            y: 0,
+            mood: null,
+            label: '未记录',
+            isDemo: false,
+            isMissing,
+            isDrawable: false,
+            isCarryForward: false,
+          }
+        }
 
         return {
           x: dayToX(index),
@@ -140,15 +163,19 @@ export default function WeekCompletionBars({
           label: isMissing ? '未记录' : getMoodLabel(displayMood),
           isDemo: hasPreviewMood || recordedMood == null,
           isMissing,
+          isDrawable: true,
+          isCarryForward: isMissing && shouldCarryForwardMissingMood,
         }
       })
+    })()
 
   const moodLineSegments = barsOnly || moodPointsOnly
     ? []
     : moodPoints.slice(1).flatMap((point, index) => {
         const previousPoint = moodPoints[index]!
+        if (!previousPoint.isDrawable || !point.isDrawable) return []
         if (shouldBreakOnMissingLineMood && (previousPoint.isMissing || point.isMissing)) return []
-        return [{ from: previousPoint, to: point }]
+        return [{ from: previousPoint, to: point, isDotted: previousPoint.isMissing || point.isMissing }]
       })
 
   const dayStats = days.map((day, dayIndex) => {
@@ -229,23 +256,27 @@ export default function WeekCompletionBars({
                   y1={`${segment.from.y}%`}
                   x2={`${segment.to.x}%`}
                   y2={`${segment.to.y}%`}
-                  stroke={MOOD_LINE_COLOR}
+                  stroke={segment.isDotted ? MISSING_MOOD_LINE_COLOR : MOOD_LINE_COLOR}
                   strokeLinecap="round"
+                  strokeDasharray={segment.isDotted ? '4 4' : undefined}
                   strokeWidth={2}
                 />
               ))}
-              {moodPoints.map((point, i) => point.isMissing ? null : (
+              {moodPoints.map((point, i) => !point.isDrawable ? null : (
                 <circle
                   key={`${days[i]?.date}-mood`}
                   cx={`${point.x}%`}
                   cy={`${point.y}%`}
-                  r={4.5}
-                  fill={MOOD_LINE_COLOR}
-                  stroke="white"
-                  strokeWidth={2}
+                  r={point.isMissing ? 4.2 : 4.5}
+                  fill={point.isMissing ? 'white' : MOOD_LINE_COLOR}
+                  stroke={point.isMissing ? MISSING_MOOD_LINE_COLOR : 'white'}
+                  strokeDasharray={point.isMissing ? '2 2' : undefined}
+                  strokeWidth={point.isMissing ? 1.8 : 2}
                 >
                   <title>
-                    {`${point.isDemo ? '心情（示例）' : '心情'}：${point.label}（${point.mood}/5）`}
+                    {point.isCarryForward
+                      ? `心情：未记录，沿用前一天位置显示（${point.mood}/5）`
+                      : `${point.isDemo ? '心情（示例）' : '心情'}：${point.label}（${point.mood}/5）`}
                   </title>
                 </circle>
               ))}

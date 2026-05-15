@@ -232,7 +232,7 @@ function WeekCompletionSection({
   /** 折线预览用模拟心情：null 表示未记录 */
   lineMoodPreviewValues?: readonly (MoodValue | null)[]
   /** 折线遇到未记录心情时的处理方式 */
-  lineMissingMoodMode?: 'fillDemo' | 'breakOnMissing'
+  lineMissingMoodMode?: 'fillDemo' | 'breakOnMissing' | 'carryForwardDotted'
   /** 为 true 时只展示心情点，不绘制点之间的连线 */
   moodPointsOnly?: boolean
   /** 为 true 时隐藏完成率数字标签，避免遮挡心情点 */
@@ -270,7 +270,7 @@ function WeekCompletionSection({
               </>
             ) : (
               <>
-                <b>每日任务完成率</b> = 当天已完成的任务数 ÷ 当天全部任务数 × 100%。<br/><span className="text-gray-300">{moodPointsOnly ? '本区块为心情散点预览：只显示有心情记录日期的点，不绘制点之间的连线。' : lineMissingMoodMode === 'breakOnMissing' ? '本区块为折线缺失预览：未记录心情的日期不显示心情点，折线会在缺失日期前后断开。' : '柱子表示完成率；折线表示 1–5 级心情，真实记录优先，没有记录时用示例心情补齐。右侧 1 表示很低落，5 表示很开心。'}</span>
+                <b>每日任务完成率</b> = 当天已完成的任务数 ÷ 当天全部任务数 × 100%。<br/><span className="text-gray-300">{moodPointsOnly ? '本区块为心情散点预览：只显示有心情记录日期的点，不绘制点之间的连线。' : lineMissingMoodMode === 'carryForwardDotted' ? '柱子表示完成率；折线表示 1–5 级心情。未记录心情的日期会用灰色空心点沿用前一天位置，并用虚线连接；如果前面没有真实记录，则不画占位点。' : lineMissingMoodMode === 'breakOnMissing' ? '本区块为折线缺失预览：未记录心情的日期不显示心情点，折线会在缺失日期前后断开。' : '柱子表示完成率；折线表示 1–5 级心情，真实记录优先，没有记录时用示例心情补齐。右侧 1 表示很低落，5 表示很开心。'}</span>
               </>
             )}
           </span>
@@ -496,7 +496,7 @@ export default function WeekView({ weekEndDate, onDataReady, chatOpen }: WeekVie
         <WeekCompletionSection
           days={weekData}
           toggleMoodTrend
-          lineMissingMoodMode="breakOnMissing"
+          lineMissingMoodMode="carryForwardDotted"
         />
       </ChartFocusSection>
 

@@ -228,6 +228,7 @@ const PROMPT_EXCLUDED_APP_NAMES = new Set([
 const HIGHLIGHT_DURATION_MS = 5000
 const HIGHLIGHT_START_DELAY_MS = 160
 const SPOTLIGHT_FADE_OUT_MS = 500
+const SPOTLIGHT_WAIT_VISIBLE_MS = 1000
 
 const FOCUS_FALLBACK_CHARTS: Record<VisualFocusType, string> = {
   'activity-hour': 'chart-activity-heatmap',
@@ -513,6 +514,7 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
   const spotlightFadeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const highlightStartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const spotlightWaitFrameRef = useRef<number | null>(null)
   const chartHighlightRef = useRef<string | null>(null)
 
   // ---- AI 浮标气泡 ----
@@ -1176,6 +1178,48 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
     return true
   }, [])
 
+  const cancelSpotlightVisibleWait = useCallback(() => {
+    if (spotlightWaitFrameRef.current != null) {
+      window.cancelAnimationFrame(spotlightWaitFrameRef.current)
+      spotlightWaitFrameRef.current = null
+    }
+  }, [])
+
+  const isElementVisibleInDataPanel = useCallback((target: Element) => {
+    const panel = dataPanelRef.current
+    if (!panel || !panel.contains(target)) return false
+
+    const panelRect = panel.getBoundingClientRect()
+    const targetRect = target.getBoundingClientRect()
+    const visibleWidth = Math.min(targetRect.right, panelRect.right) - Math.max(targetRect.left, panelRect.left)
+    const visibleHeight = Math.min(targetRect.bottom, panelRect.bottom) - Math.max(targetRect.top, panelRect.top)
+
+    return visibleWidth > 8 && visibleHeight > 8
+  }, [])
+
+  const waitForSpotlightTargetVisible = useCallback((target: Element, onVisible: () => void) => {
+    cancelSpotlightVisibleWait()
+
+    const startedAt = performance.now()
+    const tick = () => {
+      const elapsed = performance.now() - startedAt
+      if (isElementVisibleInDataPanel(target)) {
+        spotlightWaitFrameRef.current = null
+        onVisible()
+        return
+      }
+
+      if (elapsed >= SPOTLIGHT_WAIT_VISIBLE_MS) {
+        spotlightWaitFrameRef.current = null
+        return
+      }
+
+      spotlightWaitFrameRef.current = window.requestAnimationFrame(tick)
+    }
+
+    spotlightWaitFrameRef.current = window.requestAnimationFrame(tick)
+  }, [cancelSpotlightVisibleWait, isElementVisibleInDataPanel])
+
   const hideSpotlight = useCallback((immediate = false) => {
     if (spotlightFadeTimerRef.current) {
       clearTimeout(spotlightFadeTimerRef.current)
@@ -1246,6 +1290,7 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
       clearTimeout(highlightStartTimerRef.current)
       highlightStartTimerRef.current = null
     }
+    cancelSpotlightVisibleWait()
 
     if (highlightTimerRef.current) {
       clearTimeout(highlightTimerRef.current)
@@ -1273,16 +1318,18 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
       const focusRootChartId = focusChartSection(chartId) ?? getChartFocusRootId(chartId)
       scrollChartIntoDataPanel(chartId)
       highlightStartTimerRef.current = setTimeout(() => {
-        updateSpotlightFromElement(el)
-        chartHighlightRef.current = chartId
         highlightStartTimerRef.current = null
-        highlightTimerRef.current = setTimeout(() => {
-          if (chartHighlightRef.current === chartId) chartHighlightRef.current = null
-          setFocusedChartId(current => current === focusRootChartId ? null : current)
-          if (spotlightTargetRef.current === el) {
-            hideSpotlight()
-          }
-        }, HIGHLIGHT_DURATION_MS)
+        waitForSpotlightTargetVisible(el, () => {
+          updateSpotlightFromElement(el)
+          chartHighlightRef.current = chartId
+          highlightTimerRef.current = setTimeout(() => {
+            if (chartHighlightRef.current === chartId) chartHighlightRef.current = null
+            setFocusedChartId(current => current === focusRootChartId ? null : current)
+            if (spotlightTargetRef.current === el) {
+              hideSpotlight()
+            }
+          }, HIGHLIGHT_DURATION_MS)
+        })
       }, HIGHLIGHT_START_DELAY_MS)
       return true
     }
@@ -1430,7 +1477,7 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
         highlightTimerRef.current = null
       }, HIGHLIGHT_DURATION_MS)
     }, HIGHLIGHT_START_DELAY_MS)
-  }, [displayActivityData, hideSpotlight, scrollChartIntoDataPanel, sharedRangeEnd, sharedRangeStart, taskDurations, updateSpotlightFromElement, viewMode])
+  }, [cancelSpotlightVisibleWait, displayActivityData, hideSpotlight, scrollChartIntoDataPanel, sharedRangeEnd, sharedRangeStart, taskDurations, updateSpotlightFromElement, viewMode, waitForSpotlightTargetVisible])
 
   useEffect(() => {
     if (!activeHighlight) return
@@ -1479,6 +1526,7 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
     return () => {
       if (highlightStartTimerRef.current) clearTimeout(highlightStartTimerRef.current)
       if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current)
+      if (spotlightWaitFrameRef.current != null) window.cancelAnimationFrame(spotlightWaitFrameRef.current)
       if (spotlightFadeTimerRef.current) clearTimeout(spotlightFadeTimerRef.current)
       if (chartHighlightRef.current) {
         chartHighlightRef.current = null
@@ -2308,7 +2356,7 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
           )}
           {spotlightRect && (
             <div
-              className={`pointer-events-none absolute left-0 z-20 transition-opacity duration-500 ease-out ${
+              className={`pointer-events-none absolute left-0 z-[80] transition-opacity duration-500 ease-out ${
                 spotlightVisible ? 'opacity-100' : 'opacity-0'
               }`}
               style={{
