@@ -2497,7 +2497,7 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
               }`}
             >
               <div
-                className="absolute bg-slate-950/35"
+                className="absolute bg-slate-950/60"
                 style={{
                   top: spotlightRect.panelTop,
                   left: spotlightRect.panelLeft,
@@ -2506,7 +2506,7 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
                 }}
               />
               <div
-                className="absolute bg-slate-950/35"
+                className="absolute bg-slate-950/60"
                 style={{
                   top: spotlightRect.top,
                   left: spotlightRect.panelLeft,
@@ -2515,7 +2515,7 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
                 }}
               />
               <div
-                className="absolute bg-slate-950/35"
+                className="absolute bg-slate-950/60"
                 style={{
                   top: spotlightRect.top,
                   left: spotlightRect.right,
@@ -2524,7 +2524,7 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
                 }}
               />
               <div
-                className="absolute bg-slate-950/35"
+                className="absolute bg-slate-950/60"
                 style={{
                   top: spotlightRect.bottom,
                   left: spotlightRect.panelLeft,

@@ -30,6 +30,10 @@ interface Props {
   hidePctLabels?: boolean
   /** 右侧心情轴标签样式 */
   moodAxisLabelMode?: 'numeric' | 'textOnly'
+  /** 心情折线点样式 */
+  moodPointMode?: 'dot' | 'emoji'
+  /** 是否显示右侧心情轴 */
+  showMoodAxis?: boolean
   /** 为 true 时即使隐藏心情趋势，也保留右侧心情轴宽度，避免图表切换时压缩 */
   reserveMoodAxisSpace?: boolean
   /** 未记录心情的视觉样式 */
@@ -57,6 +61,8 @@ const PCT_LABEL_MIN_TOP_PX = -12
 const HOVER_TOOLTIP_WIDTH = 156
 const MISSING_MOOD_BAR_COLOR = '#d1d5db'
 const MISSING_MOOD_LINE_COLOR = '#9ca3af'
+const MOOD_POINT_STROKE_COLOR = '#cbd5e1'
+const MOOD_POINT_STROKE_WIDTH = 1.5
 const MOOD_SATURATION_COLORS: Record<MoodValue, string> = {
   1: '#eff3ff',
   2: '#bdd7e7',
@@ -115,6 +121,8 @@ export default function WeekCompletionBars({
   moodPointsOnly = false,
   hidePctLabels = false,
   moodAxisLabelMode = 'numeric',
+  moodPointMode = 'dot',
+  showMoodAxis = true,
   reserveMoodAxisSpace = false,
   missingMoodStyle = 'gray',
   showMoodLegend = false,
@@ -127,6 +135,7 @@ export default function WeekCompletionBars({
   const useMoodSaturation = colorMode === 'moodSaturation'
   const shouldBreakOnMissingLineMood = lineMissingMoodMode === 'breakOnMissing'
   const shouldCarryForwardMissingMood = lineMissingMoodMode === 'carryForwardDotted'
+  const shouldShowMoodAxis = (!barsOnly && showMoodAxis) || reserveMoodAxisSpace
 
   const moodPoints = barsOnly
     ? []
@@ -268,24 +277,46 @@ export default function WeekCompletionBars({
                   strokeWidth={2}
                 />
               ))}
-              {moodPoints.map((point, i) => !point.isDrawable ? null : (
-                <circle
-                  key={`${days[i]?.date}-mood`}
-                  cx={`${point.x}%`}
-                  cy={`${point.y}%`}
-                  r={point.isMissing ? 4.2 : 4.5}
-                  fill={point.isMissing ? 'white' : MOOD_LINE_COLOR}
-                  stroke={point.isMissing ? MISSING_MOOD_LINE_COLOR : 'white'}
-                  strokeDasharray={point.isMissing ? '2 2' : undefined}
-                  strokeWidth={point.isMissing ? 1.8 : 2}
-                >
-                  <title>
-                    {point.isCarryForward
-                      ? `心情：未记录，沿用前一天位置显示（${point.mood}/5）`
-                      : `${point.isDemo ? '心情（示例）' : '心情'}：${point.label}（${point.mood}/5）`}
-                  </title>
-                </circle>
-              ))}
+              {moodPoints.map((point, i) => {
+                if (!point.isDrawable) return null
+                const title = point.isCarryForward
+                  ? `心情：未记录，沿用前一天位置显示（${point.mood}/5）`
+                  : `${point.isDemo ? '心情（示例）' : '心情'}：${point.label}（${point.mood}/5）`
+
+                if (moodPointMode === 'emoji' && !point.isMissing && point.mood != null) {
+                  return (
+                    <text
+                      key={`${days[i]?.date}-mood`}
+                      x={`${point.x}%`}
+                      y={`${point.y}%`}
+                      textAnchor="middle"
+                      dominantBaseline="central"
+                      fontSize={16}
+                      stroke="white"
+                      strokeWidth={0.8}
+                      paintOrder="stroke"
+                    >
+                      <title>{title}</title>
+                      {getMoodEmoji(point.mood)}
+                    </text>
+                  )
+                }
+
+                return (
+                  <circle
+                    key={`${days[i]?.date}-mood`}
+                    cx={`${point.x}%`}
+                    cy={`${point.y}%`}
+                    r={point.isMissing ? 4.2 : 4.5}
+                    fill={point.isMissing ? 'white' : MOOD_LINE_COLOR}
+                    stroke={point.isMissing ? MISSING_MOOD_LINE_COLOR : MOOD_POINT_STROKE_COLOR}
+                    strokeDasharray={point.isMissing ? '2 2' : undefined}
+                    strokeWidth={MOOD_POINT_STROKE_WIDTH}
+                  >
+                    <title>{title}</title>
+                  </circle>
+                )
+              })}
             </svg>
           ) : null}
 
@@ -399,13 +430,13 @@ export default function WeekCompletionBars({
           ) : null}
         </div>
 
-        {!barsOnly || reserveMoodAxisSpace ? (
+        {shouldShowMoodAxis ? (
           <div
             className={`relative flex-shrink-0 pl-1.5 ${moodAxisLabelMode === 'textOnly' ? 'w-[30px]' : 'w-[20px]'}`}
             style={{ height: BAR_AREA_H + BAR_PAD_TOP, paddingTop: BAR_PAD_TOP }}
             title="心情：1 很低落，5 很开心"
           >
-            {!barsOnly ? MOOD_AXIS_LABELS.map(tick => (
+            {!barsOnly && showMoodAxis ? MOOD_AXIS_LABELS.map(tick => (
               <span
                 key={tick}
                 className={`absolute left-1.5 -translate-y-1/2 text-left leading-none text-indigo-400 ${moodAxisLabelMode === 'textOnly' ? 'w-[24px] text-sm' : 'w-[14px] text-3xs tabular-nums'}`}
@@ -420,7 +451,7 @@ export default function WeekCompletionBars({
       </div>
 
       {/* X 轴：日期标签 */}
-      <div className={`flex ml-[28px] ${barsOnly && !reserveMoodAxisSpace ? 'mr-2' : moodAxisLabelMode === 'textOnly' ? 'mr-[30px]' : 'mr-[20px]'}`}>
+      <div className={`flex ml-[28px] ${!shouldShowMoodAxis ? 'mr-2' : moodAxisLabelMode === 'textOnly' ? 'mr-[30px]' : 'mr-[20px]'}`}>
         {days.map((day) => (
           <div key={day.date} className="flex-1 text-center">
             <span className="text-2xs text-gray-500 tabular-nums leading-tight">

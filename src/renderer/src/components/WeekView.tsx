@@ -227,6 +227,8 @@ function WeekCompletionSection({
   moodPointsOnly,
   hidePctLabels,
   moodAxisLabelMode,
+  moodPointMode,
+  showMoodAxis,
   toggleMoodTrend = false,
   initialShowMoodTrend = false,
   missingMoodStyle,
@@ -250,6 +252,10 @@ function WeekCompletionSection({
   hidePctLabels?: boolean
   /** 右侧心情轴标签样式 */
   moodAxisLabelMode?: 'numeric' | 'textOnly'
+  /** 心情折线点样式 */
+  moodPointMode?: 'dot' | 'emoji'
+  /** 是否显示右侧心情轴 */
+  showMoodAxis?: boolean
   /** 是否显示“显示/隐藏心情趋势”切换按钮 */
   toggleMoodTrend?: boolean
   /** 切换按钮模式下是否初始显示心情趋势 */
@@ -265,7 +271,7 @@ function WeekCompletionSection({
   const effectiveBarsOnly = toggleMoodTrend ? !showMoodTrend : barsOnly
   const effectiveHidePctLabels = toggleMoodTrend && showMoodTrend ? true : hidePctLabels
   const effectiveMoodAxisLabelMode = toggleMoodTrend ? 'textOnly' : moodAxisLabelMode
-  const reserveMoodAxisSpace = toggleMoodTrend && showMoodTrend
+  const reserveMoodAxisSpace = toggleMoodTrend && showMoodTrend && showMoodAxis !== false
 
   return (
     <>
@@ -306,6 +312,8 @@ function WeekCompletionSection({
         moodPointsOnly={moodPointsOnly}
         hidePctLabels={effectiveHidePctLabels}
         moodAxisLabelMode={effectiveMoodAxisLabelMode}
+        moodPointMode={moodPointMode}
+        showMoodAxis={showMoodAxis}
         reserveMoodAxisSpace={reserveMoodAxisSpace}
         missingMoodStyle={missingMoodStyle}
         showMoodLegend={showMoodLegend}
@@ -620,6 +628,17 @@ export default function WeekView({ weekEndDate, onDataReady, chatOpen, activeHig
         <AppUsageRanking data={weekData.flatMap((d) => d.activity)} highlightApps={highlightedApps} highlightPulseKey={highlightPulseKey} />
       </ChartFocusSection>
 
+      {/* 每日完成率改造副本：保留原图不动，底部复制一份用于后续实验 */}
+      <div className="border-t border-gray-100" />
+      <ChartFocusSection id="chart-week-completion-copy">
+        <WeekCompletionSection
+          days={weekData}
+          toggleMoodTrend
+          lineMissingMoodMode="carryForwardDotted"
+          moodPointMode="emoji"
+          showMoodAxis={false}
+        />
+      </ChartFocusSection>
 
     </div>
   )
