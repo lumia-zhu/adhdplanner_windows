@@ -8,39 +8,41 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { tracker } from '../services/tracker'
-
-interface SessionItem {
-  id: string
-  date: string
-  mode: 'daily' | 'weekly'
-  summary: string
-  createdAt: number
-}
-
-interface CommitmentItem {
-  id: string
-  text: string
-  sourceDate: string
-  status: string
-  createdAt: number
-}
-
-interface MemoryStore {
-  sessions: SessionItem[]
-  commitments: CommitmentItem[]
-  lastUpdated: number
-}
+import {
+  deleteMemoryItem,
+  loadMemory,
+  type MemoryItemType,
+  type MemoryStore,
+} from '../services/memory-manager'
 
 interface MemoryPanelProps {
   visible: boolean
   onClose: () => void
 }
 
-const EMPTY_STORE: MemoryStore = { sessions: [], commitments: [], lastUpdated: 0 }
+type MemoryTab = 'all' | 'planning' | 'execution' | 'reflection'
+
+const MEMORY_TABS: { id: MemoryTab; label: string }[] = [
+  { id: 'all', label: '全部' },
+  { id: 'planning', label: '计划' },
+  { id: 'execution', label: '执行' },
+  { id: 'reflection', label: '反思' },
+]
+
+const EMPTY_STORE: MemoryStore = {
+  sessions: [],
+  commitments: [],
+  firstSteps: [],
+  stableFirstSteps: [],
+  stuckReasons: [],
+  hintFeedback: [],
+  lastUpdated: 0,
+}
 
 export default function MemoryPanel({ visible, onClose }: MemoryPanelProps) {
   const [store, setStore] = useState<MemoryStore>(EMPTY_STORE)
   const [loading, setLoading] = useState(true)
+  const [activeTab, setActiveTab] = useState<MemoryTab>('all')
 
   useEffect(() => {
     const styleId = 'memory-panel-anim'
@@ -62,15 +64,7 @@ export default function MemoryPanel({ visible, onClose }: MemoryPanelProps) {
   const loadData = useCallback(async () => {
     try {
       setLoading(true)
-      const raw = await window.electronAPI.loadMemoryStore()
-      if (raw && typeof raw === 'object') {
-        const s = raw as MemoryStore
-        setStore({
-          sessions: Array.isArray(s.sessions) ? s.sessions : [],
-          commitments: Array.isArray(s.commitments) ? s.commitments : [],
-          lastUpdated: s.lastUpdated || 0,
-        })
-      }
+      setStore(await loadMemory())
     } catch (e) {
       console.warn('[MemoryPanel] 加载失败:', e)
     } finally {
@@ -84,32 +78,76 @@ export default function MemoryPanel({ visible, onClose }: MemoryPanelProps) {
 
   if (!visible) return null
 
+  const firstStepId = (item: { date: string; taskTitle: string; microAction: string }, index: number) =>
+    `${item.date}|${item.taskTitle}|${item.microAction}|${index}`
+  const stableFirstStepId = (item: { taskKey: string; microAction: string }) =>
+    `${item.taskKey}|${item.microAction}`
+  const stuckReasonId = (item: { date: string; taskTitle: string; microAction: string }, index: number) =>
+    `${item.date}|${item.taskTitle}|${item.microAction}|${index}`
+  const hintFeedbackId = (item: { date: string; taskTitle: string; hintText: string }, index: number) =>
+    `${item.date}|${item.taskTitle}|${item.hintText}|${index}`
+
   const sessions = [...store.sessions].sort((a, b) => b.createdAt - a.createdAt).slice(0, 10)
   const commitments = [...store.commitments].sort((a, b) => b.createdAt - a.createdAt).slice(0, 10)
-  const isEmpty = sessions.length === 0 && commitments.length === 0
+  const stableFirstSteps = [...store.stableFirstSteps]
+    .map(item => ({ ...item, itemId: stableFirstStepId(item) }))
+    .sort((a, b) => b.confidence - a.confidence)
+    .slice(0, 8)
+  const firstSteps = store.firstSteps
+    .map((item, index) => ({ ...item, itemId: firstStepId(item, index) }))
+    .slice(0, 8)
+  const stuckReasons = store.stuckReasons
+    .map((item, index) => ({ ...item, itemId: stuckReasonId(item, index) }))
+    .slice(-10)
+    .reverse()
+  const hintFeedback = store.hintFeedback
+    .map((item, index) => ({ ...item, itemId: hintFeedbackId(item, index) }))
+    .slice(-8)
+    .reverse()
+  const isEmpty = sessions.length === 0 &&
+    commitments.length === 0 &&
+    stableFirstSteps.length === 0 &&
+    firstSteps.length === 0 &&
+    stuckReasons.length === 0 &&
+    hintFeedback.length === 0
+  const tabCounts: Record<MemoryTab, number> = {
+    all: sessions.length + commitments.length + stableFirstSteps.length + firstSteps.length + stuckReasons.length + hintFeedback.length,
+    planning: stableFirstSteps.length + firstSteps.length,
+    execution: stuckReasons.length + hintFeedback.length,
+    reflection: sessions.length + commitments.length,
+  }
+  const showAll = activeTab === 'all'
+  const showPlanning = showAll || activeTab === 'planning'
+  const showExecution = showAll || activeTab === 'execution'
+  const showReflection = showAll || activeTab === 'reflection'
+  const hasPlanning = tabCounts.planning > 0
+  const hasExecution = tabCounts.execution > 0
+  const hasReflection = tabCounts.reflection > 0
+  const activeTabEmpty = !isEmpty && tabCounts[activeTab] === 0
+  const emptyMessageByTab: Record<MemoryTab, string> = {
+    all: '还没有记忆',
+    planning: '计划阶段还没有记忆',
+    execution: '执行阶段还没有记忆',
+    reflection: '反思阶段还没有记忆',
+  }
+  const emptyHintByTab: Record<MemoryTab, string> = {
+    all: '开始、执行或反思任务后就会出现',
+    planning: '选择第一步后会沉淀启动偏好',
+    execution: '提交卡住原因或提示反馈后会出现',
+    reflection: '完成反思对话后会出现摘要和承诺',
+  }
 
   const threeDaysAgo = Date.now() - 3 * 24 * 60 * 60 * 1000
 
-  const handleDelete = async (type: 'session' | 'commitment', id: string) => {
-    tracker.track('memory.deleted', { type, itemId: id })
+  const handleDelete = async (type: MemoryItemType, id: string) => {
+    if (type === 'session' || type === 'commitment') {
+      tracker.track('memory.deleted', { type, itemId: id })
+    }
     setDeletedId(id)
 
     setTimeout(async () => {
       try {
-        const fresh = await window.electronAPI.loadMemoryStore() as MemoryStore | null
-        if (!fresh) return
-
-        const updated: MemoryStore = {
-          sessions: type === 'session'
-            ? (fresh.sessions || []).filter(s => s.id !== id)
-            : (fresh.sessions || []),
-          commitments: type === 'commitment'
-            ? (fresh.commitments || []).filter(c => c.id !== id)
-            : (fresh.commitments || []),
-          lastUpdated: Date.now(),
-        }
-
-        await window.electronAPI.saveMemoryStore(updated)
+        const updated = await deleteMemoryItem(type, id)
         setStore(updated)
       } catch (e) {
         console.warn('[MemoryPanel] 删除失败:', e)
@@ -142,6 +180,22 @@ export default function MemoryPanel({ visible, onClose }: MemoryPanelProps) {
     if (parts.length === 3) return `${parseInt(parts[1])}/${parseInt(parts[2])}`
     return date
   }
+
+  const DeleteButton = ({ type, id, title }: { type: MemoryItemType; id: string; title: string }) => (
+    <button
+      onClick={() => handleDelete(type, id)}
+      className="flex-shrink-0 w-6 h-6 rounded-md flex items-center justify-center
+                 text-gray-300 opacity-0 group-hover:opacity-100
+                 hover:text-red-400 hover:bg-red-50 transition-all"
+      title={title}
+    >
+      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+          d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+        />
+      </svg>
+    </button>
+  )
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -178,11 +232,37 @@ export default function MemoryPanel({ visible, onClose }: MemoryPanelProps) {
           </button>
         </div>
 
+        {!loading && !isEmpty && (
+          <div className="px-6 pb-3 flex-shrink-0">
+            <div className="grid grid-cols-4 gap-1 rounded-xl bg-gray-50 p-1">
+              {MEMORY_TABS.map(tab => {
+                const active = activeTab === tab.id
+                return (
+                  <button
+                    key={tab.id}
+                    onClick={() => setActiveTab(tab.id)}
+                    className={`h-8 rounded-lg text-xs font-medium transition-all ${
+                      active
+                        ? 'bg-white text-indigo-600 shadow-sm'
+                        : 'text-gray-500 hover:text-gray-700 hover:bg-white/60'
+                    }`}
+                  >
+                    <span>{tab.label}</span>
+                    <span className={`ml-1 ${active ? 'text-indigo-400' : 'text-gray-300'}`}>
+                      {tabCounts[tab.id]}
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        )}
+
         {/* 内容区 */}
         <div className="flex-1 overflow-y-auto px-6 pb-5">
           {loading ? (
             <div className="py-12 text-center text-sm text-gray-400">加载中...</div>
-          ) : isEmpty ? (
+          ) : isEmpty || activeTabEmpty ? (
             <div className="py-16 text-center">
               <div className="w-12 h-12 mx-auto mb-3 rounded-full bg-gray-50 flex items-center justify-center">
                 <svg className="w-6 h-6 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -191,13 +271,113 @@ export default function MemoryPanel({ visible, onClose }: MemoryPanelProps) {
                   />
                 </svg>
               </div>
-              <p className="text-sm text-gray-400">还没有记忆</p>
-              <p className="text-xs text-gray-300 mt-1">完成一次反思对话后就会出现</p>
+              <p className="text-sm text-gray-400">{emptyMessageByTab[activeTab]}</p>
+              <p className="text-xs text-gray-300 mt-1">{emptyHintByTab[activeTab]}</p>
             </div>
           ) : (
             <>
+              {/* 计划阶段 */}
+              {showPlanning && hasPlanning && (
+                <div className="mb-5">
+                  <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">计划阶段</h4>
+                  <p className="text-xs text-gray-400 mb-3">你通常如何启动任务</p>
+                  <div className="space-y-2">
+                    {stableFirstSteps.map(item => (
+                      <div
+                        key={item.itemId}
+                        className={`group flex items-start gap-3 px-3 py-2.5 rounded-xl border border-gray-100 hover:border-gray-200 transition-all ${
+                          deletedId === item.itemId ? 'opacity-0 scale-95 transition-all duration-300' : ''
+                        }`}
+                      >
+                        <span className="flex-shrink-0 text-xs text-indigo-500 bg-indigo-50 px-2 py-0.5 rounded-md mt-0.5 whitespace-nowrap">
+                          稳定
+                        </span>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm text-gray-700 leading-relaxed">
+                            类似「{item.taskExamples[0] ?? item.taskKey}」时，常用第一步：{item.microAction}
+                          </p>
+                          <p className="text-xs text-gray-400 mt-1">
+                            使用 {item.count} 次 · 置信度 {Math.round(item.confidence * 100)}%
+                          </p>
+                        </div>
+                        <DeleteButton type="stableFirstStep" id={item.itemId} title="删除这条启动偏好" />
+                      </div>
+                    ))}
+                    {firstSteps.map(item => (
+                      <div
+                        key={item.itemId}
+                        className={`group flex items-start gap-3 px-3 py-2.5 rounded-xl border border-gray-100 hover:border-gray-200 transition-all ${
+                          deletedId === item.itemId ? 'opacity-0 scale-95 transition-all duration-300' : ''
+                        }`}
+                      >
+                        <span className="flex-shrink-0 text-xs text-gray-400 bg-gray-50 px-2 py-0.5 rounded-md mt-0.5 whitespace-nowrap">
+                          {formatCommitmentDate(item.date)}
+                        </span>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm text-gray-700 leading-relaxed">{item.taskTitle}</p>
+                          <p className="text-xs text-gray-400 mt-1">第一步：{item.microAction}</p>
+                        </div>
+                        <DeleteButton type="firstStep" id={item.itemId} title="删除这条第一步记录" />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {showAll && hasPlanning && (hasExecution || hasReflection) && (
+                  <div className="border-t border-gray-100 my-4" />
+                )}
+
+              {/* 执行阶段 */}
+              {showExecution && hasExecution && (
+                <div className="mb-5">
+                  <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">执行阶段</h4>
+                  <p className="text-xs text-gray-400 mb-3">任务执行时的卡点和提示反馈</p>
+                  <div className="space-y-2">
+                    {stuckReasons.map(item => (
+                      <div
+                        key={item.itemId}
+                        className={`group flex items-start gap-3 px-3 py-2.5 rounded-xl border border-gray-100 hover:border-gray-200 transition-all ${
+                          deletedId === item.itemId ? 'opacity-0 scale-95 transition-all duration-300' : ''
+                        }`}
+                      >
+                        <span className="flex-shrink-0 text-xs text-amber-600 bg-amber-50 px-2 py-0.5 rounded-md mt-0.5 whitespace-nowrap">
+                          卡住
+                        </span>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm text-gray-700 leading-relaxed">{item.reason}</p>
+                          <p className="text-xs text-gray-400 mt-1">{formatCommitmentDate(item.date)} · {item.taskTitle} / {item.microAction}</p>
+                        </div>
+                        <DeleteButton type="stuckReason" id={item.itemId} title="删除这条卡住记录" />
+                      </div>
+                    ))}
+                    {hintFeedback.map(item => (
+                      <div
+                        key={item.itemId}
+                        className={`group flex items-start gap-3 px-3 py-2.5 rounded-xl border border-gray-100 hover:border-gray-200 transition-all ${
+                          deletedId === item.itemId ? 'opacity-0 scale-95 transition-all duration-300' : ''
+                        }`}
+                      >
+                        <span className="flex-shrink-0 text-xs text-gray-400 bg-gray-50 px-2 py-0.5 rounded-md mt-0.5 whitespace-nowrap">
+                          {item.feedback === 'up' ? '有用' : '无效'}
+                        </span>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm text-gray-700 leading-relaxed">{item.hintText}</p>
+                          <p className="text-xs text-gray-400 mt-1">{formatCommitmentDate(item.date)} · {item.taskTitle}</p>
+                        </div>
+                        <DeleteButton type="hintFeedback" id={item.itemId} title="删除这条提示反馈" />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {showAll && hasExecution && hasReflection && (
+                <div className="border-t border-gray-100 my-4" />
+              )}
+
               {/* 反思摘要 */}
-              {sessions.length > 0 && (
+              {showReflection && sessions.length > 0 && (
                 <div className="mb-5">
                   <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">反思摘要</h4>
                   <p className="text-xs text-gray-400 mb-3">每次反思对话中提炼的要点</p>
@@ -230,19 +410,7 @@ export default function MemoryPanel({ visible, onClose }: MemoryPanelProps) {
                             </button>
                           )}
                         </div>
-                        <button
-                          onClick={() => handleDelete('session', s.id)}
-                          className="flex-shrink-0 w-6 h-6 rounded-md flex items-center justify-center
-                                     text-gray-300 opacity-0 group-hover:opacity-100
-                                     hover:text-red-400 hover:bg-red-50 transition-all"
-                          title="删除这条摘要"
-                        >
-                          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                              d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                            />
-                          </svg>
-                        </button>
+                        <DeleteButton type="session" id={s.id} title="删除这条摘要" />
                       </div>
                     ))}
                   </div>
@@ -250,12 +418,12 @@ export default function MemoryPanel({ visible, onClose }: MemoryPanelProps) {
               )}
 
               {/* 分割线 */}
-              {sessions.length > 0 && commitments.length > 0 && (
+              {showReflection && sessions.length > 0 && commitments.length > 0 && (
                 <div className="border-t border-gray-100 my-4" />
               )}
 
               {/* 想法与承诺 */}
-              {commitments.length > 0 && (
+              {showReflection && commitments.length > 0 && (
                 <div>
                   <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">想法与承诺</h4>
                   <p className="text-xs text-gray-400 mb-3">你在反思时提到过想尝试的事</p>
@@ -290,19 +458,7 @@ export default function MemoryPanel({ visible, onClose }: MemoryPanelProps) {
                               </button>
                             )}
                           </div>
-                          <button
-                            onClick={() => handleDelete('commitment', c.id)}
-                            className="flex-shrink-0 w-6 h-6 rounded-md flex items-center justify-center
-                                       text-gray-300 opacity-0 group-hover:opacity-100
-                                       hover:text-red-400 hover:bg-red-50 transition-all"
-                            title="删除这条承诺"
-                          >
-                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                              />
-                            </svg>
-                          </button>
+                          <DeleteButton type="commitment" id={c.id} title="删除这条承诺" />
                         </div>
                       )
                     })}

@@ -27,6 +27,7 @@ import { computeActiveTimeRange } from '../utils/activity-time-range'
 import AppUsageRanking from './AppUsageRanking'
 import ReflectionChat from './ReflectionChat'
 import type { ReflectionChatHandle, VisualFocusType, VisualRef } from './ReflectionChat'
+import { expireOldCommitments, getMemorySummaryForPrompt, recordReflectionMemory } from '../services/memory-manager'
 import ManualTimeEntry from './ManualTimeEntry'
 import MiniCalendar from './MiniCalendar'
 import WeekView from './WeekView'
@@ -734,74 +735,9 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
     setMemoryLoaded(false)
     ;(async () => {
       try {
-        const store = (await window.electronAPI.loadMemoryStore()) as {
-          sessions?: { date: string; mode: string; summary: string; createdAt: number }[]
-          commitments?: { text: string; sourceDate: string; status: string; createdAt: number }[]
-        } | null
-        console.log('[Memory Debug] loadMemoryStore 返回:', store ? `sessions=${(store.sessions ?? []).length}, commitments=${(store.commitments ?? []).length}` : 'null')
-        if (store?.sessions) {
-          for (const s of store.sessions) console.log(`  session: [${s.date}] ${s.mode} — ${s.summary?.slice(0, 40)}...`)
-        }
-        if (!store) { setMemoryContext(''); return }
-
-        const parts: string[] = []
-
-        // 按 id 去重，同日期+模式只保留最新一条
-        const rawSessions = Array.isArray(store.sessions) ? store.sessions : []
-        const sessionMap = new Map<string, typeof rawSessions[0]>()
-        for (const s of rawSessions) {
-          const key = s.date + '-' + s.mode
-          const existing = sessionMap.get(key)
-          if (!existing || s.createdAt > existing.createdAt) sessionMap.set(key, s)
-        }
-        const sessions = [...sessionMap.values()].sort((a, b) => a.createdAt - b.createdAt)
-        const recentSessions = sessions.slice(-3)
-        console.log('[Memory Debug] 去重后 sessions:', sessions.length, ', 取最后3条:', recentSessions.map(s => s.date))
-        if (recentSessions.length > 0) {
-          parts.push('## 近期反思摘要')
-          for (const s of recentSessions) {
-            parts.push(`- [${s.date}] ${s.summary}`)
-          }
-        }
-
-        // 超 7 天的 active 承诺自动标记为 expired
-        const commitments = Array.isArray(store.commitments) ? store.commitments : []
-        const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000
-        let expiredAny = false
-        for (const c of commitments) {
-          if (c.status === 'active' && c.createdAt < sevenDaysAgo) {
-            c.status = 'expired'
-            expiredAny = true
-          }
-        }
-        if (expiredAny) {
-          store.commitments = commitments
-          window.electronAPI.saveMemoryStore(store).catch(() => {})
-        }
-
-        // 承诺分两层：近期可自然引用，稍早仅作背景
-        const threeDaysAgo = Date.now() - 3 * 24 * 60 * 60 * 1000
-        const recentCommitments = commitments
-          .filter(c => c.status === 'active' && c.createdAt >= threeDaysAgo)
-          .slice(-3)
-        const olderCommitments = commitments
-          .filter(c => c.status === 'active' && c.createdAt < threeDaysAgo && c.createdAt >= sevenDaysAgo)
-          .slice(-2)
-
-        if (recentCommitments.length > 0) {
-          parts.push('## 用户近期提到想尝试的事')
-          for (const c of recentCommitments) {
-            parts.push(`- [${c.sourceDate}] ${c.text}`)
-          }
-        }
-        if (olderCommitments.length > 0) {
-          parts.push('## 用户之前提过的想法（仅供了解背景，绝对不要主动提起或追问）')
-          for (const c of olderCommitments) {
-            parts.push(`- [${c.sourceDate}] ${c.text}`)
-          }
-        }
-
-        const ctx = parts.length > 0 ? parts.join('\n') : ''
+        const store = await expireOldCommitments()
+        console.log('[Memory Debug] loadMemory 返回:', `sessions=${store.sessions.length}, commitments=${store.commitments.length}`)
+        const ctx = getMemorySummaryForPrompt(store, { phase: 'reflection' })
         console.log('[Memory Debug] 最终 memoryContext 长度:', ctx.length, ctx ? `\n${ctx}` : '(空)')
         setMemoryContext(ctx)
       } catch (e) {
@@ -1899,37 +1835,10 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
           const chatMsgs = raw.messages.filter(m => m.content.length > 0)
           const result = await extractMemoryFromChat(chatMsgs, aiConfig)
           if (result && (result.summary || result.commitments.length > 0)) {
-            const store = (await window.electronAPI.loadMemoryStore()) as {
-              sessions?: unknown[]; commitments?: unknown[]; lastUpdated?: number
-            } || { sessions: [], commitments: [], lastUpdated: 0 }
-
-            if (result.summary) {
-              const sessions = Array.isArray(store.sessions) ? store.sessions : []
-              const sessionId = `${raw.date}-${raw.mode}`
-              const existIdx = sessions.findIndex((s: { id?: string }) => s.id === sessionId)
-              const entry = { id: sessionId, date: raw.date, mode: raw.mode, summary: result.summary, createdAt: Date.now() }
-              if (existIdx >= 0) {
-                sessions[existIdx] = entry
-              } else {
-                sessions.push(entry)
-              }
-              store.sessions = sessions.slice(-20)
-            }
-            if (result.commitments.length > 0) {
-              const commitments = Array.isArray(store.commitments) ? store.commitments : []
-              for (const text of result.commitments) {
-                commitments.push({
-                  id: `${raw.date}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-                  text,
-                  sourceDate: raw.date,
-                  status: 'active',
-                  createdAt: Date.now(),
-                })
-              }
-              store.commitments = commitments
-            }
-            store.lastUpdated = Date.now()
-            await window.electronAPI.saveMemoryStore(store)
+            await recordReflectionMemory(result, {
+              date: raw.date,
+              mode: raw.mode === 'weekly' ? 'weekly' : 'daily',
+            })
             console.log(`[Memory] 补提取完成: ${key}`, result.summary?.slice(0, 50))
           }
           raw.status = 'processed'

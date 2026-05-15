@@ -9,6 +9,7 @@ import { useState, useEffect, useRef, useCallback, useImperativeHandle, forwardR
 import { tracker } from '../services/tracker'
 import type { AIConfig, ReflectionMessage, MessageContentPart, VisualTarget } from '../services/ai'
 import { chatReflectionStream, extractMemoryFromChat, generateSuggestions, selectReflectionVisualFocus } from '../services/ai'
+import { recordReflectionMemory } from '../services/memory-manager'
 
 interface ChatBubble {
   role: 'user' | 'assistant'
@@ -988,39 +989,7 @@ const ReflectionChat = forwardRef<ReflectionChatHandle, ReflectionChatProps>(fun
         if (result && (result.summary || result.commitments.length > 0)) {
           const dateStr = selectedDate || new Date().toISOString().slice(0, 10)
           try {
-            const store = (await window.electronAPI.loadMemoryStore()) as {
-              sessions?: unknown[]; commitments?: unknown[]; lastUpdated?: number
-            } || { sessions: [], commitments: [], lastUpdated: 0 }
-
-            if (result.summary) {
-              const sessions = Array.isArray(store.sessions) ? store.sessions : []
-              const sessionId = `${dateStr}-${mode}`
-              const existIdx = sessions.findIndex((s: { id?: string }) => s.id === sessionId)
-              const entry = { id: sessionId, date: dateStr, mode, summary: result.summary, createdAt: Date.now() }
-              if (existIdx >= 0) {
-                sessions[existIdx] = entry
-              } else {
-                sessions.push(entry)
-              }
-              store.sessions = sessions.slice(-20)
-            }
-
-            if (result.commitments.length > 0) {
-              const commitments = Array.isArray(store.commitments) ? store.commitments : []
-              for (const text of result.commitments) {
-                commitments.push({
-                  id: `${dateStr}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-                  text,
-                  sourceDate: dateStr,
-                  status: 'active',
-                  createdAt: Date.now(),
-                })
-              }
-              store.commitments = commitments
-            }
-
-            store.lastUpdated = Date.now()
-            await window.electronAPI.saveMemoryStore(store)
+            await recordReflectionMemory(result, { date: dateStr, mode })
             console.log('[Memory] 记忆已保存:', result.summary?.slice(0, 50), result.commitments)
           } catch (e) {
             console.warn('[Memory] 保存记忆失败:', e)

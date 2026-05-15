@@ -22,6 +22,7 @@ import type { ActivityRecord } from './ActivityHeatmap'
 import { aiCache } from '../services/ai-cache'
 import { tracker } from '../services/tracker'
 import { buildDailySummary, type TrackEvent } from '../services/tracker'
+import { loadMemory, recordStuckReason } from '../services/memory-manager'
 import { triggerEffect } from '../effects'
 import AILoadingTips from './AILoadingTips'
 import { getToday } from '../hooks/useDateNavigation'
@@ -376,8 +377,8 @@ function FocusDynamicBar({
       if (aiConfig.apiKey && aiConfig.modelId) {
         setLoadingStuck(true)
         // 加载行为记忆 → 构建卡点预测 hint
-        window.electronAPI.loadMemoryStore()
-          .then(raw => buildStuckHint((raw as any).stuckReasons ?? [], (raw as any).hintFeedback ?? []).forChips)
+        loadMemory()
+          .then(store => buildStuckHint(store.stuckReasons, store.hintFeedback).forChips)
           .catch(() => '')
           .then(hint => generateStuckChips(taskTitle, currentMicroTask, aiConfig, hint || undefined))
           .then(({ chips: c }) => setStuckChips(c))
@@ -781,18 +782,12 @@ function FocusDynamicBar({
     const stuckCategory = classifyStuckReason(trimmedReason)
     const stuckResponseMode = classifyStuckResponseMode(trimmedReason, stuckCategory)
 
-    // 行为学习：记录卡住原因到 MemoryStore
-    window.electronAPI.loadMemoryStore().then(raw => {
-      const store = raw as any
-      if (!store.stuckReasons) store.stuckReasons = []
-      store.stuckReasons.push({
-        taskTitle: session.taskTitle,
-        microAction: currentMicroTask,
-        reason: trimmedReason,
-        date: getToday(),
-      })
-      store.stuckReasons = store.stuckReasons.slice(-30)
-      window.electronAPI.saveMemoryStore(store)
+    // 行为学习：记录卡住原因到统一 MemoryStore。
+    recordStuckReason({
+      taskTitle: session.taskTitle,
+      microAction: currentMicroTask,
+      reason: trimmedReason,
+      date: getToday(),
     }).catch(() => {})
 
     // 切换到 stuck_b 阶段（显示 AI 急救对话）
@@ -804,15 +799,12 @@ function FocusDynamicBar({
     setStuckMessages([])
 
     Promise.all([
-      window.electronAPI.loadMemoryStore().catch(() => null),
+      loadMemory().catch(() => null),
       buildProductivityContext(trimmedReason).catch(() => undefined),
       buildStuckActiveAppContext().catch(() => undefined),
     ])
       .then(([raw, productivityContext, activeAppContext]) => {
-        const hints = buildStuckHint(
-          (raw as any)?.stuckReasons ?? [],
-          (raw as any)?.hintFeedback ?? [],
-        )
+        const hints = buildStuckHint(raw?.stuckReasons ?? [], raw?.hintFeedback ?? [])
         const context: StuckChatContext = {
           taskTitle,
           currentStep: currentMicroTask,

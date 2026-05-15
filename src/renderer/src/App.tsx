@@ -17,6 +17,7 @@ import ReflectionView from './components/ReflectionView'
 import QuickFocusEndDialog from './components/QuickFocusEndDialog'
 import AuthPage from './components/AuthPage'
 import MemoryPanel from './components/MemoryPanel'
+import { loadMemory } from './services/memory-manager'
 
 import { useDateNavigation, getToday } from './hooks/useDateNavigation'
 import { useWidgetMode } from './hooks/useWidgetMode'
@@ -170,7 +171,7 @@ export default function App() {
           window.electronAPI.loadAIConfig().catch(() => null),
           window.electronAPI.loadProfile().catch(() => null),
           window.electronAPI.getWindowMode().catch(() => null),
-          window.electronAPI.loadMemoryStore().catch(() => null),
+          loadMemory().catch(() => null),
         ])
 
         if (authResult.user && typeof authResult.user === 'object') {
@@ -206,9 +207,15 @@ export default function App() {
         } else if (authResult.user && shouldRestoreReflection()) {
           widgetMode.setShowReflection(true)
         }
-        if (memoryStore && typeof memoryStore === 'object') {
-          const ms = memoryStore as { sessions?: unknown[]; commitments?: unknown[] }
-          setHasMemory((ms.sessions?.length || 0) > 0 || (ms.commitments?.length || 0) > 0)
+        if (memoryStore) {
+          setHasMemory(
+            memoryStore.sessions.length > 0 ||
+            memoryStore.commitments.length > 0 ||
+            memoryStore.firstSteps.length > 0 ||
+            memoryStore.stableFirstSteps.length > 0 ||
+            memoryStore.stuckReasons.length > 0 ||
+            memoryStore.hintFeedback.length > 0,
+          )
         }
       } catch (e) {
         console.error('启动初始化失败:', e)

@@ -17,6 +17,7 @@ import type { AIConfig, MicroActionChip } from '../services/ai'
 import { buildStartupHint } from '../services/ai'
 import { aiCache } from '../services/ai-cache'
 import { findStartupMemoryMatches, mergeStartupSuggestions } from '../services/startup-memory'
+import { loadMemory } from '../services/memory-manager'
 import AILoadingTips from './AILoadingTips'
 
 const BAR_W = 560
@@ -120,9 +121,8 @@ export default function StandbyWidget({
     setChipError(null)
     setLoadingChips(true)
     const subtaskTitle = (task.subtasks ?? []).find(s => !s.completed)?.title
-    window.electronAPI.loadMemoryStore()
-      .then(raw => {
-        const store = raw as any
+    loadMemory()
+      .then(store => {
         const memoryChips = findStartupMemoryMatches(task.title, subtaskTitle, store)
         const hint = buildStartupHint(store.firstSteps ?? [])
         if (!hasAI) {

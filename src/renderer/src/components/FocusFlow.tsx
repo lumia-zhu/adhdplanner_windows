@@ -20,6 +20,7 @@ import { generateReflectionQuestion, generateFollowUpQuestion, getRandomFallback
 import { tracker } from '../services/tracker'
 import { aiCache } from '../services/ai-cache'
 import { findStartupMemoryMatches, mergeStartupSuggestions } from '../services/startup-memory'
+import { loadMemory } from '../services/memory-manager'
 import AILoadingTips from './AILoadingTips'
 
 // ★ Feature Flag：关闭任务理解阶段，直接进入第一步选择
@@ -237,9 +238,8 @@ export default function FocusFlow({ task, aiConfig, onStart, onCancel }: FocusFl
     let cancelled = false
 
     // 加载行为记忆 → 合并本地记忆建议和 AI 建议，UI 仍保持同一组按钮
-    window.electronAPI.loadMemoryStore()
-      .then(raw => {
-        const store = raw as any
+    loadMemory()
+      .then(store => {
         const memoryChips = findStartupMemoryMatches(task.title, activeSubtask?.title, store)
         const hint = buildStartupHint(store.firstSteps ?? [])
         if (!hasAIForChips) {
