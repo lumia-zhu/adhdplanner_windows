@@ -20,11 +20,13 @@ interface RankedTaskItem extends TaskDurationItem {
 
 interface Props {
   days: WeekDayData[]
+  highlightTask?: string | null
+  highlightPulseKey?: string
 }
 
 const DEFAULT_SHOW = 10
 
-export default function WeekTaskRanking({ days }: Props) {
+export default function WeekTaskRanking({ days, highlightTask, highlightPulseKey }: Props) {
   const [showAll, setShowAll] = useState(false)
 
   // 合并 7 天任务，按时长降序
@@ -54,9 +56,13 @@ export default function WeekTaskRanking({ days }: Props) {
     <div className="space-y-2">
       {visible.map((item, i) => {
         const barWidthPct = Math.max((item.durationSec / maxSec) * 100, 4)
+        const isHighlighted = highlightTask === item.title
 
         return (
-          <div key={`${item.date}-${item.title}-${i}`}>
+          <div
+            key={`${item.date}-${item.title}-${i}-${isHighlighted ? highlightPulseKey ?? 'pulse' : 'idle'}`}
+            className={`rounded-xl transition-all duration-200 ${isHighlighted ? 'ai-focus-target' : ''}`}
+          >
             <div className="flex items-center gap-2.5">
               <span className="text-xxs text-gray-600 w-[100px] text-right flex-shrink-0 leading-tight break-words truncate"
                 title={item.title}

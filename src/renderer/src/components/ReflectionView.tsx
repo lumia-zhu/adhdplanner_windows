@@ -32,6 +32,7 @@ import MiniCalendar from './MiniCalendar'
 import WeekView from './WeekView'
 import type { WeekDayData } from './WeekView'
 import { getWeekDates } from './WeekView'
+import { computeWeekActiveTimeRange } from './WeekHeatmapGrid'
 import { tracker } from '../services/tracker'
 import { getMoodOptionForDate, parseMoodRecord } from '../utils/mood'
 
@@ -228,7 +229,10 @@ const PROMPT_EXCLUDED_APP_NAMES = new Set([
 const HIGHLIGHT_DURATION_MS = 5000
 const HIGHLIGHT_START_DELAY_MS = 160
 const SPOTLIGHT_FADE_OUT_MS = 500
-const SPOTLIGHT_WAIT_VISIBLE_MS = 1000
+const SPOTLIGHT_WAIT_VISIBLE_MS = 2200
+const SPOTLIGHT_TARGET_LOOKUP_MS = 300
+const SPOTLIGHT_SCROLL_STABLE_FRAMES = 6
+const SPOTLIGHT_SCROLL_EPSILON_PX = 0.5
 
 const FOCUS_FALLBACK_CHARTS: Record<VisualFocusType, string> = {
   'activity-hour': 'chart-activity-heatmap',
@@ -269,9 +273,12 @@ interface SpotlightRect {
   left: number
   right: number
   bottom: number
+  panelTop: number
+  panelLeft: number
+  panelRight: number
+  panelBottom: number
   panelWidth: number
   panelHeight: number
-  scrollTop: number
 }
 
 function formatClockTime(ts: number): string {
@@ -346,6 +353,58 @@ function findBestAppNameMatch(value: string, records: ActivityRecord[]): string 
   }) ?? null
 }
 
+function getWeekTaskDurations(days: WeekDayData[]): TaskDurationItem[] {
+  return days
+    .flatMap(day => day.taskDurations)
+    .filter(task => task.durationSec > 0)
+    .sort((a, b) => b.durationSec - a.durationSec)
+}
+
+function buildActivityTargets(records: ActivityRecord[], chartId: string, rangeStart: number, rangeEnd: number): VisualTarget[] {
+  const targets: VisualTarget[] = []
+  const hourBuckets = Array.from({ length: 24 }, () => 0)
+  for (const record of records) {
+    const hour = new Date(record.ts).getHours()
+    hourBuckets[hour] += getActiveRatio(record)
+  }
+
+  for (let hour = rangeStart; hour < rangeEnd; hour++) {
+    if (hourBuckets[hour] <= 0) continue
+    targets.push({
+      targetId: `activity:hour:${hour}`,
+      type: 'activity_hour',
+      chartId,
+      label: `${hour}:00-${hour + 1}:00 电脑活动`,
+      value: String(hour),
+      startHour: hour,
+      endHour: hour + 1,
+    })
+  }
+
+  let activeRangeStart: number | null = null
+  for (let hour = rangeStart; hour <= rangeEnd; hour++) {
+    const isActive = hour < rangeEnd && hourBuckets[hour] > 0
+    if (isActive && activeRangeStart == null) activeRangeStart = hour
+    if ((!isActive || hour === rangeEnd) && activeRangeStart != null) {
+      const activeRangeEnd = hour
+      if (activeRangeEnd - activeRangeStart >= 2) {
+        targets.push({
+          targetId: `activity:range:${activeRangeStart}-${activeRangeEnd}`,
+          type: 'activity_range',
+          chartId,
+          label: `${activeRangeStart}:00-${activeRangeEnd}:00 电脑活动`,
+          value: `${activeRangeStart}-${activeRangeEnd}`,
+          startHour: activeRangeStart,
+          endHour: activeRangeEnd,
+        })
+      }
+      activeRangeStart = null
+    }
+  }
+
+  return targets
+}
+
 function buildVisualMarkerPromptContext(visualTargets: VisualTarget[]): string {
   if (visualTargets.length === 0) {
     return [
@@ -362,7 +421,7 @@ function buildVisualMarkerPromptContext(visualTargets: VisualTarget[]): string {
   return [
     '流式同步高亮可用局部 targetId（只能从这里选，禁止编造）：',
     JSON.stringify(visualTargets.slice(0, 40)),
-    '如果只确定整张图而不确定局部位置，可用 chartId：chart-key-metrics、chart-task-duration、chart-activity-heatmap、chart-rhythm、chart-app-usage。',
+    '如果只确定整张图而不确定局部位置，可用对应 chartId。',
   ].join('\n')
 }
 
@@ -515,6 +574,7 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
   const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const highlightStartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const spotlightWaitFrameRef = useRef<number | null>(null)
+  const spotlightRequestRef = useRef(0)
   const chartHighlightRef = useRef<string | null>(null)
 
   // ---- AI 浮标气泡 ----
@@ -1087,45 +1147,7 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
       },
     ]
 
-    const hourBuckets = Array.from({ length: 24 }, () => 0)
-    for (const record of displayActivityData) {
-      const hour = new Date(record.ts).getHours()
-      hourBuckets[hour] += getActiveRatio(record)
-    }
-
-    for (let hour = sharedRangeStart; hour < sharedRangeEnd; hour++) {
-      if (hourBuckets[hour] <= 0) continue
-      targets.push({
-        targetId: `activity:hour:${hour}`,
-        type: 'activity_hour',
-        chartId: 'chart-activity-heatmap',
-        label: `${hour}:00-${hour + 1}:00 电脑活动`,
-        value: String(hour),
-        startHour: hour,
-        endHour: hour + 1,
-      })
-    }
-
-    let rangeStart: number | null = null
-    for (let hour = sharedRangeStart; hour <= sharedRangeEnd; hour++) {
-      const isActive = hour < sharedRangeEnd && hourBuckets[hour] > 0
-      if (isActive && rangeStart == null) rangeStart = hour
-      if ((!isActive || hour === sharedRangeEnd) && rangeStart != null) {
-        const rangeEnd = hour
-        if (rangeEnd - rangeStart >= 2) {
-          targets.push({
-            targetId: `activity:range:${rangeStart}-${rangeEnd}`,
-            type: 'activity_range',
-            chartId: 'chart-activity-heatmap',
-            label: `${rangeStart}:00-${rangeEnd}:00 电脑活动`,
-            value: `${rangeStart}-${rangeEnd}`,
-            startHour: rangeStart,
-            endHour: rangeEnd,
-          })
-        }
-        rangeStart = null
-      }
-    }
+    targets.push(...buildActivityTargets(displayActivityData, 'chart-activity-heatmap', sharedRangeStart, sharedRangeEnd))
 
     for (const task of taskDurations.slice(0, 8)) {
       targets.push({
@@ -1149,6 +1171,64 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
 
     return targets
   }, [displayActivityData, sharedRangeEnd, sharedRangeStart, taskDurations, viewMode])
+
+  const weekVisualTargets = useMemo<VisualTarget[]>(() => {
+    if (viewMode !== 'week' || !weekDayData || weekDayData.length === 0) return []
+
+    const targets: VisualTarget[] = [
+      {
+        targetId: 'metric:completed-tasks',
+        type: 'metric',
+        chartId: 'chart-week-metrics',
+        label: '日均完成任务数',
+        value: 'completed-tasks',
+      },
+      {
+        targetId: 'metric:computer-usage',
+        type: 'metric',
+        chartId: 'chart-week-metrics',
+        label: '日均电脑使用时长',
+        value: 'computer-usage',
+      },
+      {
+        targetId: 'metric:focus-minutes',
+        type: 'metric',
+        chartId: 'chart-week-metrics',
+        label: '日均任务时长',
+        value: 'focus-minutes',
+      },
+    ]
+
+    const weekRange = computeWeekActiveTimeRange(weekDayData)
+    targets.push(...buildActivityTargets(
+      weekDayData.flatMap(day => day.activity),
+      'chart-week-heatmap',
+      weekRange.rangeStart,
+      weekRange.rangeEnd,
+    ))
+
+    for (const task of getWeekTaskDurations(weekDayData).slice(0, 8)) {
+      targets.push({
+        targetId: `task:${task.title}`,
+        type: 'task_duration',
+        chartId: 'chart-week-ranking',
+        label: task.title,
+        value: task.title,
+      })
+    }
+
+    for (const appName of getVisibleAppUsageNames(weekDayData.flatMap(day => day.activity))) {
+      targets.push({
+        targetId: `app:${appName}`,
+        type: 'app_usage',
+        chartId: 'chart-week-app-usage',
+        label: appName,
+        value: appName,
+      })
+    }
+
+    return targets
+  }, [viewMode, weekDayData])
 
   const scrollChartIntoDataPanel = useCallback((chartId: string) => {
     const panel = dataPanelRef.current
@@ -1185,25 +1265,101 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
     }
   }, [])
 
-  const isElementVisibleInDataPanel = useCallback((target: Element) => {
+  const getElementVisibilityInDataPanel = useCallback((target: Element) => {
     const panel = dataPanelRef.current
-    if (!panel || !panel.contains(target)) return false
+    if (!panel || !panel.contains(target)) return null
 
     const panelRect = panel.getBoundingClientRect()
     const targetRect = target.getBoundingClientRect()
     const visibleWidth = Math.min(targetRect.right, panelRect.right) - Math.max(targetRect.left, panelRect.left)
     const visibleHeight = Math.min(targetRect.bottom, panelRect.bottom) - Math.max(targetRect.top, panelRect.top)
+    const targetHeight = Math.max(targetRect.height, 1)
+    const measuredHeight = Math.min(targetHeight, Math.max(panelRect.height, 1))
+    const visibleRatio = Math.max(visibleHeight, 0) / measuredHeight
+    const targetCenterRatio = ((targetRect.top + measuredHeight / 2) - panelRect.top) / Math.max(panelRect.height, 1)
 
-    return visibleWidth > 8 && visibleHeight > 8
+    return {
+      panel,
+      panelRect,
+      targetRect,
+      visibleWidth,
+      visibleHeight,
+      visibleRatio,
+      targetCenterRatio,
+    }
   }, [])
 
-  const waitForSpotlightTargetVisible = useCallback((target: Element, onVisible: () => void) => {
+  const scrollElementIntoDataPanel = useCallback((target: Element) => {
+    const metrics = getElementVisibilityInDataPanel(target)
+    if (!metrics) return false
+
+    const { panel, panelRect, targetRect, visibleRatio, targetCenterRatio } = metrics
+    if (visibleRatio >= 0.85 && targetCenterRatio >= 0.28 && targetCenterRatio <= 0.72) return true
+
+    const panelHeight = Math.max(panelRect.height, 1)
+    const targetHeight = Math.max(targetRect.height, 1)
+    const targetAnchorInElement = Math.min(targetHeight * 0.5, panelHeight * 0.42)
+    const desiredAnchorInPanel = panelHeight * 0.46
+    const rawTop = panel.scrollTop + (targetRect.top - panelRect.top) + targetAnchorInElement - desiredAnchorInPanel
+    const maxTop = Math.max(panel.scrollHeight - panel.clientHeight, 0)
+    const targetTop = Math.max(0, Math.min(rawTop, maxTop))
+
+    panel.scrollTo({ top: targetTop, behavior: 'smooth' })
+    return true
+  }, [getElementVisibilityInDataPanel])
+
+  const isElementReadyForSpotlight = useCallback((target: Element) => {
+    const metrics = getElementVisibilityInDataPanel(target)
+    if (!metrics) return false
+
+    const { panelRect, targetRect, visibleWidth, visibleHeight, visibleRatio, targetCenterRatio } = metrics
+    if (visibleWidth <= 8 || visibleHeight <= 8) return false
+
+    const targetFitsInPanel = targetRect.height <= panelRect.height * 0.9
+    if (targetFitsInPanel) {
+      return visibleRatio >= 0.85 && targetCenterRatio >= 0.28 && targetCenterRatio <= 0.72
+    }
+
+    return visibleRatio >= 0.75
+  }, [getElementVisibilityInDataPanel])
+
+  const hasElementVisibleAreaInDataPanel = useCallback((target: Element) => {
+    const metrics = getElementVisibilityInDataPanel(target)
+    if (!metrics) return false
+    return metrics.visibleWidth > 8 && metrics.visibleHeight > 8
+  }, [getElementVisibilityInDataPanel])
+
+  const waitForSpotlightTargetVisible = useCallback((target: Element, requestId: number, onVisible: () => void, onTimeout?: () => void) => {
     cancelSpotlightVisibleWait()
 
     const startedAt = performance.now()
+    scrollElementIntoDataPanel(target)
+    const panel = dataPanelRef.current
+    let lastScrollTop = panel?.scrollTop ?? 0
+    let stableFrameCount = 0
+
     const tick = () => {
+      if (requestId !== spotlightRequestRef.current) {
+        spotlightWaitFrameRef.current = null
+        return
+      }
+
       const elapsed = performance.now() - startedAt
-      if (isElementVisibleInDataPanel(target)) {
+      const currentScrollTop = panel?.scrollTop ?? 0
+      if (Math.abs(currentScrollTop - lastScrollTop) <= SPOTLIGHT_SCROLL_EPSILON_PX) {
+        stableFrameCount += 1
+      } else {
+        stableFrameCount = 0
+      }
+      lastScrollTop = currentScrollTop
+
+      if (isElementReadyForSpotlight(target)) {
+        spotlightWaitFrameRef.current = null
+        onVisible()
+        return
+      }
+
+      if (stableFrameCount >= SPOTLIGHT_SCROLL_STABLE_FRAMES && hasElementVisibleAreaInDataPanel(target)) {
         spotlightWaitFrameRef.current = null
         onVisible()
         return
@@ -1211,6 +1367,7 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
 
       if (elapsed >= SPOTLIGHT_WAIT_VISIBLE_MS) {
         spotlightWaitFrameRef.current = null
+        onTimeout?.()
         return
       }
 
@@ -1218,7 +1375,7 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
     }
 
     spotlightWaitFrameRef.current = window.requestAnimationFrame(tick)
-  }, [cancelSpotlightVisibleWait, isElementVisibleInDataPanel])
+  }, [cancelSpotlightVisibleWait, hasElementVisibleAreaInDataPanel, isElementReadyForSpotlight, scrollElementIntoDataPanel])
 
   const hideSpotlight = useCallback((immediate = false) => {
     if (spotlightFadeTimerRef.current) {
@@ -1250,10 +1407,10 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
     const panelRect = panel.getBoundingClientRect()
     const targetRect = target.getBoundingClientRect()
     const padding = 8
-    const left = Math.max(0, targetRect.left - panelRect.left - padding)
-    const top = Math.max(0, targetRect.top - panelRect.top - padding)
-    const right = Math.min(panel.clientWidth, targetRect.right - panelRect.left + padding)
-    const bottom = Math.min(panel.clientHeight, targetRect.bottom - panelRect.top + padding)
+    const left = Math.max(panelRect.left, targetRect.left - padding)
+    const top = Math.max(panelRect.top, targetRect.top - padding)
+    const right = Math.min(panelRect.right, targetRect.right + padding)
+    const bottom = Math.min(panelRect.bottom, targetRect.bottom + padding)
 
     if (right <= left || bottom <= top) {
       hideSpotlight()
@@ -1271,9 +1428,12 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
       left,
       right,
       bottom,
-      panelWidth: panel.clientWidth,
-      panelHeight: panel.clientHeight,
-      scrollTop: panel.scrollTop,
+      panelTop: panelRect.top,
+      panelLeft: panelRect.left,
+      panelRight: panelRect.right,
+      panelBottom: panelRect.bottom,
+      panelWidth: panelRect.width,
+      panelHeight: panelRect.height,
     })
     setSpotlightVisible(true)
   }, [hideSpotlight])
@@ -1281,11 +1441,59 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
   const findSpotlightTarget = useCallback((fallbackChartId?: string) => {
     const panel = dataPanelRef.current
     if (!panel) return null
-    return panel.querySelector('.ai-focus-target') ??
-      (fallbackChartId ? document.getElementById(fallbackChartId) : null)
+    const fallback = fallbackChartId ? document.getElementById(fallbackChartId) : null
+    if (fallback && panel.contains(fallback)) {
+      return fallback.querySelector('.ai-focus-target') ?? fallback
+    }
+    return panel.querySelector('.ai-focus-target')
   }, [])
 
+  const waitForSpotlightTargetElement = useCallback((fallbackChartId: string | undefined, requestId: number, onFound: (target: Element | null) => void) => {
+    const startedAt = performance.now()
+
+    const tick = () => {
+      if (requestId !== spotlightRequestRef.current) return
+
+      const target = findSpotlightTarget(fallbackChartId)
+      const isLocalTarget = target?.classList.contains('ai-focus-target') ?? false
+      if (isLocalTarget || performance.now() - startedAt >= SPOTLIGHT_TARGET_LOOKUP_MS) {
+        onFound(target)
+        return
+      }
+
+      window.requestAnimationFrame(tick)
+    }
+
+    window.requestAnimationFrame(tick)
+  }, [findSpotlightTarget])
+
+  const showSpotlightForElement = useCallback((target: Element | null, requestId: number, fallbackChartId?: string) => {
+    if (requestId !== spotlightRequestRef.current) return
+
+    const fallback = fallbackChartId ? document.getElementById(fallbackChartId) : null
+    const targetToShow = target ?? fallback
+    if (!targetToShow) return
+
+    waitForSpotlightTargetVisible(targetToShow, requestId, () => {
+      if (requestId !== spotlightRequestRef.current) return
+      window.requestAnimationFrame(() => {
+        if (requestId !== spotlightRequestRef.current) return
+        updateSpotlightFromElement(targetToShow)
+      })
+    }, () => {
+      if (requestId !== spotlightRequestRef.current) return
+      if (fallback && fallback !== targetToShow) {
+        showSpotlightForElement(fallback, requestId)
+        return
+      }
+      updateSpotlightFromElement(targetToShow)
+    })
+  }, [updateSpotlightFromElement, waitForSpotlightTargetVisible])
+
   const handleVisualRef = useCallback((ref: VisualRef) => {
+    const requestId = spotlightRequestRef.current + 1
+    spotlightRequestRef.current = requestId
+
     if (highlightStartTimerRef.current) {
       clearTimeout(highlightStartTimerRef.current)
       highlightStartTimerRef.current = null
@@ -1318,11 +1526,17 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
       const focusRootChartId = focusChartSection(chartId) ?? getChartFocusRootId(chartId)
       scrollChartIntoDataPanel(chartId)
       highlightStartTimerRef.current = setTimeout(() => {
+        if (requestId !== spotlightRequestRef.current) return
         highlightStartTimerRef.current = null
-        waitForSpotlightTargetVisible(el, () => {
-          updateSpotlightFromElement(el)
+        waitForSpotlightTargetVisible(el, requestId, () => {
+          if (requestId !== spotlightRequestRef.current) return
+          window.requestAnimationFrame(() => {
+            if (requestId !== spotlightRequestRef.current) return
+            updateSpotlightFromElement(el)
+          })
           chartHighlightRef.current = chartId
           highlightTimerRef.current = setTimeout(() => {
+            if (requestId !== spotlightRequestRef.current) return
             if (chartHighlightRef.current === chartId) chartHighlightRef.current = null
             setFocusedChartId(current => current === focusRootChartId ? null : current)
             if (spotlightTargetRef.current === el) {
@@ -1341,23 +1555,22 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
     }
 
     if (ref.kind === 'multi-focus') {
+      const fallbackChartId = viewMode === 'week'
+        ? (ref.chartId === 'chart-app-usage' ? 'chart-week-app-usage' : ref.chartId)
+        : ref.chartId
+      const sourceActivityData = viewMode === 'week' && weekDayData
+        ? weekDayData.flatMap(day => day.activity)
+        : displayActivityData
+
       if (viewMode === 'week') {
-        tracker.track('reflect.visual_ref_clicked', {
-          type: 'multi-focus',
-          mode: viewMode,
-          chartId: ref.chartId,
-        })
-        const weekChartId = ref.chartId === 'chart-app-usage' ? 'chart-week-app-usage' : ref.chartId
-        pulseChart(weekChartId)
-        return
+        scrollChartIntoDataPanel(fallbackChartId)
       }
 
-      const fallbackChartId = ref.chartId
       const resolvedApps: string[] = []
       const labels: string[] = []
       for (const sub of ref.refs) {
         if (sub.focusType !== 'app-usage') continue
-        const appName = findBestAppNameMatch(sub.value, displayActivityData)
+        const appName = findBestAppNameMatch(sub.value, sourceActivityData)
         if (appName) {
           resolvedApps.push(appName)
           labels.push(sub.label)
@@ -1381,6 +1594,7 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
       }
 
       highlightStartTimerRef.current = setTimeout(() => {
+        if (requestId !== spotlightRequestRef.current) return
         setActiveHighlight({
           id: `app-usage:multi:${Date.now()}`,
           type: 'app-usage',
@@ -1390,6 +1604,7 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
         })
         highlightStartTimerRef.current = null
         highlightTimerRef.current = setTimeout(() => {
+          if (requestId !== spotlightRequestRef.current) return
           setActiveHighlight(null)
           if (focusRootChartId) setFocusedChartId(current => current === focusRootChartId ? null : current)
           hideSpotlight()
@@ -1402,25 +1617,22 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
     const fallbackChartId = viewMode === 'week'
       ? WEEK_FOCUS_FALLBACK_CHARTS[ref.focusType]
       : FOCUS_FALLBACK_CHARTS[ref.focusType]
-
-    if (viewMode === 'week') {
-      tracker.track('reflect.visual_ref_clicked', {
-        type: ref.focusType,
-        value: ref.value,
-        matched: false,
-        fallbackChartId,
-        mode: viewMode,
-      })
-      pulseChart(fallbackChartId)
-      return
-    }
+    const sourceActivityData = viewMode === 'week' && weekDayData
+      ? weekDayData.flatMap(day => day.activity)
+      : displayActivityData
+    const sourceTaskDurations = viewMode === 'week' && weekDayData
+      ? getWeekTaskDurations(weekDayData)
+      : taskDurations
+    const activeRange = viewMode === 'week' && weekDayData
+      ? computeWeekActiveTimeRange(weekDayData)
+      : { rangeStart: sharedRangeStart, rangeEnd: sharedRangeEnd }
 
     let resolvedValue = ref.value
     let matched = true
 
     if (ref.focusType === 'activity-hour') {
       const hour = Number(ref.value)
-      matched = Number.isInteger(hour) && hour >= 0 && hour < 24 && hour >= sharedRangeStart && hour < sharedRangeEnd
+      matched = Number.isInteger(hour) && hour >= 0 && hour < 24 && hour >= activeRange.rangeStart && hour < activeRange.rangeEnd
       resolvedValue = String(hour)
     } else if (ref.focusType === 'activity-range') {
       const startHour = ref.startHour ?? Number(ref.value.split('-')[0])
@@ -1430,17 +1642,17 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
         startHour >= 0 &&
         endHour <= 24 &&
         endHour > startHour &&
-        endHour > sharedRangeStart &&
-        startHour < sharedRangeEnd
-      resolvedValue = `${Math.max(startHour, sharedRangeStart)}-${Math.min(endHour, sharedRangeEnd)}`
+        endHour > activeRange.rangeStart &&
+        startHour < activeRange.rangeEnd
+      resolvedValue = `${Math.max(startHour, activeRange.rangeStart)}-${Math.min(endHour, activeRange.rangeEnd)}`
     } else if (ref.focusType === 'task-duration') {
-      const taskTitle = findBestTaskTitleMatch(ref.value, taskDurations)
+      const taskTitle = findBestTaskTitleMatch(ref.value, sourceTaskDurations)
       matched = Boolean(taskTitle)
       if (taskTitle) resolvedValue = taskTitle
     } else if (ref.focusType === 'metric') {
       matched = METRIC_KEYS.has(ref.value)
     } else if (ref.focusType === 'app-usage') {
-      const appName = findBestAppNameMatch(ref.value, displayActivityData)
+      const appName = findBestAppNameMatch(ref.value, sourceActivityData)
       matched = Boolean(appName)
       if (appName) resolvedValue = appName
     }
@@ -1450,6 +1662,7 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
       value: ref.value,
       matched,
       fallbackChartId,
+      mode: viewMode,
     })
 
     scrollChartIntoDataPanel(fallbackChartId)
@@ -1461,6 +1674,7 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
     }
 
     highlightStartTimerRef.current = setTimeout(() => {
+      if (requestId !== spotlightRequestRef.current) return
       setActiveHighlight({
         id: `${ref.focusType}:${resolvedValue}:${Date.now()}`,
         type: ref.focusType,
@@ -1471,23 +1685,33 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
       })
       highlightStartTimerRef.current = null
       highlightTimerRef.current = setTimeout(() => {
+        if (requestId !== spotlightRequestRef.current) return
         setActiveHighlight(null)
         if (focusRootChartId) setFocusedChartId(current => current === focusRootChartId ? null : current)
         hideSpotlight()
         highlightTimerRef.current = null
       }, HIGHLIGHT_DURATION_MS)
     }, HIGHLIGHT_START_DELAY_MS)
-  }, [cancelSpotlightVisibleWait, displayActivityData, hideSpotlight, scrollChartIntoDataPanel, sharedRangeEnd, sharedRangeStart, taskDurations, updateSpotlightFromElement, viewMode, waitForSpotlightTargetVisible])
+  }, [cancelSpotlightVisibleWait, displayActivityData, hideSpotlight, scrollChartIntoDataPanel, sharedRangeEnd, sharedRangeStart, taskDurations, updateSpotlightFromElement, viewMode, waitForSpotlightTargetVisible, weekDayData])
 
   useEffect(() => {
     if (!activeHighlight) return
+    const requestId = spotlightRequestRef.current
+    const fallbackChartId = focusedChartId ?? (viewMode === 'week'
+      ? WEEK_FOCUS_FALLBACK_CHARTS[activeHighlight.type]
+      : FOCUS_FALLBACK_CHARTS[activeHighlight.type])
     const timer = window.setTimeout(() => {
       window.requestAnimationFrame(() => {
-        updateSpotlightFromElement(findSpotlightTarget(focusedChartId ?? undefined))
+        waitForSpotlightTargetElement(fallbackChartId, requestId, (target) => {
+          showSpotlightForElement(target, requestId, fallbackChartId)
+        })
       })
     }, 0)
-    return () => window.clearTimeout(timer)
-  }, [activeHighlight, findSpotlightTarget, focusedChartId, updateSpotlightFromElement])
+    return () => {
+      window.clearTimeout(timer)
+      cancelSpotlightVisibleWait()
+    }
+  }, [activeHighlight, cancelSpotlightVisibleWait, focusedChartId, showSpotlightForElement, viewMode, waitForSpotlightTargetElement])
 
   useEffect(() => {
     const panel = dataPanelRef.current
@@ -1506,6 +1730,7 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
   }, [updateSpotlightFromElement])
 
   useEffect(() => {
+    spotlightRequestRef.current += 1
     setActiveHighlight(null)
     setFocusedChartId(null)
     hideSpotlight(true)
@@ -1646,8 +1871,9 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
     const insightInfo = insightContext ? `\n\n${insightContext}` : ''
     const weekAppUsageInfo = buildAppUsagePromptContext(weekDayData.flatMap(day => day.activity))
     const appUsageContext = weekAppUsageInfo ? `\n\n本周${weekAppUsageInfo}` : ''
-    return buildWeeklyReflectionSystemPrompt(context + appUsageContext + insightInfo, false, weekLabel, memoryContext)
-  }, [weekDayData, weekEndDate, memoryContext, insightContext])
+    const visualMarkerInfo = `\n\n${buildVisualMarkerPromptContext(weekVisualTargets)}`
+    return buildWeeklyReflectionSystemPrompt(context + appUsageContext + insightInfo + visualMarkerInfo, false, weekLabel, memoryContext)
+  }, [weekDayData, weekEndDate, memoryContext, insightContext, weekVisualTargets])
 
   // 根据当前视图模式选择对应的 system prompt
   const activeSystemPrompt = viewMode === 'week' ? weekSystemPrompt : systemPrompt
@@ -2195,6 +2421,7 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
               weekEndDate={weekEndDate}
               onDataReady={handleWeekDataReady}
               chatOpen={chatOpen}
+              activeHighlight={activeHighlight}
             />
           ) : (
             /* ---- 日视图 ---- */
@@ -2356,24 +2583,25 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
           )}
           {spotlightRect && (
             <div
-              className={`pointer-events-none absolute left-0 z-[80] transition-opacity duration-500 ease-out ${
+              className={`pointer-events-none fixed inset-0 z-[80] transition-opacity duration-500 ease-out ${
                 spotlightVisible ? 'opacity-100' : 'opacity-0'
               }`}
-              style={{
-                top: spotlightRect.scrollTop,
-                width: spotlightRect.panelWidth,
-                height: spotlightRect.panelHeight,
-              }}
             >
               <div
-                className="absolute left-0 top-0 bg-slate-950/35"
-                style={{ width: spotlightRect.panelWidth, height: spotlightRect.top }}
+                className="absolute bg-slate-950/35"
+                style={{
+                  top: spotlightRect.panelTop,
+                  left: spotlightRect.panelLeft,
+                  width: spotlightRect.panelWidth,
+                  height: spotlightRect.top - spotlightRect.panelTop,
+                }}
               />
               <div
-                className="absolute left-0 bg-slate-950/35"
+                className="absolute bg-slate-950/35"
                 style={{
                   top: spotlightRect.top,
-                  width: spotlightRect.left,
+                  left: spotlightRect.panelLeft,
+                  width: spotlightRect.left - spotlightRect.panelLeft,
                   height: spotlightRect.bottom - spotlightRect.top,
                 }}
               />
@@ -2382,16 +2610,17 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
                 style={{
                   top: spotlightRect.top,
                   left: spotlightRect.right,
-                  width: spotlightRect.panelWidth - spotlightRect.right,
+                  width: spotlightRect.panelRight - spotlightRect.right,
                   height: spotlightRect.bottom - spotlightRect.top,
                 }}
               />
               <div
-                className="absolute left-0 bg-slate-950/35"
+                className="absolute bg-slate-950/35"
                 style={{
                   top: spotlightRect.bottom,
+                  left: spotlightRect.panelLeft,
                   width: spotlightRect.panelWidth,
-                  height: spotlightRect.panelHeight - spotlightRect.bottom,
+                  height: spotlightRect.panelBottom - spotlightRect.bottom,
                 }}
               />
             </div>
@@ -2449,7 +2678,7 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
                   screenshotBase64={null}
                   selectedDate={viewMode === 'week' ? weekEndDate : selectedDate}
                   storageKey={viewMode === 'week' ? `week-${weekEndDate}` : selectedDate}
-                  visualTargets={visualTargets}
+                  visualTargets={viewMode === 'week' ? weekVisualTargets : visualTargets}
                   onVisualRef={handleVisualRef}
                   onComplete={handleReflectionComplete}
                   onEndChat={handleChatEndedProperly}

@@ -70,7 +70,7 @@ export default function TaskDurationChart({ data, onTaskHover, highlightTask, hi
             <div
               key={`${item.title}-${i}-${isHighlighted ? highlightPulseKey ?? 'pulse' : 'idle'}`}
               className={`rounded-xl transition-all duration-200 ${
-                isHighlighted ? 'ai-focus-target px-1.5 py-1' : ''
+                isHighlighted ? 'ai-focus-target' : ''
               }`}
             >
               <div

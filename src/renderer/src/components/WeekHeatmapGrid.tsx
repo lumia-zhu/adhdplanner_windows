@@ -39,6 +39,9 @@ const LEVEL_BG = [
   'bg-emerald-700',     // 4: > 75%
 ]
 const LEVEL_LABELS = ['未使用', '< 25%', '25%~50%', '50%~75%', '> 75%']
+const GRID_LEFT_PCT = parseFloat(WEEK_PAD_LEFT_PCT)
+const GRID_RIGHT_PCT = parseFloat(WEEK_PAD_RIGHT_PCT)
+const GRID_WIDTH_PCT = 100 - GRID_LEFT_PCT - GRID_RIGHT_PCT
 const MOOD_EMOJI: Record<number, string> = {
   1: '😭',
   2: '😟',
@@ -126,11 +129,22 @@ interface Props {
   rangeStart?: number
   rangeEnd?: number
   showMoodColumn?: boolean
+  highlightHour?: number | null
+  highlightRange?: { startHour: number; endHour: number } | null
+  highlightPulseKey?: string
 }
 
 // ===================== 主组件 =====================
 
-export default function WeekHeatmapGrid({ days, rangeStart: propStart, rangeEnd: propEnd, showMoodColumn = false }: Props) {
+export default function WeekHeatmapGrid({
+  days,
+  rangeStart: propStart,
+  rangeEnd: propEnd,
+  showMoodColumn = false,
+  highlightHour = null,
+  highlightRange = null,
+  highlightPulseKey,
+}: Props) {
   const [hoveredCell, setHoveredCell] = useState<{ date: string; hour: number } | null>(null)
   const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 })
   const gridRef = useRef<HTMLDivElement>(null)
@@ -215,9 +229,40 @@ export default function WeekHeatmapGrid({ days, rangeStart: propStart, rangeEnd:
   // 展开面板数据（暂时隐藏）
 
   const visibleSpan = rangeEnd - rangeStart
+  const normalizedHighlightRange = highlightRange
+    ? {
+        startHour: Math.max(highlightRange.startHour, rangeStart),
+        endHour: Math.min(highlightRange.endHour, rangeEnd),
+      }
+    : highlightHour != null
+      ? { startHour: highlightHour, endHour: highlightHour + 1 }
+      : null
+  const hasVisibleHighlight = Boolean(
+    normalizedHighlightRange &&
+    normalizedHighlightRange.endHour > normalizedHighlightRange.startHour &&
+    normalizedHighlightRange.startHour >= rangeStart &&
+    normalizedHighlightRange.endHour <= rangeEnd,
+  )
+  const highlightGridLeftPct = normalizedHighlightRange
+    ? ((normalizedHighlightRange.startHour - rangeStart) / visibleSpan) * GRID_WIDTH_PCT + GRID_LEFT_PCT
+    : 0
+  const highlightGridWidthPct = normalizedHighlightRange
+    ? ((normalizedHighlightRange.endHour - normalizedHighlightRange.startHour) / visibleSpan) * GRID_WIDTH_PCT
+    : 0
 
   return (
     <div ref={gridRef} className="relative">
+      {hasVisibleHighlight ? (
+        <div
+          key={highlightPulseKey ?? `${normalizedHighlightRange?.startHour}-${normalizedHighlightRange?.endHour}`}
+          className="ai-focus-target pointer-events-none absolute top-0 z-20 h-full rounded-md"
+          style={{
+            left: `${highlightGridLeftPct}%`,
+            width: `${highlightGridWidthPct}%`,
+          }}
+          aria-hidden="true"
+        />
+      ) : null}
       {/* 7×24 网格 */}
       <div className="space-y-0.5">
         {dayLevels.map((dl) => (

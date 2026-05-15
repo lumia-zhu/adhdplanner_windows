@@ -9,9 +9,10 @@ import type { WeekDayData } from './WeekView'
 
 interface Props {
   days: WeekDayData[]
+  highlightMetric?: string | null
 }
 
-export default function WeekMetricCards({ days }: Props) {
+export default function WeekMetricCards({ days, highlightMetric }: Props) {
   // 只统计有实际数据的天
   const daysWithData = days.filter(d => d.hasData)
   const n = daysWithData.length || 1  // 避免除以 0
@@ -31,20 +32,20 @@ export default function WeekMetricCards({ days }: Props) {
 
   return (
     <div className="grid grid-cols-3 gap-3 w-full">
-      <div className="text-center bg-gray-100 rounded-xl py-2.5 px-2">
+      <div className={`text-center bg-gray-100 rounded-xl py-2.5 px-2 ${highlightMetric === 'completed-tasks' ? 'ai-focus-target' : ''}`}>
         <p className="text-lg font-bold text-gray-600">
           {avgCompleted}
         </p>
         <p className="text-2xs text-gray-500 mt-0.5">日均完成任务数</p>
       </div>
-      <div className="text-center bg-emerald-50 rounded-xl py-2.5 px-2">
+      <div className={`text-center bg-emerald-50 rounded-xl py-2.5 px-2 ${highlightMetric === 'computer-usage' ? 'ai-focus-target' : ''}`}>
         <p className="text-lg font-bold text-emerald-600">
           {usageStr.value}
           <span className="text-xs font-normal ml-0.5">{usageStr.unit}</span>
         </p>
         <p className="text-2xs text-emerald-500 mt-0.5">日均电脑使用时长</p>
       </div>
-      <div className="text-center bg-blue-50 rounded-xl py-2.5 px-2">
+      <div className={`text-center bg-blue-50 rounded-xl py-2.5 px-2 ${highlightMetric === 'focus-minutes' ? 'ai-focus-target' : ''}`}>
         <p className="text-lg font-bold text-blue-600">
           {avgFocusMin}
           <span className="text-xs font-normal ml-0.5">分钟</span>

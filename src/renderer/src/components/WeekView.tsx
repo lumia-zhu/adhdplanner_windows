@@ -20,6 +20,7 @@ import WeekTaskRanking from './WeekTaskRanking'
 import WeekHeatmapGrid, { computeWeekActiveTimeRange } from './WeekHeatmapGrid'
 import WeekRhythmChart from './WeekRhythmChart'
 import AppUsageRanking from './AppUsageRanking'
+import type { VisualFocusType } from './ReflectionChat'
 import { tracker } from '../services/tracker'
 import type { DailyMoodRecord } from '../types'
 import { MOOD_LABELS, parseMoodRecord, type MoodValue } from '../utils/mood'
@@ -44,6 +45,15 @@ export interface WeekDayData {
   taskDurations: (TaskDurationItem & { date: string; weekday: string; dateLabel: string; dateFull: string })[]
   /** 该天的心情记录，缺失时为 null */
   moodRecord: DailyMoodRecord | null
+}
+
+export interface WeekActiveHighlight {
+  id: string
+  type: VisualFocusType
+  value: string
+  startHour?: number
+  endHour?: number
+  appNames?: string[]
 }
 
 // ===================== 常量 =====================
@@ -204,6 +214,7 @@ interface WeekViewProps {
   onDataReady?: (data: WeekDayData[]) => void
   /** AI 聊天侧边栏是否展开（影响布局宽度） */
   chatOpen?: boolean
+  activeHighlight?: WeekActiveHighlight | null
 }
 
 function WeekCompletionSection({
@@ -405,7 +416,7 @@ function WeekMoodCompletionDemo({ days }: { days: WeekDayData[] }) {
 
 // ===================== 主组件 =====================
 
-export default function WeekView({ weekEndDate, onDataReady, chatOpen }: WeekViewProps) {
+export default function WeekView({ weekEndDate, onDataReady, chatOpen, activeHighlight }: WeekViewProps) {
   const [weekData, setWeekData] = useState<WeekDayData[]>([])
   const [loading, setLoading] = useState(true)
   const [showActivityMood, setShowActivityMood] = useState(false)
@@ -482,6 +493,19 @@ export default function WeekView({ weekEndDate, onDataReady, chatOpen }: WeekVie
     [weekData],
   )
 
+  const highlightedMetric = activeHighlight?.type === 'metric' ? activeHighlight.value : null
+  const highlightedTask = activeHighlight?.type === 'task-duration' ? activeHighlight.value : null
+  const highlightedApps = activeHighlight?.type === 'app-usage'
+    ? activeHighlight.appNames ?? [activeHighlight.value]
+    : null
+  const highlightedHour = activeHighlight?.type === 'activity-hour'
+    ? Number(activeHighlight.value)
+    : null
+  const highlightedRange = activeHighlight?.type === 'activity-range' && activeHighlight.startHour != null && activeHighlight.endHour != null
+    ? { startHour: activeHighlight.startHour, endHour: activeHighlight.endHour }
+    : null
+  const highlightPulseKey = activeHighlight?.id
+
   // 有数据的天数
   const daysWithData = weekData.filter(d => d.hasData).length
 
@@ -527,7 +551,7 @@ export default function WeekView({ weekEndDate, onDataReady, chatOpen }: WeekVie
 
       {/* 周汇总指标卡片 */}
       <ChartFocusSection id="chart-week-metrics">
-        <WeekMetricCards days={weekData} />
+        <WeekMetricCards days={weekData} highlightMetric={highlightedMetric} />
       </ChartFocusSection>
 
       {/* 分隔线 */}
@@ -538,7 +562,7 @@ export default function WeekView({ weekEndDate, onDataReady, chatOpen }: WeekVie
         <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
           🏆 周任务用时排行
         </h3>
-        <WeekTaskRanking days={weekData} />
+        <WeekTaskRanking days={weekData} highlightTask={highlightedTask} highlightPulseKey={highlightPulseKey} />
       </ChartFocusSection>
 
       {/* 分隔线 */}
@@ -567,7 +591,15 @@ export default function WeekView({ weekEndDate, onDataReady, chatOpen }: WeekVie
           <WeekRhythmChart days={weekData} rangeStart={weekRangeStart} rangeEnd={weekRangeEnd} />
         </div>
         <div className="mt-0">
-          <WeekHeatmapGrid days={weekData} rangeStart={weekRangeStart} rangeEnd={weekRangeEnd} showMoodColumn={showActivityMood} />
+          <WeekHeatmapGrid
+            days={weekData}
+            rangeStart={weekRangeStart}
+            rangeEnd={weekRangeEnd}
+            showMoodColumn={showActivityMood}
+            highlightHour={highlightedHour}
+            highlightRange={highlightedRange}
+            highlightPulseKey={highlightPulseKey}
+          />
         </div>
       </ChartFocusSection>
 
@@ -585,7 +617,7 @@ export default function WeekView({ weekEndDate, onDataReady, chatOpen }: WeekVie
             </span>
           </span>
         </h3>
-        <AppUsageRanking data={weekData.flatMap((d) => d.activity)} />
+        <AppUsageRanking data={weekData.flatMap((d) => d.activity)} highlightApps={highlightedApps} highlightPulseKey={highlightPulseKey} />
       </ChartFocusSection>
 
 

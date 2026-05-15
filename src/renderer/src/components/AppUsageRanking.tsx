@@ -99,7 +99,7 @@ export default function AppUsageRanking({ data, highlightApps, highlightPulseKey
           <div
             key={`${item.name}-${i}-${isHighlighted ? highlightPulseKey ?? 'pulse' : 'idle'}`}
             className={`rounded-xl transition-all duration-200 ${
-              isHighlighted ? 'ai-focus-target px-1.5 py-1' : ''
+              isHighlighted ? 'ai-focus-target' : ''
             }`}
           >
             <div className="flex items-center gap-2.5">
