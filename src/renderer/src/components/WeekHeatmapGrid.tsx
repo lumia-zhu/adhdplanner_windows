@@ -125,11 +125,12 @@ interface Props {
   days: WeekDayData[]
   rangeStart?: number
   rangeEnd?: number
+  showMoodColumn?: boolean
 }
 
 // ===================== 主组件 =====================
 
-export default function WeekHeatmapGrid({ days, rangeStart: propStart, rangeEnd: propEnd }: Props) {
+export default function WeekHeatmapGrid({ days, rangeStart: propStart, rangeEnd: propEnd, showMoodColumn = false }: Props) {
   const [hoveredCell, setHoveredCell] = useState<{ date: string; hour: number } | null>(null)
   const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 })
   const gridRef = useRef<HTMLDivElement>(null)
@@ -227,17 +228,21 @@ export default function WeekHeatmapGrid({ days, rangeStart: propStart, rangeEnd:
                 style={{ width: WEEK_PAD_LEFT_PCT }}
               >
                 <span>{dl.dateLabel} {dl.weekdayShort}</span>
-                <span className="relative group/mood inline-flex">
-                  <span
-                    className="pointer-events-auto inline-flex h-5 w-5 flex-shrink-0 items-center justify-center text-base leading-none opacity-95 transition-transform hover:scale-110 hover:opacity-100"
-                    aria-label={`${dl.dateLabel} ${dl.weekdayShort} ${dl.isDemoMood ? '示例心情' : '心情'}：${dl.moodLabel}`}
-                  >
-                    {dl.moodEmoji}
+                <span className="relative inline-flex h-5 w-5 flex-shrink-0 items-center justify-center">
+                  {showMoodColumn ? (
+                    <span className="group/mood inline-flex">
+                      <span
+                        className="pointer-events-auto inline-flex h-5 w-5 flex-shrink-0 items-center justify-center text-base leading-none opacity-95 transition-transform hover:scale-110 hover:opacity-100"
+                        aria-label={`${dl.dateLabel} ${dl.weekdayShort} ${dl.isDemoMood ? '示例心情' : '心情'}：${dl.moodLabel}`}
+                      >
+                        {dl.moodEmoji}
+                      </span>
+                      <span className="pointer-events-none absolute left-1/2 top-full z-50 mt-1.5 -translate-x-1/2 whitespace-nowrap rounded-md bg-gray-800 px-2 py-1 text-[10px] font-normal leading-none text-white opacity-0 shadow-lg transition-opacity group-hover/mood:opacity-100">
+                        {dl.isDemoMood ? '示例心情' : '心情'}：{dl.moodLabel}
+                      </span>
+                    </span>
+                  ) : null}
                   </span>
-                  <span className="pointer-events-none absolute left-1/2 top-full z-50 mt-1.5 -translate-x-1/2 whitespace-nowrap rounded-md bg-gray-800 px-2 py-1 text-[10px] font-normal leading-none text-white opacity-0 shadow-lg transition-opacity group-hover/mood:opacity-100">
-                    {dl.isDemoMood ? '示例心情' : '心情'}：{dl.moodLabel}
-                  </span>
-                </span>
               </span>
               <div className="flex flex-1" style={{ marginRight: WEEK_PAD_RIGHT_PCT }}>
                 {dl.levels.slice(rangeStart, rangeEnd).map((lv, i) => {

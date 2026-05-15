@@ -254,7 +254,7 @@ function WeekCompletionSection({
   const effectiveBarsOnly = toggleMoodTrend ? !showMoodTrend : barsOnly
   const effectiveHidePctLabels = toggleMoodTrend && showMoodTrend ? true : hidePctLabels
   const effectiveMoodAxisLabelMode = toggleMoodTrend ? 'textOnly' : moodAxisLabelMode
-  const reserveMoodAxisSpace = toggleMoodTrend
+  const reserveMoodAxisSpace = toggleMoodTrend && showMoodTrend
 
   return (
     <>
@@ -277,13 +277,12 @@ function WeekCompletionSection({
           </span>
         </h3>
         {toggleMoodTrend ? (
-          <button
-            type="button"
-            className={`shrink-0 rounded-full border px-2.5 py-1 text-[11px] font-medium leading-none transition-colors ${showMoodTrend ? 'border-indigo-200 bg-indigo-50 text-indigo-600 hover:bg-indigo-100' : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300 hover:text-gray-700'}`}
-            onClick={() => setShowMoodTrend(value => !value)}
-          >
-            {showMoodTrend ? '隐藏心情趋势' : '显示心情趋势'}
-          </button>
+          <MoodToggleButton
+            active={showMoodTrend}
+            onToggle={() => setShowMoodTrend(value => !value)}
+            activeLabel="隐藏心情趋势"
+            inactiveLabel="显示心情趋势"
+          />
         ) : null}
       </div>
       <WeekCompletionBars
@@ -301,6 +300,31 @@ function WeekCompletionSection({
         showMoodLegend={showMoodLegend}
       />
     </>
+  )
+}
+
+function MoodToggleButton({
+  active,
+  onToggle,
+  activeLabel,
+  inactiveLabel,
+}: {
+  active: boolean
+  onToggle: () => void
+  activeLabel: string
+  inactiveLabel: string
+}) {
+  return (
+    <button
+      type="button"
+      className={`inline-flex shrink-0 items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-medium leading-none transition-colors ${active ? 'border-indigo-200 bg-indigo-50 text-indigo-600 hover:bg-indigo-100' : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300 hover:text-gray-700'}`}
+      onClick={onToggle}
+    >
+      <span className={`text-base leading-none ${active ? 'text-indigo-400' : 'text-gray-300'}`} aria-hidden="true">
+        {active ? '♥' : '♡'}
+      </span>
+      <span>{active ? activeLabel : inactiveLabel}</span>
+    </button>
   )
 }
 
@@ -384,6 +408,7 @@ function WeekMoodCompletionDemo({ days }: { days: WeekDayData[] }) {
 export default function WeekView({ weekEndDate, onDataReady, chatOpen }: WeekViewProps) {
   const [weekData, setWeekData] = useState<WeekDayData[]>([])
   const [loading, setLoading] = useState(true)
+  const [showActivityMood, setShowActivityMood] = useState(false)
 
   // 计算 7 天日期
   const weekDates = useMemo(() => getWeekDates(weekEndDate), [weekEndDate])
@@ -521,20 +546,28 @@ export default function WeekView({ weekEndDate, onDataReady, chatOpen }: WeekVie
 
       {/* 电脑活动分布（折线图 + 热力网格，共享 x 轴） */}
       <ChartFocusSection id="chart-week-heatmap">
-        <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-1.5">
-          🔍 电脑活动分布
-          <span className="relative group">
-            <span className="inline-flex items-center justify-center w-4 h-4 rounded-full border border-gray-300 text-gray-400 text-[10px] leading-none cursor-help group-hover:text-gray-600 group-hover:border-gray-400 transition-colors">?</span>
-            <span className="pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-150 absolute left-1/2 -translate-x-1/2 top-full mt-1.5 z-50 w-[280px] bg-gray-800 text-white text-[11px] leading-relaxed rounded-lg px-3 py-2.5 shadow-lg normal-case tracking-normal font-normal">
-              <b>每小时电脑活跃时长</b>（曲线）= 该小时内电脑被实际使用的分钟数（0~60分钟）。曲线越高，表示该时段使用电脑的时间越长。周视图中，面积为多天的活跃时长叠加。<br/><br/><b>每小时电脑活跃度</b>（色块）= 该小时内检测到的电脑使用时间 ÷ 1小时。颜色越深表示这个时段电脑使用越多。<br/><span className="text-gray-300 mt-1 inline-block">注：连续 1 分钟没有鼠标或键盘操作即视为不活跃。</span>
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <h3 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-gray-500">
+            🔍 电脑活动分布
+            <span className="relative group">
+              <span className="inline-flex items-center justify-center w-4 h-4 rounded-full border border-gray-300 text-gray-400 text-[10px] leading-none cursor-help group-hover:text-gray-600 group-hover:border-gray-400 transition-colors">?</span>
+              <span className="pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-150 absolute left-1/2 -translate-x-1/2 top-full mt-1.5 z-50 w-[280px] bg-gray-800 text-white text-[11px] leading-relaxed rounded-lg px-3 py-2.5 shadow-lg normal-case tracking-normal font-normal">
+                <b>每小时电脑活跃时长</b>（曲线）= 该小时内电脑被实际使用的分钟数（0~60分钟）。曲线越高，表示该时段使用电脑的时间越长。周视图中，面积为多天的活跃时长叠加。<br/><br/><b>每小时电脑活跃度</b>（色块）= 该小时内检测到的电脑使用时间 ÷ 1小时。颜色越深表示这个时段电脑使用越多。<br/><span className="text-gray-300 mt-1 inline-block">注：连续 1 分钟没有鼠标或键盘操作即视为不活跃。</span>
+              </span>
             </span>
-          </span>
-        </h3>
+          </h3>
+          <MoodToggleButton
+            active={showActivityMood}
+            onToggle={() => setShowActivityMood(value => !value)}
+            activeLabel="隐藏心情"
+            inactiveLabel="显示心情"
+          />
+        </div>
         <div id="chart-week-rhythm">
           <WeekRhythmChart days={weekData} rangeStart={weekRangeStart} rangeEnd={weekRangeEnd} />
         </div>
         <div className="mt-0">
-          <WeekHeatmapGrid days={weekData} rangeStart={weekRangeStart} rangeEnd={weekRangeEnd} />
+          <WeekHeatmapGrid days={weekData} rangeStart={weekRangeStart} rangeEnd={weekRangeEnd} showMoodColumn={showActivityMood} />
         </div>
       </ChartFocusSection>
 

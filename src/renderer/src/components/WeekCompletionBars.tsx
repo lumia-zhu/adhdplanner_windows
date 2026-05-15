@@ -8,9 +8,9 @@
  * 无数据天显示虚线占位 + "--"。
  */
 
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import type { WeekDayData } from './WeekView'
-import { MOOD_LABELS, type MoodValue } from '../utils/mood'
+import { getMoodOptions, getMoodThemeForDate, MOOD_LABELS, type MoodValue } from '../utils/mood'
 
 interface Props {
   days: WeekDayData[]
@@ -54,6 +54,7 @@ const MOOD_LINE_COLOR = '#4f46e5'
 const MOOD_AXIS_LABELS = [5, 4, 3, 2, 1]
 const PCT_LABEL_OFFSET_PX = 20
 const PCT_LABEL_MIN_TOP_PX = -12
+const HOVER_TOOLTIP_WIDTH = 156
 const MISSING_MOOD_BAR_COLOR = '#d1d5db'
 const MISSING_MOOD_LINE_COLOR = '#9ca3af'
 const MOOD_SATURATION_COLORS: Record<MoodValue, string> = {
@@ -79,6 +80,10 @@ export function getEffectiveMoodForWeekDayIndex(dayIndex: number, recordedMood: 
 
 function getMoodLabel(mood: number): string {
   return MOOD_LABELS.find(item => item.value === mood)?.label ?? '未记录'
+}
+
+function getMoodEmoji(mood: number): string {
+  return getMoodOptions(getMoodThemeForDate('')).find(item => item.value === mood)?.emoji ?? String(mood)
 }
 
 function getMoodSaturationMeta(day: WeekDayData, dayIndex: number, moodPreviewValues?: readonly (MoodValue | null)[]) {
@@ -115,7 +120,8 @@ export default function WeekCompletionBars({
   showMoodLegend = false,
 }: Props) {
   const [hoveredDayIndex, setHoveredDayIndex] = useState<number | null>(null)
-  const [hoveredBarRect, setHoveredBarRect] = useState<{ left: number; top: number; width: number } | null>(null)
+  const [hoveredBarRect, setHoveredBarRect] = useState<{ left: number; top: number; chartWidth: number } | null>(null)
+  const chartAreaRef = useRef<HTMLDivElement>(null)
   const dayToX = (index: number) => ((index + 0.5) / days.length) * 100
   const moodToY = (mood: number) => ((5 - mood) / 4) * 100
   const useMoodSaturation = colorMode === 'moodSaturation'
@@ -234,7 +240,7 @@ export default function WeekCompletionBars({
         </div>
 
         {/* 柱子区域 + 心情折线：柱子、线、点共用同一个绘图区坐标 */}
-        <div className="flex-1 relative" style={{ height: BAR_AREA_H + BAR_PAD_TOP, paddingTop: BAR_PAD_TOP }}>
+        <div ref={chartAreaRef} className="flex-1 relative" style={{ height: BAR_AREA_H + BAR_PAD_TOP, paddingTop: BAR_PAD_TOP }}>
           {/* 水平参考线 */}
           {[0, 25, 50, 75, 100].map(tick => (
             <div
@@ -319,21 +325,27 @@ export default function WeekCompletionBars({
           {hoveredBarRect ? (() => {
             const stat = dayStats[hoveredDayIndex ?? -1]
             if (!stat) return null
+            const minLeft = HOVER_TOOLTIP_WIDTH / 2 + 4
+            const maxLeft = Math.max(minLeft, hoveredBarRect.chartWidth - HOVER_TOOLTIP_WIDTH / 2 - 4)
+            const clampedLeft = Math.max(
+              minLeft,
+              Math.min(hoveredBarRect.left, maxLeft),
+            )
+            const taskLine = stat.hasData
+              ? `任务完成率：${stat.pct}%`
+              : '任务完成率：暂无数据'
+            const moodLine = stat.moodTitle || '心情：未记录'
             return (
               <div
                 className="pointer-events-none absolute z-[60] -translate-x-1/2 -translate-y-full rounded-lg bg-gray-800 px-2.5 py-1.5 text-[11px] leading-relaxed text-white shadow-lg"
                 style={{
-                  left: hoveredBarRect.left,
+                  left: clampedLeft,
                   top: hoveredBarRect.top - 8,
-                  maxWidth: Math.max(180, hoveredBarRect.width * 2),
+                  width: HOVER_TOOLTIP_WIDTH,
                 }}
               >
-                <div className="font-medium">任务完成率：{stat.pct}%</div>
-                {stat.hasData ? (
-                  <div className="text-gray-200">{stat.moodTitle}</div>
-                ) : (
-                  <div className="text-gray-200">当天无数据</div>
-                )}
+                <div className="font-medium">{taskLine}</div>
+                <div className="text-gray-200">{moodLine}</div>
               </div>
             )
           })() : null}
@@ -348,11 +360,12 @@ export default function WeekCompletionBars({
                 className="h-full"
                 onMouseEnter={(e) => {
                   const rect = e.currentTarget.getBoundingClientRect()
+                  const chartRect = chartAreaRef.current?.getBoundingClientRect()
                   setHoveredDayIndex(dayIndex)
                   setHoveredBarRect({
-                    left: rect.left + rect.width / 2,
-                    top: rect.top,
-                    width: rect.width,
+                    left: chartRect ? rect.left - chartRect.left + rect.width / 2 : rect.width / 2,
+                    top: chartRect ? rect.top - chartRect.top : 0,
+                    chartWidth: chartRect?.width ?? rect.width,
                   })
                 }}
                 onMouseLeave={() => {
@@ -388,17 +401,18 @@ export default function WeekCompletionBars({
 
         {!barsOnly || reserveMoodAxisSpace ? (
           <div
-            className={`relative flex-shrink-0 pl-1.5 ${moodAxisLabelMode === 'textOnly' ? 'w-[44px]' : 'w-[20px]'}`}
+            className={`relative flex-shrink-0 pl-1.5 ${moodAxisLabelMode === 'textOnly' ? 'w-[30px]' : 'w-[20px]'}`}
             style={{ height: BAR_AREA_H + BAR_PAD_TOP, paddingTop: BAR_PAD_TOP }}
             title="心情：1 很低落，5 很开心"
           >
             {!barsOnly ? MOOD_AXIS_LABELS.map(tick => (
               <span
                 key={tick}
-                className={`absolute left-1.5 -translate-y-1/2 text-left text-3xs leading-none text-indigo-400 ${moodAxisLabelMode === 'textOnly' ? 'w-[38px]' : 'w-[14px] tabular-nums'}`}
+                className={`absolute left-1.5 -translate-y-1/2 text-left leading-none text-indigo-400 ${moodAxisLabelMode === 'textOnly' ? 'w-[24px] text-sm' : 'w-[14px] text-3xs tabular-nums'}`}
                 style={{ top: `calc(${BAR_PAD_TOP}px + ${moodToY(tick) / 100 * BAR_AREA_H}px)` }}
+                title={`${tick}：${getMoodLabel(tick)}`}
               >
-                {moodAxisLabelMode === 'textOnly' ? getMoodLabel(tick) : tick}
+                {moodAxisLabelMode === 'textOnly' ? getMoodEmoji(tick) : tick}
               </span>
             )) : null}
           </div>
@@ -406,7 +420,7 @@ export default function WeekCompletionBars({
       </div>
 
       {/* X 轴：日期标签 */}
-      <div className={`flex ml-[28px] ${barsOnly && !reserveMoodAxisSpace ? 'mr-2' : moodAxisLabelMode === 'textOnly' ? 'mr-[44px]' : 'mr-[20px]'}`}>
+      <div className={`flex ml-[28px] ${barsOnly && !reserveMoodAxisSpace ? 'mr-2' : moodAxisLabelMode === 'textOnly' ? 'mr-[30px]' : 'mr-[20px]'}`}>
         {days.map((day) => (
           <div key={day.date} className="flex-1 text-center">
             <span className="text-2xs text-gray-500 tabular-nums leading-tight">
