@@ -294,6 +294,7 @@ function FocusDynamicBar({
   const [loadingStuckChat, setLoadingStuckChat] = useState(false)
   const [streamingStuckChat, setStreamingStuckChat] = useState(false)
   const [stuckChatError, setStuckChatError] = useState('')
+  const stuckConversationIdRef = useRef<string>('')
   const stuckChatInputRef = useRef<HTMLTextAreaElement>(null)
   const stuckMessagesEndRef = useRef<HTMLDivElement>(null)
   const stuckStreamCleanupRef = useRef<(() => void) | null>(null)
@@ -420,6 +421,7 @@ function FocusDynamicBar({
       setStuckChatContext(null)
       setStuckChatInput('')
       setStuckChatError('')
+      stuckConversationIdRef.current = ''
       // 清理回退定时器
       if (fallbackTimerRef.current) { clearTimeout(fallbackTimerRef.current); fallbackTimerRef.current = null }
     }
@@ -679,6 +681,40 @@ function FocusDynamicBar({
     )
   }
 
+  const saveStuckConversation = (
+    messages: StuckChatMessage[],
+    context: StuckChatContext,
+    status: 'in_progress' | 'processed' | 'abandoned' = 'in_progress',
+  ) => {
+    const conversationId = stuckConversationIdRef.current || `stuck-${session.sessionId}-${Date.now()}`
+    stuckConversationIdRef.current = conversationId
+    const now = Date.now()
+    window.electronAPI.saveAIConversation({
+      conversationId,
+      conversationType: 'stuck',
+      date: getToday(),
+      logicalDate: getToday(),
+      mode: 'stuck',
+      sessionId: session.sessionId,
+      taskId: session.taskId,
+      taskTitle: session.taskTitle,
+      status,
+      startedAt: session.startTime,
+      savedAt: now,
+      messages: messages.map(message => ({
+        role: message.role,
+        content: message.content,
+        ts: now,
+      })),
+      metadata: {
+        currentMicroTask,
+        stuckReason: context.stuckReason,
+        stuckCategory: context.stuckCategory,
+        stuckResponseMode: context.stuckResponseMode,
+      },
+    }).catch(e => console.warn('[Conversation] 卡住对话保存失败:', e))
+  }
+
   const requestStuckChatReply = async (
     messages: StuckChatMessage[],
     context: StuckChatContext,
@@ -712,7 +748,9 @@ function FocusDynamicBar({
         if (settled) return
         settled = true
         const finalContent = content.trim() || fallbackText
-        setStuckMessages([...visibleMessages, { role: 'assistant', content: finalContent }])
+        const finalMessages = [...visibleMessages, { role: 'assistant' as const, content: finalContent }]
+        setStuckMessages(finalMessages)
+        saveStuckConversation(finalMessages, context)
         setStuckChatError(error ?? '')
         setLoadingStuckChat(false)
         setStreamingStuckChat(false)
@@ -757,10 +795,12 @@ function FocusDynamicBar({
       ? fallbackEmotionSourceReply(stuckChatContext, text)
       : fallbackStuckSecondReply(stuckChatContext)
     requestStuckChatReply(nextMessages, stuckChatContext).catch(() => {
-      setStuckMessages([
+      const fallbackMessages = [
         ...nextMessages,
-        { role: 'assistant', content: fallbackText },
-      ])
+        { role: 'assistant' as const, content: fallbackText },
+      ]
+      setStuckMessages(fallbackMessages)
+      saveStuckConversation(fallbackMessages, stuckChatContext)
       setStuckChatError('AI 暂时没有回复，先给你一个备用想法。')
       setLoadingStuckChat(false)
       setStreamingStuckChat(false)
@@ -797,6 +837,7 @@ function FocusDynamicBar({
     setStuckChatInput('')
     setStuckChatError('')
     setStuckMessages([])
+    stuckConversationIdRef.current = `stuck-${session.sessionId}-${Date.now()}`
 
     Promise.all([
       loadMemory().catch(() => null),
@@ -872,9 +913,11 @@ function FocusDynamicBar({
         }]
         setStuckChatContext(context)
         requestStuckChatReply(initialMessages, context, []).catch(() => {
-          setStuckMessages([
-            { role: 'assistant', content: fallbackStuckFirstReply(context) },
-          ])
+          const fallbackMessages = [
+            { role: 'assistant' as const, content: fallbackStuckFirstReply(context) },
+          ]
+          setStuckMessages(fallbackMessages)
+          saveStuckConversation(fallbackMessages, context)
           setStuckChatError('AI 暂时没有回复，先给你一个备用想法。')
           setLoadingStuckChat(false)
           setStreamingStuckChat(false)

@@ -126,6 +126,13 @@ const getRawSessionPath = (key: string): string =>
   join(getMemoryDir(), `raw-session-${key}.json`)
 const getMemoryStorePath = (): string =>
   join(getMemoryDir(), 'memory.json')
+const getAIConversationsDir = (): string => {
+  const dir = join(getUserDir(), 'ai-conversations')
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
+  return dir
+}
+const getAIConversationPath = (conversationId: string): string =>
+  join(getAIConversationsDir(), `${conversationId}.json`)
 
 // ===================== 一次性迁移 =====================
 
@@ -646,7 +653,16 @@ export function appendTrackerEvents(date: string, events: unknown[]): boolean {
     if (fs.existsSync(p)) {
       existing = JSON.parse(fs.readFileSync(p, 'utf-8'))
     }
-    const merged = [...existing, ...events]
+    const seen = new Set<string>()
+    const merged: unknown[] = []
+    for (const event of [...existing, ...events]) {
+      const id = event && typeof event === 'object' && 'id' in event
+        ? String((event as { id?: unknown }).id ?? '')
+        : ''
+      if (id && seen.has(id)) continue
+      if (id) seen.add(id)
+      merged.push(event)
+    }
     safeWriteJSON(p, merged)
     markDirty('tracker', date)
     return true
@@ -718,6 +734,58 @@ export function listRawSessionKeys(): string[] {
     return fs.readdirSync(dir)
       .filter(f => f.startsWith('raw-session-') && f.endsWith('.json'))
       .map(f => f.slice('raw-session-'.length, -'.json'.length))
+  } catch { return [] }
+}
+
+// ===================== AI Conversations（原始对话记录） =====================
+
+export interface AIConversationMessage {
+  role: 'user' | 'assistant' | 'system'
+  content: string
+  ts: number
+}
+
+export interface AIConversationData {
+  conversationId: string
+  conversationType: 'reflection' | 'stuck'
+  date: string
+  logicalDate: string
+  mode: 'daily' | 'weekly' | 'stuck'
+  sessionId?: string
+  taskId?: string
+  taskTitle?: string
+  status: 'in_progress' | 'processed' | 'abandoned'
+  startedAt: number
+  endedAt?: number
+  savedAt: number
+  messages: AIConversationMessage[]
+  metadata?: Record<string, unknown>
+}
+
+export function saveAIConversation(conversation: AIConversationData): boolean {
+  try {
+    safeWriteJSON(getAIConversationPath(conversation.conversationId), {
+      ...conversation,
+      savedAt: Date.now(),
+    })
+    markDirty('aiConversation', conversation.conversationId)
+    return true
+  } catch (e) { console.error('[saveAIConversation]', e); return false }
+}
+
+export function loadAIConversation(conversationId: string): AIConversationData | null {
+  try {
+    const p = getAIConversationPath(conversationId)
+    if (fs.existsSync(p)) return JSON.parse(fs.readFileSync(p, 'utf-8'))
+  } catch (e) { console.error('[loadAIConversation]', e) }
+  return null
+}
+
+export function listAIConversationIds(): string[] {
+  try {
+    return fs.readdirSync(getAIConversationsDir())
+      .filter(f => f.endsWith('.json'))
+      .map(f => f.slice(0, -'.json'.length))
   } catch { return [] }
 }
 

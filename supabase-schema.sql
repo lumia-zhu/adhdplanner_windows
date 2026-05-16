@@ -6,6 +6,7 @@
 
 -- ====== 清理旧表（级联删除策略和索引） ======
 drop table if exists memory_store cascade;
+drop table if exists ai_conversations cascade;
 drop table if exists reflection_sessions cascade;
 drop table if exists reflection_chats cascade;
 drop table if exists tracker_events cascade;
@@ -134,6 +135,7 @@ create policy "tracker_user_policy" on tracker_events
   with check (auth.uid() = user_id);
 
 create index if not exists idx_tracker_user_date on tracker_events(user_id, date);
+create index if not exists idx_tracker_user_date_type on tracker_events(user_id, date, event_type);
 
 -- 7. 反思聊天
 create table if not exists reflection_chats (
@@ -169,7 +171,35 @@ create policy "reflection_sessions_user_policy" on reflection_sessions
   for all using (auth.uid() = user_id)
   with check (auth.uid() = user_id);
 
--- 9. 结构化记忆（Memory Store）
+-- 9. 统一 AI 原始对话（反思 / 卡住急救）
+create table if not exists ai_conversations (
+  user_id uuid not null references auth.users(id) on delete cascade,
+  conversation_id text not null,
+  conversation_type text not null check (conversation_type in ('reflection', 'stuck')),
+  date text not null,
+  logical_date text not null,
+  mode text not null,
+  session_id text,
+  task_id text,
+  task_title text,
+  status text not null default 'in_progress',
+  started_at bigint,
+  ended_at bigint,
+  saved_at bigint,
+  messages jsonb default '[]',
+  metadata jsonb default '{}',
+  primary key (user_id, conversation_id)
+);
+
+alter table ai_conversations enable row level security;
+create policy "ai_conversations_user_policy" on ai_conversations
+  for all using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
+create index if not exists idx_ai_conversations_user_date on ai_conversations(user_id, logical_date, conversation_type);
+create index if not exists idx_ai_conversations_user_session on ai_conversations(user_id, session_id);
+
+-- 10. 结构化记忆（Memory Store）
 create table if not exists memory_store (
   user_id uuid primary key references auth.users(id) on delete cascade,
   sessions jsonb default '[]',

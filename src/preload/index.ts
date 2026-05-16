@@ -172,6 +172,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
   saveMemoryStore: (store: unknown): Promise<boolean> =>
     ipcRenderer.invoke('memory:saveStore', store),
 
+  // -------- AI Conversations --------
+  /** 保存统一 AI 对话记录（反思 / 卡住急救） */
+  saveAIConversation: (data: unknown): Promise<boolean> =>
+    ipcRenderer.invoke('aiConversation:save', data),
+  /** 加载统一 AI 对话记录 */
+  loadAIConversation: (conversationId: string): Promise<unknown> =>
+    ipcRenderer.invoke('aiConversation:load', conversationId),
+  /** 列出统一 AI 对话记录 ID */
+  listAIConversationIds: (): Promise<string[]> =>
+    ipcRenderer.invoke('aiConversation:listIds'),
+
   // -------- 拖拽区域刷新（Windows Chromium bug workaround） --------
   /** 主进程 resize 后通知前端刷新 drag-region */
   onRefreshDrag: (cb: () => void): void => { ipcRenderer.on('widget:refreshDrag', cb) },

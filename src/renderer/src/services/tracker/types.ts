@@ -282,38 +282,56 @@ export interface ReflectOpenedPayload {
 
 export interface ReflectMessageSentPayload {
   date: string
-  mode: string
+  mode: 'daily' | 'weekly'
   messageIndex: number
   charCount: number
+  source?: 'input' | 'suggestion'
 }
 
 export interface ReflectEndedPayload {
   date: string
-  mode: string
+  mode: 'daily' | 'weekly'
   messageCount: number
   durationMs: number
 }
 
 export interface ReflectClosedPayload {
   date: string
-  mode: string
+  mode: 'daily' | 'weekly'
   durationMs: number
   hadChat: boolean
   hadEndedProperly: boolean
 }
 
 export interface ReflectModeSwitchedPayload {
-  from: string
-  to: string
+  from: 'daily' | 'weekly'
+  to: 'daily' | 'weekly'
 }
 
 export interface ReflectChatOpenedPayload {
   date: string
-  mode: string
+  mode: 'daily' | 'weekly'
 }
 
 export interface ReflectChartReferencedPayload {
   chartId: string
+}
+
+export interface ReflectVisualRefClickedPayload {
+  type: string
+  value?: string
+  matched: boolean
+  count?: number
+  chartId?: string
+  mode?: 'daily' | 'weekly'
+  resolvedValue?: string
+  fallbackChartId?: string
+}
+
+export interface ReflectFullscreenToggledPayload {
+  date: string
+  mode: 'daily' | 'weekly'
+  fullscreen: boolean
 }
 
 /** ====== 9. 导航与模式 (Navigation & Mode) ====== */
@@ -378,7 +396,7 @@ export interface TaskClearedCompletedPayload {
 export interface MemoryOpenedPayload {}
 
 export interface MemoryDeletedPayload {
-  type: 'session' | 'commitment'
+  type: 'session' | 'commitment' | 'firstStep' | 'stableFirstStep' | 'stuckReason' | 'hintFeedback'
   itemId: string
 }
 
@@ -465,6 +483,8 @@ export interface TrackEventMap {
   'reflect.mode_switched':      ReflectModeSwitchedPayload
   'reflect.chat_opened':        ReflectChatOpenedPayload
   'reflect.chart_referenced':   ReflectChartReferencedPayload
+  'reflect.visual_ref_clicked': ReflectVisualRefClickedPayload
+  'reflect.fullscreen_toggled': ReflectFullscreenToggledPayload
 
   // 导航与模式
   'nav.date_changed':           NavDateChangedPayload
@@ -499,6 +519,8 @@ export interface TrackEvent<T extends TrackEventType = TrackEventType> {
   timestamp: number
   /** 所属日期（'2026-02-21'），方便按日查询 */
   date: string
+  /** 行为分析日期；历史日期反思时可不同于实际发生日期 */
+  logicalDate?: string
   /** 事件数据 */
   payload: TrackEventMap[T]
 }

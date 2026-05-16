@@ -583,6 +583,7 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
 
   // ---- 日/周 视图模式 ----
   const [viewMode, setViewMode] = useState<'day' | 'week'>('day')
+  const trackerMode = viewMode === 'week' ? 'weekly' : 'daily'
 
   // ---- 日期选择 & 日历弹窗 ----
   const today = getToday()
@@ -650,27 +651,30 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
 
   // 追踪反思页面打开
   useEffect(() => {
-    tracker.track('reflect.opened', { date: selectedDate, mode: viewMode })
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+    reflectOpenedAt.current = Date.now()
+    tracker.track('reflect.opened', { date: selectedDate, mode: trackerMode }, {
+      date: selectedDate,
+      logicalDate: selectedDate,
+    })
+    return () => {
+      tracker.track('reflect.closed', {
+        date: selectedDate,
+        mode: trackerMode,
+        durationMs: Date.now() - reflectOpenedAt.current,
+        hadChat: hadChatRef.current,
+        hadEndedProperly: hadEndedProperlyRef.current,
+      }, {
+        date: selectedDate,
+        logicalDate: selectedDate,
+      })
+    }
+  }, [selectedDate, trackerMode])
 
   // 切换日期或视图后收起全部任务分布，避免把上一页的查看状态带到新数据上
   useEffect(() => {
     setShowAllTaskDistribution(false)
     setHoveredTask(null)
   }, [selectedDate, viewMode])
-
-  // 追踪反思页面关闭（组件卸载时，覆盖所有退出路径）
-  useEffect(() => {
-    return () => {
-      tracker.track('reflect.closed', {
-        date: selectedDate,
-        mode: viewMode,
-        durationMs: Date.now() - reflectOpenedAt.current,
-        hadChat: hadChatRef.current,
-        hadEndedProperly: hadEndedProperlyRef.current,
-      })
-    }
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // 加载选中日期的事件数据 + 活跃度数据 + 任务
   useEffect(() => {
@@ -1485,7 +1489,10 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
     }
 
     if (ref.kind === 'chart') {
-      tracker.track('reflect.chart_referenced', { chartId: ref.chartId })
+      tracker.track('reflect.chart_referenced', { chartId: ref.chartId }, {
+        date: selectedDate,
+        logicalDate: selectedDate,
+      })
       pulseChart(ref.chartId)
       return
     }
@@ -1519,6 +1526,10 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
         matched: uniqueApps.length > 0,
         count: uniqueApps.length,
         chartId: fallbackChartId,
+        mode: trackerMode,
+      }, {
+        date: selectedDate,
+        logicalDate: selectedDate,
       })
 
       scrollChartIntoDataPanel(fallbackChartId)
@@ -1598,7 +1609,10 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
       value: ref.value,
       matched,
       fallbackChartId,
-      mode: viewMode,
+      mode: trackerMode,
+    }, {
+      date: selectedDate,
+      logicalDate: selectedDate,
     })
 
     scrollChartIntoDataPanel(fallbackChartId)
@@ -1829,6 +1843,19 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
             // 对话太短，直接标记为 processed
             raw.status = 'processed'
             await window.electronAPI.saveRawSession(key, raw)
+            await window.electronAPI.saveAIConversation({
+              conversationId: `reflection-${key}`,
+              conversationType: 'reflection',
+              date: raw.date,
+              logicalDate: raw.date,
+              mode: raw.mode === 'weekly' ? 'weekly' : 'daily',
+              status: raw.status,
+              startedAt: raw.startedAt,
+              endedAt: Date.now(),
+              savedAt: Date.now(),
+              messages: raw.messages,
+              metadata: { storageKey: key, source: 'raw-session-backfill' },
+            })
             continue
           }
           console.log(`[Memory] 补提取未处理的会话: ${key}`)
@@ -1843,6 +1870,19 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
           }
           raw.status = 'processed'
           await window.electronAPI.saveRawSession(key, raw)
+          await window.electronAPI.saveAIConversation({
+            conversationId: `reflection-${key}`,
+            conversationType: 'reflection',
+            date: raw.date,
+            logicalDate: raw.date,
+            mode: raw.mode === 'weekly' ? 'weekly' : 'daily',
+            status: raw.status,
+            startedAt: raw.startedAt,
+            endedAt: Date.now(),
+            savedAt: Date.now(),
+            messages: raw.messages,
+            metadata: { storageKey: key, source: 'raw-session-backfill' },
+          })
         }
       } catch (e) {
         console.warn('[Memory] 补提取失败:', e)
@@ -1913,7 +1953,10 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
 
   // ---- 打开/关闭侧边栏时调整窗口大小 ----
   const openChat = useCallback(async () => {
-    tracker.track('reflect.chat_opened', { date: selectedDate, mode: viewMode })
+    tracker.track('reflect.chat_opened', { date: selectedDate, mode: trackerMode }, {
+      date: selectedDate,
+      logicalDate: selectedDate,
+    })
     hadChatRef.current = true
     setChatOpen(true)
     if (!reflectionFullscreen) {
@@ -1941,8 +1984,11 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
 
     tracker.track('reflect.fullscreen_toggled', {
       date: selectedDate,
-      mode: viewMode,
+      mode: trackerMode,
       fullscreen: nextFullscreen,
+    }, {
+      date: selectedDate,
+      logicalDate: selectedDate,
     })
   }, [chatOpen, reflectionFullscreen, selectedDate, viewMode])
 
@@ -2246,7 +2292,12 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
             <div className="flex rounded-md bg-gray-100 p-0.5">
               <button
                 onClick={() => {
-                  if (viewMode !== 'day') tracker.track('reflect.mode_switched', { from: viewMode, to: 'day' })
+                  if (viewMode !== 'day') {
+                    tracker.track('reflect.mode_switched', { from: trackerMode, to: 'daily' }, {
+                      date: selectedDate,
+                      logicalDate: selectedDate,
+                    })
+                  }
                   setViewMode('day')
                 }}
                 className={`px-2 py-0.5 rounded text-2xs font-medium transition-all
@@ -2259,7 +2310,12 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
               </button>
               <button
                 onClick={() => {
-                  if (viewMode !== 'week') tracker.track('reflect.mode_switched', { from: viewMode, to: 'week' })
+                  if (viewMode !== 'week') {
+                    tracker.track('reflect.mode_switched', { from: trackerMode, to: 'weekly' }, {
+                      date: selectedDate,
+                      logicalDate: selectedDate,
+                    })
+                  }
                   setViewMode('week')
                   setWeekEndDate(selectedDate)
                 }}

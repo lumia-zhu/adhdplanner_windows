@@ -63,6 +63,9 @@ interface Window {
     listRawSessionKeys: () => Promise<string[]>
     loadMemoryStore: () => Promise<unknown>
     saveMemoryStore: (store: unknown) => Promise<boolean>
+    saveAIConversation: (data: unknown) => Promise<boolean>
+    loadAIConversation: (conversationId: string) => Promise<unknown>
+    listAIConversationIds: () => Promise<string[]>
     // 拖拽区域刷新（Windows Chromium bug workaround）
     onRefreshDrag: (cb: () => void) => void
     offRefreshDrag: (cb: () => void) => void

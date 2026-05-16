@@ -13,6 +13,7 @@ import {
   loadTasks, loadProfile, loadAIConfig,
   loadActivityData, loadTrackerEvents,
   loadRawSession, loadMemoryStore,
+  loadAIConversation,
   loadMoodRecords,
   safeWriteJSON, getUserDir,
 } from './storage'
@@ -60,6 +61,15 @@ function isMissingMemoryExtendedColumn(error: unknown): boolean {
   const msg = getErrorMessage(error)
   return ['first_steps', 'stable_first_steps', 'stuck_reasons', 'hint_feedback'].some(col => msg.includes(col)) &&
     msg.includes('schema cache')
+}
+
+function isMissingAIConversationsTable(error: unknown): boolean {
+  const msg = getErrorMessage(error)
+  return msg.includes('ai_conversations') && (
+    msg.includes('schema cache') ||
+    msg.includes('relation') ||
+    msg.includes('does not exist')
+  )
 }
 
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
@@ -374,6 +384,37 @@ async function pushToCloud(userId: string, entity: string, key: string): Promise
       break
     }
 
+    case 'aiConversation': {
+      const conversationId = key
+      const data = loadAIConversation(conversationId)
+      if (!data) break
+      const row = {
+        user_id: userId,
+        conversation_id: data.conversationId,
+        conversation_type: data.conversationType,
+        date: data.date,
+        logical_date: data.logicalDate,
+        mode: data.mode,
+        session_id: data.sessionId ?? null,
+        task_id: data.taskId ?? null,
+        task_title: data.taskTitle ?? null,
+        status: data.status,
+        started_at: data.startedAt,
+        ended_at: data.endedAt ?? null,
+        saved_at: data.savedAt,
+        messages: data.messages,
+        metadata: data.metadata ?? {},
+      }
+      const { error } = await sb.from('ai_conversations').upsert(row, { onConflict: 'user_id,conversation_id' })
+      if (error) {
+        if (!isMissingAIConversationsTable(error)) throw error
+        console.warn('[Sync] ai_conversations skipped: table unavailable')
+        break
+      }
+      console.log(`[Sync] aiConversation/${conversationId} synced`)
+      break
+    }
+
     case 'memory': {
       const store = loadMemoryStore()
       const row = {
@@ -682,6 +723,41 @@ export async function pullFromCloud(userId: string): Promise<void> {
       }
     }
     console.log(`[Pull] raw sessions restored: ${allSessions.length}`)
+
+    // 10. AI Conversations（统一原始对话记录）
+    try {
+      const allConversations = await fetchAllRows('ai_conversations', userId)
+      if (allConversations.length > 0) {
+        const convDir = join(userDir, 'ai-conversations')
+        if (!fs.existsSync(convDir)) fs.mkdirSync(convDir, { recursive: true })
+        for (const row of allConversations) {
+          const conversationId = String(row.conversation_id)
+          safeWriteJSON(join(convDir, `${conversationId}.json`), {
+            conversationId,
+            conversationType: row.conversation_type,
+            date: row.date,
+            logicalDate: row.logical_date ?? row.date,
+            mode: row.mode,
+            sessionId: row.session_id ?? undefined,
+            taskId: row.task_id ?? undefined,
+            taskTitle: row.task_title ?? undefined,
+            status: row.status,
+            startedAt: row.started_at ?? 0,
+            endedAt: row.ended_at ?? undefined,
+            savedAt: row.saved_at ?? Date.now(),
+            messages: row.messages ?? [],
+            metadata: row.metadata ?? {},
+          })
+        }
+      }
+      console.log(`[Pull] ai conversations restored: ${allConversations.length}`)
+    } catch (conversationError) {
+      if (!isMissingAIConversationsTable(conversationError)) {
+        console.error('[Pull] ai_conversations skipped:', conversationError)
+      } else {
+        console.warn('[Pull] ai_conversations skipped: table unavailable')
+      }
+    }
 
     // 写标记：后续不再重复拉取
     fs.writeFileSync(markerPath, new Date().toISOString(), 'utf-8')

@@ -624,6 +624,18 @@ const ReflectionChat = forwardRef<ReflectionChatHandle, ReflectionChatProps>(fun
     window.electronAPI.saveRawSession(key, session).catch(e =>
       console.warn('[Memory] raw session 保存失败:', e)
     )
+    window.electronAPI.saveAIConversation({
+      conversationId: `reflection-${key}`,
+      conversationType: 'reflection',
+      date: session.date,
+      logicalDate: session.date,
+      mode: session.mode,
+      status: session.status,
+      startedAt: session.startedAt,
+      savedAt: Date.now(),
+      messages: session.messages,
+      metadata: { storageKey: key },
+    }).catch(e => console.warn('[Conversation] 反思对话保存失败:', e))
   }, [storageKey])
 
   const scrollToBottom = useCallback(() => {
@@ -955,6 +967,9 @@ const ReflectionChat = forwardRef<ReflectionChatHandle, ReflectionChatProps>(fun
       mode: session.mode,
       messageCount: bubbles.length,
       durationMs: Date.now() - session.startedAt,
+    }, {
+      date: session.date,
+      logicalDate: session.date,
     })
 
     try {
@@ -1000,6 +1015,19 @@ const ReflectionChat = forwardRef<ReflectionChatHandle, ReflectionChatProps>(fun
       sess.status = 'processed'
       const key = storageKey || sess.date
       window.electronAPI.saveRawSession(key, sess).catch(() => {})
+      window.electronAPI.saveAIConversation({
+        conversationId: `reflection-${key}`,
+        conversationType: 'reflection',
+        date: sess.date,
+        logicalDate: sess.date,
+        mode: sess.mode,
+        status: sess.status,
+        startedAt: sess.startedAt,
+        endedAt: Date.now(),
+        savedAt: Date.now(),
+        messages: sess.messages,
+        metadata: { storageKey: key },
+      }).catch(() => {})
 
       setEndingState('saved')
     } catch (e) {
@@ -1072,6 +1100,9 @@ const ReflectionChat = forwardRef<ReflectionChatHandle, ReflectionChatProps>(fun
       messageIndex: msgIdx,
       charCount: text.length,
       source,
+    }, {
+      date: rawSessionRef.current.date,
+      logicalDate: rawSessionRef.current.date,
     })
 
     setSuggestions([])

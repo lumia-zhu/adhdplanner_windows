@@ -14,6 +14,13 @@
 
 import type { TrackEventType, TrackEventMap, TrackEvent } from './types'
 
+interface TrackOptions {
+  /** Storage shard date. Use for historical-date reflection events that should be read with that day. */
+  date?: string
+  /** Behavioral analysis date. Defaults to the storage date. */
+  logicalDate?: string
+}
+
 // ===================== 工具函数 =====================
 
 /** 获取今天的日期字符串 YYYY-MM-DD */
@@ -86,12 +93,14 @@ class Tracker {
    *     taskTitle: task.title,
    *   })
    */
-  track<T extends TrackEventType>(type: T, payload: TrackEventMap[T]): void {
+  track<T extends TrackEventType>(type: T, payload: TrackEventMap[T], options: TrackOptions = {}): void {
+    const date = options.date ?? options.logicalDate ?? getToday()
     const event: TrackEvent<T> = {
       id: uid(),
       type,
       timestamp: Date.now(),
-      date: getToday(),
+      date,
+      logicalDate: options.logicalDate ?? date,
       payload,
     }
 

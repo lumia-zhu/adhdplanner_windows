@@ -37,3 +37,50 @@ alter table memory_store add column if not exists hint_feedback jsonb default '[
 -- Required by activity_records upsert on (user_id, date, ts).
 create unique index if not exists activity_records_user_date_ts_unique
   on activity_records(user_id, date, ts);
+
+-- Helpful for dashboard filters over raw tracker events.
+create index if not exists idx_tracker_user_date_type
+  on tracker_events(user_id, date, event_type);
+
+-- Unified raw AI conversations for reflection and stuck support.
+create table if not exists ai_conversations (
+  user_id uuid not null references auth.users(id) on delete cascade,
+  conversation_id text not null,
+  conversation_type text not null check (conversation_type in ('reflection', 'stuck')),
+  date text not null,
+  logical_date text not null,
+  mode text not null,
+  session_id text,
+  task_id text,
+  task_title text,
+  status text not null default 'in_progress',
+  started_at bigint,
+  ended_at bigint,
+  saved_at bigint,
+  messages jsonb default '[]',
+  metadata jsonb default '{}',
+  primary key (user_id, conversation_id)
+);
+
+alter table ai_conversations enable row level security;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_policies
+    where schemaname = 'public'
+      and tablename = 'ai_conversations'
+      and policyname = 'ai_conversations_user_policy'
+  ) then
+    create policy "ai_conversations_user_policy" on ai_conversations
+      for all using (auth.uid() = user_id)
+      with check (auth.uid() = user_id);
+  end if;
+end
+$$;
+
+create index if not exists idx_ai_conversations_user_date
+  on ai_conversations(user_id, logical_date, conversation_type);
+
+create index if not exists idx_ai_conversations_user_session
+  on ai_conversations(user_id, session_id);

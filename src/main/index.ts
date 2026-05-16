@@ -20,6 +20,7 @@ import {
   setUserDataDir, migrateRootDataToUser,
   saveRawSession, loadRawSession, listRawSessionKeys,
   loadMemoryStore, saveMemoryStore,
+  saveAIConversation, loadAIConversation, listAIConversationIds,
 } from './storage'
 import {
   MAIN_WIDTH, MAIN_HEIGHT,
@@ -397,6 +398,17 @@ function setupIPC(): void {
   })
   ipcMain.handle('memory:listRawSessionKeys', () => {
     return listRawSessionKeys()
+  })
+
+  // -------- AI Conversations --------
+  ipcMain.handle('aiConversation:save', (_, data: unknown) => {
+    return saveAIConversation(data as any)
+  })
+  ipcMain.handle('aiConversation:load', (_, conversationId: string) => {
+    return loadAIConversation(conversationId)
+  })
+  ipcMain.handle('aiConversation:listIds', () => {
+    return listAIConversationIds()
   })
 
   // -------- Memory: Structured Store --------
