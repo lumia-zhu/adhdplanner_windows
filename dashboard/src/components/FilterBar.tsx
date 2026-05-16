@@ -103,12 +103,20 @@ export default function FilterBar({
           </button>
         )}
 
-        <a
-          href="/research"
-          className="ml-auto px-3 py-1.5 text-sm bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors"
-        >
-          研究分析 →
-        </a>
+        <div className="ml-auto flex items-center gap-2">
+          <a
+            href="/daily-status"
+            className="px-3 py-1.5 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+          >
+            今日状态
+          </a>
+          <a
+            href="/research"
+            className="px-3 py-1.5 text-sm bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors"
+          >
+            研究分析 →
+          </a>
+        </div>
       </div>
     </header>
   )

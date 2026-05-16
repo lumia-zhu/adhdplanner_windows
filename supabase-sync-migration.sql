@@ -29,6 +29,9 @@ $$;
 
 create index if not exists idx_mood_records_user_date on mood_records(user_id, date);
 
+alter table profiles add column if not exists plan_time text;
+alter table profiles add column if not exists reflection_time text;
+
 alter table memory_store add column if not exists first_steps jsonb default '[]';
 alter table memory_store add column if not exists stable_first_steps jsonb default '[]';
 alter table memory_store add column if not exists stuck_reasons jsonb default '[]';

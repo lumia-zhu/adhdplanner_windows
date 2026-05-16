@@ -32,6 +32,7 @@ create table if not exists profiles (
 
 -- 已建库的用户：补加 plan_time 列（多次执行不会报错）
 alter table profiles add column if not exists plan_time text;
+alter table profiles add column if not exists reflection_time text;
 
 alter table profiles enable row level security;
 create policy "profiles_user_policy" on profiles

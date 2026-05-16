@@ -82,6 +82,16 @@ Completed tasks / total tasks for a given date.
 
 Use the `tasks` table as the canonical source for day-level task outcomes.
 
+### Daily Experiment Status
+
+The dashboard "今日状态" page is an operational check for the current study day, not a research outcome metric.
+
+- Mood recorded: `mood_records` has a row for the selected date and user.
+- Planning started: `tasks` has at least one row for the selected date and user, and `tracker_events` has at least one of `session.started`, `exec.micro_started`, or `plan.first_micro`.
+- Reflection started: `tracker_events` has both `reflect.opened` and `reflect.message_sent` for the selected date and user.
+- Reminder times: `profiles.plan_time` and `profiles.reflection_time`; empty values are shown as "未设置".
+- Last activity time: latest relevant `tracker_events.timestamp` for the selected date and user.
+
 ### Focus To Computer Active Ratio
 
 Focus session minutes / computer active minutes.
