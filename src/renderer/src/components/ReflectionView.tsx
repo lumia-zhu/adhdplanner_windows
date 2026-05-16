@@ -2431,7 +2431,7 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
                 <ChartFocusSection id="chart-task-duration">
                   <div className="flex items-center justify-between mb-3">
                     <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                      ⏱ 任务用时
+                      任务用时
                     </h3>
                     <button
                       onClick={() => setShowAllTaskDistribution(v => !v)}
@@ -2459,7 +2459,7 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
               {/* 电脑活动分布（折线图 + 热力条，共享 x 轴） */}
               <ChartFocusSection id="chart-activity-heatmap">
                 <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-1.5">
-                  🔍 电脑活动分布
+                  电脑活动分布
                   <span className="relative group">
                     <span className="inline-flex items-center justify-center w-4 h-4 rounded-full border border-gray-300 text-gray-400 text-[10px] leading-none cursor-help group-hover:text-gray-600 group-hover:border-gray-400 transition-colors">?</span>
                     <span className="pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-150 absolute left-1/2 -translate-x-1/2 top-full mt-1.5 z-50 w-[280px] bg-gray-800 text-white text-[11px] leading-relaxed rounded-lg px-3 py-2.5 shadow-lg normal-case tracking-normal font-normal">
@@ -2498,7 +2498,7 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
               <div className="border-t border-gray-100" />
               <ChartFocusSection id="chart-app-usage">
                 <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-1.5">
-                  📱 应用使用时长
+                  应用使用时长
                   <span className="relative group">
                     <span className="inline-flex items-center justify-center w-4 h-4 rounded-full border border-gray-300 text-gray-400 text-[10px] leading-none cursor-help group-hover:text-gray-600 group-hover:border-gray-400 transition-colors">?</span>
                     <span className="pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-150 absolute left-1/2 -translate-x-1/2 top-full mt-1.5 z-50 w-[280px] bg-gray-800 text-white text-[11px] leading-relaxed rounded-lg px-3 py-2.5 shadow-lg normal-case tracking-normal font-normal">
@@ -2519,7 +2519,7 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
                   <div className="border-t border-gray-100" />
                   <div>
                     <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
-                      📦 未执行任务
+                      未执行任务
                     </h3>
                     <div className="flex flex-wrap gap-1.5">
                       {displaySummary.leftoverTasks.map((t, i) => (

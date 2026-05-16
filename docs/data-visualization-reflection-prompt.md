@@ -205,7 +205,7 @@ AI 正文用 `【chart:ID】` 引用图表，前端会转成可点击链接。
 - `【chart:week-ranking】`：周任务用时排行
 - `【chart:week-heatmap】`：7×24 活动热力图
 - `【chart:week-rhythm】`：电脑活动图
-- `【chart:week-app-usage】`：应用使用时长（本周）
+- `【chart:week-app-usage】`：周应用使用时长
 
 ### 图表职责
 

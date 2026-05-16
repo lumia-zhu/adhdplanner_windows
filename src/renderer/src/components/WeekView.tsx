@@ -233,7 +233,7 @@ function WeekCompletionSection({
   initialShowMoodTrend = false,
   missingMoodStyle,
   showMoodLegend,
-  heading = '📊 每日任务完成率',
+  heading = '每日任务完成率',
 }: {
   days: WeekDayData[]
   /** 为 true 时与 WeekCompletionBars 的 barsOnly 一致，仅柱状图 */
@@ -375,7 +375,7 @@ function WeekMoodCompletionDemo({ days }: { days: WeekDayData[] }) {
     <div id="chart-week-mood-completion-demo" className="space-y-3">
       <div>
         <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider flex items-center gap-1.5">
-          🌿 不同心情下的任务完成率
+          不同心情下的任务完成率
           <span className="relative group">
             <span className="inline-flex items-center justify-center w-4 h-4 rounded-full border border-gray-300 text-gray-400 text-[10px] leading-none cursor-help group-hover:text-gray-600 group-hover:border-gray-400 transition-colors">?</span>
             <span className="pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-150 absolute left-1/2 -translate-x-1/2 top-full mt-1.5 z-50 w-[280px] bg-gray-800 text-white text-[11px] leading-relaxed rounded-lg px-3 py-2.5 shadow-lg normal-case tracking-normal font-normal">
@@ -554,6 +554,8 @@ export default function WeekView({ weekEndDate, onDataReady, chatOpen, activeHig
           days={weekData}
           toggleMoodTrend
           lineMissingMoodMode="carryForwardDotted"
+          moodPointMode="emoji"
+          showMoodAxis={false}
         />
       </ChartFocusSection>
 
@@ -568,7 +570,7 @@ export default function WeekView({ weekEndDate, onDataReady, chatOpen, activeHig
       {/* 周任务用时排行 Top 10 */}
       <ChartFocusSection id="chart-week-ranking">
         <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
-          🏆 周任务用时排行
+          周任务用时排行
         </h3>
         <WeekTaskRanking days={weekData} highlightTask={highlightedTask} highlightPulseKey={highlightPulseKey} />
       </ChartFocusSection>
@@ -580,7 +582,7 @@ export default function WeekView({ weekEndDate, onDataReady, chatOpen, activeHig
       <ChartFocusSection id="chart-week-heatmap">
         <div className="mb-3 flex items-center justify-between gap-3">
           <h3 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-gray-500">
-            🔍 电脑活动分布
+            电脑活动分布
             <span className="relative group">
               <span className="inline-flex items-center justify-center w-4 h-4 rounded-full border border-gray-300 text-gray-400 text-[10px] leading-none cursor-help group-hover:text-gray-600 group-hover:border-gray-400 transition-colors">?</span>
               <span className="pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-150 absolute left-1/2 -translate-x-1/2 top-full mt-1.5 z-50 w-[280px] bg-gray-800 text-white text-[11px] leading-relaxed rounded-lg px-3 py-2.5 shadow-lg normal-case tracking-normal font-normal">
@@ -617,7 +619,7 @@ export default function WeekView({ weekEndDate, onDataReady, chatOpen, activeHig
       {/* 应用使用时长排行（周聚合，默认 Top 5，可展开） */}
       <ChartFocusSection id="chart-week-app-usage">
         <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-1.5">
-          📱 应用使用时长（本周）
+          周应用使用时长
           <span className="relative group">
             <span className="inline-flex items-center justify-center w-4 h-4 rounded-full border border-gray-300 text-gray-400 text-[10px] leading-none cursor-help group-hover:text-gray-600 group-hover:border-gray-400 transition-colors">?</span>
             <span className="pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-150 absolute left-1/2 -translate-x-1/2 top-full mt-1.5 z-50 w-[280px] bg-gray-800 text-white text-[11px] leading-relaxed rounded-lg px-3 py-2.5 shadow-lg normal-case tracking-normal font-normal">
@@ -626,18 +628,6 @@ export default function WeekView({ weekEndDate, onDataReady, chatOpen, activeHig
           </span>
         </h3>
         <AppUsageRanking data={weekData.flatMap((d) => d.activity)} highlightApps={highlightedApps} highlightPulseKey={highlightPulseKey} />
-      </ChartFocusSection>
-
-      {/* 每日完成率改造副本：保留原图不动，底部复制一份用于后续实验 */}
-      <div className="border-t border-gray-100" />
-      <ChartFocusSection id="chart-week-completion-copy">
-        <WeekCompletionSection
-          days={weekData}
-          toggleMoodTrend
-          lineMissingMoodMode="carryForwardDotted"
-          moodPointMode="emoji"
-          showMoodAxis={false}
-        />
       </ChartFocusSection>
 
     </div>

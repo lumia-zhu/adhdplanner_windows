@@ -41,7 +41,7 @@ const CHART_ID_MAP: Record<string, { domId: string; label: string }> = {
   'week-ranking':    { domId: 'chart-week-ranking',    label: '任务排行' },
   'week-heatmap':    { domId: 'chart-week-heatmap',    label: '活动热力图' },
   'week-rhythm':     { domId: 'chart-week-rhythm',     label: '电脑活动' },
-  'week-app-usage':  { domId: 'chart-week-app-usage',  label: '应用使用时长' },
+  'week-app-usage':  { domId: 'chart-week-app-usage',  label: '周应用使用时长' },
 }
 
 const STREAM_CHART_FALLBACK_DELAY_MS = 700
