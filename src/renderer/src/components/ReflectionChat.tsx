@@ -7,7 +7,7 @@
 
 import { useState, useEffect, useRef, useCallback, useImperativeHandle, forwardRef } from 'react'
 import { tracker } from '../services/tracker'
-import type { AIConfig, ReflectionMessage, MessageContentPart, VisualTarget } from '../services/ai'
+import type { AIConfig, ReflectionMessage, MessageContentPart, ReflectionStyle, VisualTarget } from '../services/ai'
 import { chatReflectionStream, extractMemoryFromChat, generateSuggestions, selectReflectionVisualFocus } from '../services/ai'
 import { recordReflectionMemory } from '../services/memory-manager'
 
@@ -562,6 +562,10 @@ interface ReflectionChatProps {
   aiConfig: AIConfig
   /** 反思模式：日反思 or 周反思，用于生成不同风格的探索方向 */
   mode?: 'daily' | 'weekly'
+  /** 对话结构：默认三段式 or 自由反思模式 */
+  reflectionStyle?: ReflectionStyle
+  /** 切换对话结构 */
+  onReflectionStyleChange?: (style: ReflectionStyle) => void
   /** 仪表板截图 base64（data:image/jpeg;base64,...） */
   screenshotBase64?: string | null
   /** 当前反思的日期 YYYY-MM-DD（用于截图消息中标注日期） */
@@ -582,6 +586,8 @@ const ReflectionChat = forwardRef<ReflectionChatHandle, ReflectionChatProps>(fun
   systemPrompt,
   aiConfig,
   mode = 'daily',
+  reflectionStyle = 'structured',
+  onReflectionStyleChange,
   screenshotBase64,
   selectedDate,
   storageKey,
@@ -672,7 +678,7 @@ const ReflectionChat = forwardRef<ReflectionChatHandle, ReflectionChatProps>(fun
       let gotActivity = false
       let streamedText = ''
       let pendingChartFallback: {
-        timer: ReturnType<typeof window.setTimeout>
+        timer: number
         ref: Extract<VisualRef, { kind: 'chart' }>
       } | null = null
       const TIMEOUT_MS = 60_000
@@ -729,6 +735,7 @@ const ReflectionChat = forwardRef<ReflectionChatHandle, ReflectionChatProps>(fun
               ],
               aiConfig,
               mode,
+              reflectionStyle,
             ).then(generated => {
               const nextSuggestions = generated
                 .map(cleanSuggestionLabel)
@@ -736,10 +743,12 @@ const ReflectionChat = forwardRef<ReflectionChatHandle, ReflectionChatProps>(fun
                 .slice(0, 3)
               setSuggestions(nextSuggestions.length > 0
                 ? nextSuggestions
-                : shouldFallbackOnEmpty ? FALLBACK_SUGGESTIONS[mode] : [])
+                : shouldFallbackOnEmpty && reflectionStyle === 'structured' ? FALLBACK_SUGGESTIONS[mode] : [])
             }).catch(error => {
               console.warn('[ReflectionChat] 探索方向兜底生成失败:', error)
-              setSuggestions(FALLBACK_SUGGESTIONS[mode])
+              setSuggestions(shouldFallbackOnEmpty && reflectionStyle === 'structured'
+                ? FALLBACK_SUGGESTIONS[mode]
+                : [])
             })
           }
         }
@@ -885,7 +894,16 @@ const ReflectionChat = forwardRef<ReflectionChatHandle, ReflectionChatProps>(fun
         })
       })()
     })
-  }, [aiConfig, mode, onVisualRef, visualTargets])
+  }, [aiConfig, mode, onVisualRef, reflectionStyle, visualTargets])
+
+  useEffect(() => {
+    if (messagesRef.current[0]?.role === 'system') {
+      messagesRef.current = [
+        { role: 'system', content: systemPrompt },
+        ...messagesRef.current.slice(1),
+      ]
+    }
+  }, [systemPrompt])
 
   // ---- 加载历史聊天记录 ----
   useEffect(() => {
@@ -1121,12 +1139,17 @@ const ReflectionChat = forwardRef<ReflectionChatHandle, ReflectionChatProps>(fun
 
   const sendSuggestionMessage = useCallback((label: string) => {
     const scopeText = mode === 'weekly' ? '本周行为模式和历史行为记录' : '用户当天行为模式和历史行为记录'
-    const aiText = [
-      `用户选择了分析角度：${label}`,
-      `这是 AI 基于${scopeText}发现的一个任务管理问题入口。请按这个 Tag 进入第二步：先结合相关图表、行为记录或近期记忆解释它背后可能对应的任务管理 pattern；再问 1 个开放式上下文问题，帮助用户觉察自己的任务、状态或策略；不要直接跳到建议，也不要问用户是否想聊这个。本轮只等待用户补充上下文，禁止输出 SUGGESTIONS 注释，禁止生成新的探索方向。`,
-    ].join('\n')
+    const aiText = reflectionStyle === 'free'
+      ? [
+        `用户选择了分析方向：${label}`,
+        `这是 AI 基于${scopeText}发现的一个任务管理问题入口。请围绕这个方向判断下一步最合适的回应方式：如果还缺真实背景，先结合相关图表/行为记录解释现象，再问 1 个开放问题；如果用户已给出足够上下文或主动要方法，可以给 1 个低压力建议；如果这个方向已经有清楚发现，可以温和总结并按需给新的探索方向。每轮只做一个核心动作。`,
+      ].join('\n')
+      : [
+        `用户选择了分析角度：${label}`,
+        `这是 AI 基于${scopeText}发现的一个任务管理问题入口。请按这个 Tag 进入第二步：先结合相关图表、行为记录或近期记忆解释它背后可能对应的任务管理 pattern；再问 1 个开放式上下文问题，帮助用户觉察自己的任务、状态或策略；不要直接跳到建议，也不要问用户是否想聊这个。本轮只等待用户补充上下文，禁止输出 SUGGESTIONS 注释，禁止生成新的探索方向。`,
+      ].join('\n')
     sendUserMessage(label, aiText, 'suggestion')
-  }, [mode, sendUserMessage])
+  }, [mode, reflectionStyle, sendUserMessage])
 
   const handleSend = () => {
     const text = input.trim()
@@ -1142,9 +1165,24 @@ const ReflectionChat = forwardRef<ReflectionChatHandle, ReflectionChatProps>(fun
     <div className="flex flex-col h-full">
       {/* 顶栏：结束复盘按钮 */}
       <div className="flex items-center justify-between px-4 py-2.5 border-b border-gray-100 flex-shrink-0">
-        <span className="text-xs font-semibold text-gray-500">
-          AI助手
-        </span>
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-semibold text-gray-500">
+            AI助手
+          </span>
+          <button
+            type="button"
+            onClick={() => onReflectionStyleChange?.(reflectionStyle === 'free' ? 'structured' : 'free')}
+            className={`group relative inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-medium transition-colors ${
+              reflectionStyle === 'free'
+                ? 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100'
+                : 'bg-gray-50 text-gray-400 hover:bg-gray-100 hover:text-gray-600'
+            }`}
+            title="关闭时按稳定三段式复盘；打开后 AI 会更自由地判断什么时候追问、建议或继续给新方向。"
+          >
+            <span className={`h-1.5 w-1.5 rounded-full ${reflectionStyle === 'free' ? 'bg-indigo-500' : 'bg-gray-300'}`} />
+            自由反思
+          </button>
+        </div>
         <button
           onClick={handleEndChat}
           disabled={endingState !== 'idle'}

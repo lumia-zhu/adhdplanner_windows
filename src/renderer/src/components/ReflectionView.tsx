@@ -9,7 +9,7 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import type { ReactNode } from 'react'
 import type { DailyMoodRecord, Task, UserProfile } from '../types'
-import type { AIConfig, VisualTarget } from '../services/ai'
+import type { AIConfig, ReflectionStyle, VisualTarget } from '../services/ai'
 import { buildReflectionSystemPrompt, buildWeeklyReflectionSystemPrompt, extractMemoryFromChat } from '../services/ai'
 import type { TrackEvent, DailySummary } from '../services/tracker'
 import { buildDailySummary, summaryToLLMContext, buildWeeklyLLMContext } from '../services/tracker'
@@ -234,6 +234,7 @@ const SPOTLIGHT_WAIT_VISIBLE_MS = 2200
 const SPOTLIGHT_TARGET_LOOKUP_MS = 300
 const SPOTLIGHT_SCROLL_STABLE_FRAMES = 6
 const SPOTLIGHT_SCROLL_EPSILON_PX = 0.5
+const REFLECTION_STYLE_STORAGE_KEY = 'reflectionStyle'
 
 const FOCUS_FALLBACK_CHARTS: Record<VisualFocusType, string> = {
   'activity-hour': 'chart-activity-heatmap',
@@ -584,6 +585,13 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
   // ---- 日/周 视图模式 ----
   const [viewMode, setViewMode] = useState<'day' | 'week'>('day')
   const trackerMode = viewMode === 'week' ? 'weekly' : 'daily'
+  const [reflectionStyle, setReflectionStyle] = useState<ReflectionStyle>(() => {
+    try {
+      return localStorage.getItem(REFLECTION_STYLE_STORAGE_KEY) === 'free' ? 'free' : 'structured'
+    } catch {
+      return 'structured'
+    }
+  })
 
   // ---- 日期选择 & 日历弹窗 ----
   const today = getToday()
@@ -632,6 +640,15 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
   const goToday = useCallback(() => {
     setActiveHighlight(null)
     setSelectedDate(getToday())
+  }, [])
+
+  const handleReflectionStyleChange = useCallback((style: ReflectionStyle) => {
+    setReflectionStyle(style)
+    try {
+      localStorage.setItem(REFLECTION_STYLE_STORAGE_KEY, style)
+    } catch {
+      // 忽略 localStorage 不可用；本次会话仍会切换。
+    }
   }, [])
 
   // ---- 拖拽分隔条 ----
@@ -1808,10 +1825,10 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
     const visualMarkerInfo = `\n\n${buildVisualMarkerPromptContext(visualTargets)}`
     const taskSessionContext = taskSessionInfo ? `\n\n${taskSessionInfo}` : ''
     const appUsageContext = appUsageInfo ? `\n\n${appUsageInfo}` : ''
-    const prompt = buildReflectionSystemPrompt(context + taskInfo + productivityInfo + activityInfo + moodInfo + taskSessionContext + appUsageContext + taskDurationInfo + insightInfo + visualMarkerInfo, false, isToday, memoryContext, selectedDate, userProfile.preferredName ?? '')
+    const prompt = buildReflectionSystemPrompt(context + taskInfo + productivityInfo + activityInfo + moodInfo + taskSessionContext + appUsageContext + taskDurationInfo + insightInfo + visualMarkerInfo, false, isToday, memoryContext, selectedDate, userProfile.preferredName ?? '', reflectionStyle)
     console.log('[Memory Debug] systemPrompt 构建完成, 包含记忆:', prompt.includes('对话记忆'), ', memoryContext长度:', memoryContext.length)
     return prompt
-  }, [summary, events, localTasks, completionRate, totalUsageMinutes, productivityRatio, flowRatio, activityTimeDistribution, displayMoodRecord, displayMoodOption, displayMoodNote, activityData, taskDurations, visualTargets, isToday, memoryContext, memoryLoaded, insightContext, insightLoaded, selectedDate])
+  }, [summary, events, localTasks, completionRate, totalUsageMinutes, productivityRatio, flowRatio, activityTimeDistribution, displayMoodRecord, displayMoodOption, displayMoodNote, activityData, taskDurations, visualTargets, isToday, memoryContext, memoryLoaded, insightContext, insightLoaded, selectedDate, reflectionStyle])
 
   // ---- 周视图数据回调 ----
   const handleWeekDataReady = useCallback((data: WeekDayData[]) => {
@@ -1828,8 +1845,8 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
     const weekAppUsageInfo = buildAppUsagePromptContext(weekDayData.flatMap(day => day.activity))
     const appUsageContext = weekAppUsageInfo ? `\n\n本周${weekAppUsageInfo}` : ''
     const visualMarkerInfo = `\n\n${buildVisualMarkerPromptContext(weekVisualTargets)}`
-    return buildWeeklyReflectionSystemPrompt(context + appUsageContext + insightInfo + visualMarkerInfo, false, weekLabel, memoryContext)
-  }, [weekDayData, weekEndDate, memoryContext, insightContext, weekVisualTargets])
+    return buildWeeklyReflectionSystemPrompt(context + appUsageContext + insightInfo + visualMarkerInfo, false, weekLabel, memoryContext, reflectionStyle)
+  }, [weekDayData, weekEndDate, memoryContext, insightContext, weekVisualTargets, reflectionStyle])
 
   // 根据当前视图模式选择对应的 system prompt
   const activeSystemPrompt = viewMode === 'week' ? weekSystemPrompt : systemPrompt
@@ -2646,6 +2663,8 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
                   systemPrompt={activeSystemPrompt}
                   aiConfig={aiConfig}
                   mode={viewMode === 'week' ? 'weekly' : 'daily'}
+                  reflectionStyle={reflectionStyle}
+                  onReflectionStyleChange={handleReflectionStyleChange}
                   screenshotBase64={null}
                   selectedDate={viewMode === 'week' ? weekEndDate : selectedDate}
                   storageKey={viewMode === 'week' ? `week-${weekEndDate}` : selectedDate}
