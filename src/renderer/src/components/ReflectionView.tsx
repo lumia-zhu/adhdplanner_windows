@@ -27,7 +27,7 @@ import { computeActiveTimeRange } from '../utils/activity-time-range'
 import AppUsageRanking from './AppUsageRanking'
 import ReflectionChat from './ReflectionChat'
 import type { ReflectionChatHandle, VisualFocusType, VisualRef } from './ReflectionChat'
-import { expireOldCommitments, getMemorySummaryForPrompt, recordReflectionMemory } from '../services/memory-manager'
+import { buildReflectionMemoryCapsule, expireOldCommitments, recordReflectionMemory } from '../services/memory-manager'
 import ManualTimeEntry from './ManualTimeEntry'
 import MiniCalendar from './MiniCalendar'
 import WeekView from './WeekView'
@@ -734,15 +734,21 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
     }
   }, [selectedDate])
 
-  // 加载记忆上下文（开场 prompt 注入用）；切换日期时重新读取，确保包含最新保存的记忆
+  // 加载记忆上下文（开场 prompt 注入用）；随当前数据更新，挑选相关记忆而不是塞入全部历史。
   useEffect(() => {
     setMemoryLoaded(false)
     ;(async () => {
       try {
         const store = await expireOldCommitments()
         console.log('[Memory Debug] loadMemory 返回:', `sessions=${store.sessions.length}, commitments=${store.commitments.length}`)
-        const ctx = getMemorySummaryForPrompt(store, { phase: 'reflection' })
-        console.log('[Memory Debug] 最终 memoryContext 长度:', ctx.length, ctx ? `\n${ctx}` : '(空)')
+        const ctx = buildReflectionMemoryCapsule(store, {
+          date: selectedDate,
+          mode: viewMode === 'week' ? 'weekly' : 'daily',
+          tasks: localTasks,
+          summary,
+          events,
+        })
+        console.log('[Memory Debug] 胶囊 memoryContext 长度:', ctx.length, ctx ? `\n${ctx}` : '(空)')
         setMemoryContext(ctx)
       } catch (e) {
         console.warn('[Memory] 加载记忆上下文失败:', e)
@@ -751,7 +757,7 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
         console.log('[Memory Debug] memoryLoaded = true')
       }
     })()
-  }, [selectedDate])
+  }, [selectedDate, viewMode, localTasks, summary, events])
 
   // 加载可用洞察线索：按证据选择当天模式、任务延续、卡顿恢复、用户画像或历史对比。
   useEffect(() => {

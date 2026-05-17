@@ -64,7 +64,7 @@ export default function MemoryPanel({ visible, onClose }: MemoryPanelProps) {
   const loadData = useCallback(async () => {
     try {
       setLoading(true)
-      setStore(await loadMemory())
+      setStore(await loadMemory(true))
     } catch (e) {
       console.warn('[MemoryPanel] 加载失败:', e)
     } finally {
@@ -133,8 +133,8 @@ export default function MemoryPanel({ visible, onClose }: MemoryPanelProps) {
   const emptyHintByTab: Record<MemoryTab, string> = {
     all: '开始、执行或反思任务后就会出现',
     planning: '选择第一步后会沉淀启动偏好',
-    execution: '提交卡住原因或提示反馈后会出现',
-    reflection: '完成反思对话后会出现摘要和承诺',
+    execution: '卡住时的对话和困难表达会沉淀为线索',
+    reflection: '完成反思后会出现可复用发现和想尝试的事',
   }
 
   const threeDaysAgo = Date.now() - 3 * 24 * 60 * 60 * 1000
@@ -219,7 +219,7 @@ export default function MemoryPanel({ visible, onClose }: MemoryPanelProps) {
               AI 记忆
             </h3>
             <p className="text-xs text-gray-400 mt-1">
-              系统从你的反思对话中记住的要点，你可以随时删除。
+              AI 会用这些线索更懂你的启动方式、卡点和想尝试的做法；你可以随时删除。
             </p>
           </div>
           <button
@@ -280,7 +280,7 @@ export default function MemoryPanel({ visible, onClose }: MemoryPanelProps) {
               {showPlanning && hasPlanning && (
                 <div className="mb-5">
                   <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">计划阶段</h4>
-                  <p className="text-xs text-gray-400 mb-3">你通常如何启动任务</p>
+                  <p className="text-xs text-gray-400 mb-3">用于类似任务出现时，帮 AI 想起你更容易接受的第一步。</p>
                   <div className="space-y-2">
                     {stableFirstSteps.map(item => (
                       <div
@@ -331,8 +331,8 @@ export default function MemoryPanel({ visible, onClose }: MemoryPanelProps) {
               {/* 执行阶段 */}
               {showExecution && hasExecution && (
                 <div className="mb-5">
-                  <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">执行阶段</h4>
-                  <p className="text-xs text-gray-400 mb-3">任务执行时的卡点和提示反馈</p>
+                  <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">卡顿线索</h4>
+                  <p className="text-xs text-gray-400 mb-3">用于反思时理解常见困难表达，但不会被当成今天一定发生的原因。</p>
                   <div className="space-y-2">
                     {stuckReasons.map(item => (
                       <div
@@ -351,23 +351,33 @@ export default function MemoryPanel({ visible, onClose }: MemoryPanelProps) {
                         <DeleteButton type="stuckReason" id={item.itemId} title="删除这条卡住记录" />
                       </div>
                     ))}
-                    {hintFeedback.map(item => (
-                      <div
-                        key={item.itemId}
-                        className={`group flex items-start gap-3 px-3 py-2.5 rounded-xl border border-gray-100 hover:border-gray-200 transition-all ${
-                          deletedId === item.itemId ? 'opacity-0 scale-95 transition-all duration-300' : ''
-                        }`}
-                      >
-                        <span className="flex-shrink-0 text-xs text-gray-400 bg-gray-50 px-2 py-0.5 rounded-md mt-0.5 whitespace-nowrap">
-                          {item.feedback === 'up' ? '有用' : '无效'}
-                        </span>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm text-gray-700 leading-relaxed">{item.hintText}</p>
-                          <p className="text-xs text-gray-400 mt-1">{formatCommitmentDate(item.date)} · {item.taskTitle}</p>
+                    {hintFeedback.length > 0 && (
+                      <details className="rounded-xl border border-gray-100 bg-gray-50/60 px-3 py-2.5">
+                        <summary className="cursor-pointer text-xs font-medium text-gray-400">
+                          旧版提示反馈 {hintFeedback.length} 条
+                        </summary>
+                        <p className="mt-1 text-xs text-gray-400">这是旧版点赞/点踩反馈，只做兼容展示，不再作为新的卡顿对话核心。</p>
+                        <div className="mt-2 space-y-2">
+                          {hintFeedback.map(item => (
+                            <div
+                              key={item.itemId}
+                              className={`group flex items-start gap-3 px-3 py-2.5 rounded-xl border border-gray-100 bg-white hover:border-gray-200 transition-all ${
+                                deletedId === item.itemId ? 'opacity-0 scale-95 transition-all duration-300' : ''
+                              }`}
+                            >
+                              <span className="flex-shrink-0 text-xs text-gray-400 bg-gray-50 px-2 py-0.5 rounded-md mt-0.5 whitespace-nowrap">
+                                {item.feedback === 'up' ? '有用' : '无效'}
+                              </span>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm text-gray-500 leading-relaxed">{item.hintText}</p>
+                                <p className="text-xs text-gray-400 mt-1">{formatCommitmentDate(item.date)} · {item.taskTitle}</p>
+                              </div>
+                              <DeleteButton type="hintFeedback" id={item.itemId} title="不要再让 AI 使用这条旧反馈" />
+                            </div>
+                          ))}
                         </div>
-                        <DeleteButton type="hintFeedback" id={item.itemId} title="删除这条提示反馈" />
-                      </div>
-                    ))}
+                      </details>
+                    )}
                   </div>
                 </div>
               )}
@@ -379,8 +389,8 @@ export default function MemoryPanel({ visible, onClose }: MemoryPanelProps) {
               {/* 反思摘要 */}
               {showReflection && sessions.length > 0 && (
                 <div className="mb-5">
-                  <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">反思摘要</h4>
-                  <p className="text-xs text-gray-400 mb-3">每次反思对话中提炼的要点</p>
+                  <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">反思发现</h4>
+                  <p className="text-xs text-gray-400 mb-3">用于在相关话题里承接你自己发现过的模式，不会主动全部提起。</p>
                   <div className="space-y-2">
                     {sessions.map(s => (
                       <div
@@ -426,7 +436,7 @@ export default function MemoryPanel({ visible, onClose }: MemoryPanelProps) {
               {showReflection && commitments.length > 0 && (
                 <div>
                   <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">想法与承诺</h4>
-                  <p className="text-xs text-gray-400 mb-3">你在反思时提到过想尝试的事</p>
+                  <p className="text-xs text-gray-400 mb-3">只在相似任务出现时，作为可选策略回访，不会像检查作业一样追问。</p>
                   <div className="space-y-2">
                     {commitments.map(c => {
                       const isOld = c.createdAt < threeDaysAgo
@@ -458,7 +468,7 @@ export default function MemoryPanel({ visible, onClose }: MemoryPanelProps) {
                               </button>
                             )}
                           </div>
-                          <DeleteButton type="commitment" id={c.id} title="删除这条承诺" />
+                          <DeleteButton type="commitment" id={c.id} title="不要再让 AI 使用这条想法" />
                         </div>
                       )
                     })}
