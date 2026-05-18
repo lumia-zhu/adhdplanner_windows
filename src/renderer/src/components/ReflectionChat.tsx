@@ -48,12 +48,17 @@ const STREAM_CHART_FALLBACK_DELAY_MS = 700
 const SUGGESTIONS_PER_PAGE = 3
 
 const FALLBACK_SUGGESTIONS: Record<'daily' | 'weekly', string[]> = {
-  daily: ['哪些做法值得保留？', '哪些任务还停在计划里？', '电脑开着时在做什么？'],
+  daily: ['今天有哪些可以复用的小规律？', '哪些任务还停在计划里？', '电脑开着时在做什么？'],
   weekly: ['哪些做法值得保留？', '哪些任务还停在计划里？', '电脑开着时在做什么？'],
 }
 
 type FreeReflectionIntent =
   | 'topic_entry'
+  | 'comparison_topic'
+  | 'mood_comparison_topic'
+  | 'mood_behavior_topic'
+  | 'time_activity_topic'
+  | 'task_pattern_topic'
   | 'emotion_first'
   | 'emotion_source'
   | 'stuck_soften'
@@ -69,12 +74,24 @@ function hasAny(text: string, keywords: string[]): boolean {
 
 function detectFreeReflectionIntent(text: string, source: 'input' | 'suggestion'): FreeReflectionIntent {
   const normalized = text.trim().toLowerCase()
-  if (source === 'suggestion') return 'topic_entry'
   if (hasAny(normalized, ['差不多', '结束', '先这样', '可以了', '不用了', '没了'])) return 'gentle_close'
   if (hasAny(normalized, ['怎么办', '怎么做', '有什么办法', '有啥办法', '建议', '小招'])) return 'small_experiment'
   if (hasAny(normalized, ['不知道聊什么', '不知道说什么', '不知道', '随便', '都行', '没想法'])) return 'data_guided'
 
-  const hasEmotion = hasAny(normalized, ['情绪', '烦', '累', '焦虑', '低落', '难受', '压力', '不想做', '没动力', '崩'])
+  const hasComparisonTopic = hasAny(normalized, ['前几天', '昨天', '不同', '变化', '对比', '最近几天', '这两天'])
+  const hasMoodTopic = hasAny(normalized, ['心情', '状态', '情绪'])
+  const hasMoodBehaviorTopic = hasAny(normalized, ['这种心情下', '这种状态下', '心情下', '状态下', '更容易开始', '更容易中断'])
+  const hasTimeTopic = hasAny(normalized, ['时间', '最活跃', '最忙', '高峰', '电脑开着', '哪段', '几点'])
+  const hasTaskTopic = hasAny(normalized, ['任务', '推进', '连续', '停在计划', '没写进计划', '做完', '完成'])
+
+  if (hasMoodTopic && hasMoodBehaviorTopic) return 'mood_behavior_topic'
+  if (hasMoodTopic && hasComparisonTopic) return 'mood_comparison_topic'
+  if (hasComparisonTopic) return 'comparison_topic'
+  if (hasTimeTopic) return 'time_activity_topic'
+  if (hasTaskTopic) return 'task_pattern_topic'
+  if (source === 'suggestion') return 'topic_entry'
+
+  const hasEmotion = hasAny(normalized, ['情绪', '心情', '状态', '烦', '累', '焦虑', '低落', '难受', '压力', '不想做', '没动力', '崩'])
   if (hasEmotion) {
     return hasAny(normalized, ['因为', '来自', '原因', '就是', '从', '开始前', '做着做着'])
       ? 'emotion_source'
@@ -97,6 +114,11 @@ function buildFreeReflectionDirectorInstruction(
 
   const instructionMap: Record<FreeReflectionIntent, string> = {
     topic_entry: `用户只是选择了一个探索方向。先用 1 个${dataLabel}线索解释这个方向为什么值得看；如果还缺背景，只轻问 1 个问题，不要给建议。`,
+    comparison_topic: `用户在问对比。必须先回答“不同在哪里”，至少对照今天和前几天/昨天；如果历史数据不足，明确说现在不能硬比。不要只描述今天。`,
+    mood_comparison_topic: `用户在问心情或状态的跨天变化。先比较心情/状态记录，再谨慎连接行为；心情只能当背景，不能说“因为心情所以完成/中断”。如果缺少前几天心情记录，要明确说明。`,
+    mood_behavior_topic: `用户在问某种心情或状态下的任务开始/中断。把心情当背景，重点看哪些任务、时段或卡点更容易开始/中断；不要追问心情原因，也不要做情绪因果判断。`,
+    time_activity_topic: `用户在问时间段、高峰或电脑活跃。优先使用活动分布、电脑活动或应用使用线索；电脑活跃不等于任务完成，不能猜具体内容。`,
+    task_pattern_topic: `用户在问任务模式。优先使用任务用时、任务状态或任务活动线索；重点说明哪些任务推进连续、停在计划里或没有被记录，不要只讲总完成率。`,
     emotion_first: '用户正在主动表达情绪。本轮只做“接住情绪 + 轻问感受来源”，不要立刻夸完成、分析效率或给建议。',
     emotion_source: `用户已经补充了一点情绪来源。先承接原话，再连接 1 个${dataLabel}线索，帮助用户看见情绪下仍能动起来的条件；如果背景足够，可以提取 1 个可保留做法。`,
     stuck_soften: `用户在说困难或卡住。本轮不要问“为什么卡住”，把问题变轻：围绕${nextLabel}怎么少费点劲、哪一部分需要变小来回应。`,
@@ -140,6 +162,20 @@ function getSuggestionPage(pool: string[], page: number): string[] {
   const start = (page % pageCount) * SUGGESTIONS_PER_PAGE
   const batch = pool.slice(start, start + SUGGESTIONS_PER_PAGE)
   return batch.length > 0 ? batch : pool.slice(0, SUGGESTIONS_PER_PAGE)
+}
+
+function getInitialSuggestionPage(pool: string[], seed: string): number {
+  const pageCount = Math.max(Math.ceil(pool.length / SUGGESTIONS_PER_PAGE), 1)
+  if (pageCount <= 1) return 0
+
+  const dateMatch = seed.match(/\d{4}-\d{2}-(\d{2})/)
+  if (dateMatch) return (Number(dateMatch[1]) - 1) % pageCount
+
+  let hash = 0
+  for (const char of seed) {
+    hash = (hash * 31 + char.charCodeAt(0)) >>> 0
+  }
+  return hash % pageCount
 }
 
 export type VisualFocusType = 'activity-hour' | 'activity-range' | 'task-duration' | 'metric' | 'app-usage'
@@ -765,10 +801,11 @@ const ReflectionChat = forwardRef<ReflectionChatHandle, ReflectionChatProps>(fun
 
   const applySuggestionPool = useCallback((items: string[], allowStandardFill = true) => {
     const pool = buildSuggestionPool(items, mode, allowStandardFill)
+    const initialPage = getInitialSuggestionPage(pool, `${storageKey ?? rawSessionRef.current.date}:${mode}:${restartKey}`)
     setSuggestionPool(pool)
-    setSuggestionPage(0)
-    setSuggestions(getSuggestionPage(pool, 0))
-  }, [mode])
+    setSuggestionPage(initialPage)
+    setSuggestions(getSuggestionPage(pool, initialPage))
+  }, [mode, restartKey, storageKey])
 
   const clearSuggestions = useCallback(() => {
     setSuggestionPool([])
