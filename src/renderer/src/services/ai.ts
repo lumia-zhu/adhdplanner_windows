@@ -1857,11 +1857,15 @@ ${memoryContext}
 ========== 记忆结束 ==========
 
 使用记忆的原则：
+- 如果本轮用户消息里有【可用记忆关系线索】，它已经由 memory matcher 判断过相关性；仍然只在自然相关时引用，最多引用 1 条。
+- 不要连续围绕记忆展开；记忆只能帮助用户看见相似模式、可复用做法、积极变化或状态背景。
 - 如果用户近期的想法和今天的数据自然相关，可以温和地提一句（"你之前提到过想试试..."）
 - 绝对不要追问用户"之前说的 XX 做到了吗"——承诺只是当时的想法，不是任务，用户没有义务完成
 - 标记为"仅供了解背景"的内容只用于你自己理解上下文，不要主动提起
 - 不要主动列举所有记忆，只在自然的时候引用
 - 不要用"根据记录"这种说法，用"你之前提到过..."
+- 不要说"你又..."、"上次明明..."、"之前说过但这次没做到..."
+- 如果当前数据和用户原话已经足够回答，不要为了使用记忆而使用记忆
 - 如果记忆和当前话题不相关就不要提` : ''}`
 }
 
@@ -2176,11 +2180,15 @@ ${memoryContext}
 ========== 记忆结束 ==========
 
 使用记忆的原则：
+- 如果本轮用户消息里有【可用记忆关系线索】，它已经由 memory matcher 判断过相关性；仍然只在自然相关时引用，最多引用 1 条。
+- 不要连续围绕记忆展开；记忆只能帮助用户看见相似模式、可复用做法、积极变化或状态背景。
 - 如果用户近期的想法和本周的数据自然相关，可以温和地提一句（"你之前提到过想试试..."）
 - 绝对不要追问用户"之前说的 XX 做到了吗"——承诺只是当时的想法，不是任务，用户没有义务完成
 - 标记为"仅供了解背景"的内容只用于你自己理解上下文，不要主动提起
 - 不要主动列举所有记忆，只在自然的时候引用
 - 不要用"根据记录"这种说法，用"你之前提到过..."
+- 不要说"你又..."、"上次明明..."、"之前说过但这次没做到..."
+- 如果当前数据和用户原话已经足够回答，不要为了使用记忆而使用记忆
 - 如果记忆和当前话题不相关就不要提` : ''}`
 }
 
@@ -2356,6 +2364,118 @@ export async function generateSuggestions(
 export interface ExtractedMemory {
   summary: string
   commitments: string[]
+}
+
+export type ReflectionMemoryRelationType =
+  | 'similar_pattern'
+  | 'reuse_strategy'
+  | 'positive_change'
+  | 'state_context'
+
+export interface ReflectionMemoryRelation {
+  relation: ReflectionMemoryRelationType
+  memoryText: string
+  currentEvidence: string
+  reason: string
+  useStyle: 'light' | 'suggestion'
+}
+
+function parseMemoryRelations(raw: string): ReflectionMemoryRelation[] {
+  const cleaned = raw.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim()
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(cleaned)
+  } catch {
+    const objectMatch = cleaned.match(/\{[\s\S]*\}/)
+    const arrayMatch = cleaned.match(/\[[\s\S]*\]/)
+    const candidate = objectMatch?.[0] ?? arrayMatch?.[0]
+    if (!candidate) return []
+    try {
+      parsed = JSON.parse(candidate)
+    } catch {
+      return []
+    }
+  }
+
+  const list = Array.isArray(parsed)
+    ? parsed
+    : Array.isArray((parsed as { relations?: unknown }).relations)
+      ? (parsed as { relations: unknown[] }).relations
+      : []
+
+  const allowedRelations = new Set<ReflectionMemoryRelationType>(['similar_pattern', 'reuse_strategy', 'positive_change', 'state_context'])
+  return list
+    .map(item => item && typeof item === 'object' ? item as Record<string, unknown> : null)
+    .filter((item): item is Record<string, unknown> => Boolean(item))
+    .map(item => {
+      const relation = typeof item.relation === 'string' && allowedRelations.has(item.relation as ReflectionMemoryRelationType)
+        ? item.relation as ReflectionMemoryRelationType
+        : null
+      const memoryText = typeof item.memoryText === 'string' ? item.memoryText.trim() : ''
+      const currentEvidence = typeof item.currentEvidence === 'string' ? item.currentEvidence.trim() : ''
+      const reason = typeof item.reason === 'string' ? item.reason.trim() : ''
+      const useStyle = item.useStyle === 'suggestion' ? 'suggestion' : 'light'
+      if (!relation || !memoryText || !currentEvidence) return null
+      return { relation, memoryText, currentEvidence, reason, useStyle }
+    })
+    .filter((item): item is ReflectionMemoryRelation => Boolean(item))
+    .slice(0, 1)
+}
+
+export async function selectReflectionMemoryRelations(params: {
+  userText: string
+  turnInstruction: string
+  currentContext: string
+  candidateMemoryContext: string
+  config: AIConfig
+}): Promise<ReflectionMemoryRelation[]> {
+  const { userText, turnInstruction, currentContext, candidateMemoryContext, config } = params
+  if (!config.apiKey || !config.modelId || !candidateMemoryContext.trim()) return []
+
+  const systemPrompt = `你是“反思记忆匹配器”，不是聊天回复助手。
+
+任务：判断候选记忆是否和当前这轮反思有明确关系。你只输出 JSON，不要生成给用户看的回复。
+
+可选关系类型：
+- similar_pattern：当前情况和过去某个任务/卡点模式相似
+- reuse_strategy：过去某个有效做法可以在当前问题中复用
+- positive_change：当前数据显示过去的困难模式有了积极变化
+- state_context：当前状态/心情和过去的状态应对方式相关
+
+严格规则：
+- 最多选择 1 条记忆；没有明确关系就返回 {"relations": []}
+- 不要为了使用记忆而硬找关系
+- 泛泛相关、只是同一个词、或会让用户感觉被监督/翻旧账时，不要选择
+- 如果当前问题可以只靠当前数据回答，也可以返回空数组
+- 选择记忆时必须给出当前证据，不能只说“历史上提到过”
+- 不要输出“用户又这样了”“上次明明说过”这类含义
+
+返回格式：
+{"relations":[{"relation":"similar_pattern|reuse_strategy|positive_change|state_context","memoryText":"...","currentEvidence":"...","reason":"...","useStyle":"light|suggestion"}]}`
+
+  const userPrompt = `用户原话：
+${userText}
+
+本轮结构化调度：
+${turnInstruction}
+
+当前反思数据摘要：
+${currentContext.slice(0, 1600)}
+
+候选记忆：
+${candidateMemoryContext.slice(0, 1600)}
+
+请只返回 JSON。`
+
+  const { content, error } = await callLLM(systemPrompt, userPrompt, config, 500, 0.2)
+  if (error) {
+    console.warn('[MemoryMatcher] 匹配失败:', error)
+    return []
+  }
+
+  const relations = parseMemoryRelations(content)
+  console.log('[MemoryMatcher] relations:', relations)
+  return relations
 }
 
 /**

@@ -7,8 +7,8 @@
 
 import { useState, useEffect, useRef, useCallback, useImperativeHandle, forwardRef } from 'react'
 import { tracker } from '../services/tracker'
-import type { AIConfig, ReflectionMessage, MessageContentPart, ReflectionStyle, VisualTarget } from '../services/ai'
-import { chatReflectionStream, extractMemoryFromChat, generateSuggestions, getReflectionTagBank, selectReflectionVisualFocus } from '../services/ai'
+import type { AIConfig, ReflectionMemoryRelation, ReflectionMessage, MessageContentPart, ReflectionStyle, VisualTarget } from '../services/ai'
+import { chatReflectionStream, extractMemoryFromChat, generateSuggestions, getReflectionTagBank, selectReflectionMemoryRelations, selectReflectionVisualFocus } from '../services/ai'
 import { recordReflectionMemory } from '../services/memory-manager'
 
 interface ChatBubble {
@@ -225,6 +225,24 @@ function buildFreeReflectionDirectorInstruction(
     '- 这只是内部对话管理指令，不要在正文提到 action/topic/scope/source。',
     '本轮只能选择一个核心动作。不要写成“承接 + 数据 + 建议 + 鼓励”的固定四段。',
   ].join('\n')
+}
+
+function buildMemoryRelationInstruction(relations: ReflectionMemoryRelation[]): string {
+  if (relations.length === 0) return ''
+  const relation = relations[0]
+  const styleText = relation.useStyle === 'suggestion'
+    ? '如果本轮要给建议，可以把这条记忆轻轻转成一个可选小实验。'
+    : '如果本轮自然相关，可以轻轻提一句；不相关就不用。'
+
+  return [
+    '【可用记忆关系线索】',
+    `关系：${relation.relation}`,
+    `过去记忆：${relation.memoryText}`,
+    `当前证据：${relation.currentEvidence}`,
+    relation.reason ? `为什么相关：${relation.reason}` : '',
+    `使用方式：${styleText}`,
+    '边界：每轮最多引用这一条记忆；不要说“你又...”“上次明明...”；不要追问用户以前有没有做到。',
+  ].filter(Boolean).join('\n')
 }
 
 function buildSuggestionPool(items: string[], mode: 'daily' | 'weekly', allowStandardFill: boolean): string[] {
@@ -817,6 +835,10 @@ interface ReflectionChatProps {
   storageKey?: string
   /** 当前左侧真实可高亮目标，供结构化输出从中选择 */
   visualTargets?: VisualTarget[]
+  /** 当前反思页数据摘要，供 memory matcher 判断记忆是否和本轮相关 */
+  memoryMatchContext?: string
+  /** 候选记忆胶囊，供 memory matcher 从中挑选关系线索 */
+  memoryContext?: string
   /** 图表/重点位置引用回调：当用户点击 AI 消息中的引用标签时触发 */
   onVisualRef?: (ref: VisualRef) => void
   /** 反思完成回调（用于埋点） */
@@ -835,6 +857,8 @@ const ReflectionChat = forwardRef<ReflectionChatHandle, ReflectionChatProps>(fun
   selectedDate,
   storageKey,
   visualTargets = [],
+  memoryMatchContext = '',
+  memoryContext = '',
   onVisualRef,
   onComplete,
   onEndChat,
@@ -1396,9 +1420,31 @@ const ReflectionChat = forwardRef<ReflectionChatHandle, ReflectionChatProps>(fun
     const userBubble: ChatBubble = { role: 'user', content: text, timestamp: Date.now() }
     setBubbles(prev => [...prev, userBubble])
 
-    const messageForAI = reflectionStyle === 'free'
-      ? `${aiText}\n\n${buildFreeReflectionDirectorInstruction(text, source, mode)}`
-      : aiText
+    let messageForAI = aiText
+    if (reflectionStyle === 'free') {
+      const directorInstruction = buildFreeReflectionDirectorInstruction(text, source, mode)
+      let memoryRelationInstruction = ''
+      if (memoryContext.trim() && memoryMatchContext.trim()) {
+        try {
+          const relations = await selectReflectionMemoryRelations({
+            userText: text,
+            turnInstruction: directorInstruction,
+            currentContext: memoryMatchContext,
+            candidateMemoryContext: memoryContext,
+            config: aiConfig,
+          })
+          memoryRelationInstruction = buildMemoryRelationInstruction(relations)
+        } catch (e) {
+          console.warn('[MemoryMatcher] 本轮记忆关系匹配失败:', e)
+        }
+      }
+
+      messageForAI = [
+        aiText,
+        directorInstruction,
+        memoryRelationInstruction,
+      ].filter(Boolean).join('\n\n')
+    }
 
     const newMessages: ReflectionMessage[] = [
       ...messagesRef.current,
@@ -1407,7 +1453,7 @@ const ReflectionChat = forwardRef<ReflectionChatHandle, ReflectionChatProps>(fun
 
     await sendToAI(newMessages, { suppressSuggestions: source === 'suggestion' })
     inputRef.current?.focus()
-  }, [canSend, clearSuggestions, mode, reflectionStyle, sendToAI, persistRawMessage])
+  }, [aiConfig, canSend, clearSuggestions, memoryContext, memoryMatchContext, mode, reflectionStyle, sendToAI, persistRawMessage])
 
   const sendSuggestionMessage = useCallback((label: string) => {
     const scopeText = mode === 'weekly' ? '本周行为模式和历史行为记录' : '用户当天行为模式和历史行为记录'

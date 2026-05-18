@@ -1871,6 +1871,55 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
   // 根据当前视图模式选择对应的 system prompt
   const activeSystemPrompt = viewMode === 'week' ? weekSystemPrompt : systemPrompt
 
+  const dailyMemoryMatchContext = useMemo(() => {
+    if (!summary) return ''
+    const taskLines = localTasks.slice(0, 8).map(task => `${task.completed ? '已完成' : '未完成'}：${task.title}`)
+    const durationLines = taskDurations.slice(0, 6).map(item => {
+      const timeStr = item.durationSec >= 60 ? `${item.durationMin}分钟` : `${item.durationSec}秒`
+      return `${item.completed ? '已完成' : '未完成'} ${item.title}：${timeStr}${item.stuckMarks?.length ? `，卡顿${item.stuckMarks.length}次` : ''}`
+    })
+    const moodLine = displayMoodRecord && displayMoodOption
+      ? `心情：${displayMoodOption.label}${displayMoodNote ? `（${displayMoodNote}）` : ''}`
+      : '心情：无记录'
+
+    return [
+      `日期：${selectedDate}`,
+      `模式：日反思`,
+      `完成任务：${localTasks.filter(task => task.completed).length}/${localTasks.length}`,
+      `专注：${summary.stats.totalFocusMinutes}分钟`,
+      `卡顿：${summary.stats.totalStuckCount}次`,
+      moodLine,
+      taskLines.length > 0 ? `任务列表：${taskLines.join('；')}` : '',
+      durationLines.length > 0 ? `任务用时：${durationLines.join('；')}` : '',
+      activityTimeDistribution ? `电脑活跃：${activityTimeDistribution}` : '',
+    ].filter(Boolean).join('\n')
+  }, [activityTimeDistribution, displayMoodNote, displayMoodOption, displayMoodRecord, localTasks, selectedDate, summary, taskDurations])
+
+  const weeklyMemoryMatchContext = useMemo(() => {
+    if (!weekDayData || weekDayData.length === 0) return ''
+    const dayLines = weekDayData
+      .filter(day => day.hasData)
+      .map(day => {
+        const taskCount = day.taskDurations.length
+        const completedCount = day.taskDurations.filter(task => task.completed).length
+        const stuckCount = day.summary.stats.totalStuckCount
+        const mood = day.moodRecord ? `，有心情记录` : ''
+        return `${day.dateFull}：任务${completedCount}/${taskCount}，专注${day.summary.stats.totalFocusMinutes}分钟，卡顿${stuckCount}次${mood}`
+      })
+      .slice(0, 7)
+    const topTasks = weekDayData
+      .flatMap(day => day.taskDurations.map(task => `${day.dateLabel} ${task.title} ${task.durationMin}分钟${task.completed ? ' 已完成' : ' 未完成'}`))
+      .slice(0, 10)
+
+    return [
+      `模式：周反思`,
+      dayLines.length > 0 ? `每日概况：${dayLines.join('；')}` : '',
+      topTasks.length > 0 ? `任务线索：${topTasks.join('；')}` : '',
+    ].filter(Boolean).join('\n')
+  }, [weekDayData])
+
+  const activeMemoryMatchContext = viewMode === 'week' ? weeklyMemoryMatchContext : dailyMemoryMatchContext
+
   // 补提取未处理的 raw session（和页面加载并行，零体感延迟）
   useEffect(() => {
     (async () => {
@@ -2689,6 +2738,8 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
                   selectedDate={viewMode === 'week' ? weekEndDate : selectedDate}
                   storageKey={viewMode === 'week' ? `week-${weekEndDate}` : selectedDate}
                   visualTargets={viewMode === 'week' ? weekVisualTargets : visualTargets}
+                  memoryMatchContext={activeMemoryMatchContext}
+                  memoryContext={memoryContext}
                   onVisualRef={handleVisualRef}
                   onComplete={handleReflectionComplete}
                   onEndChat={handleChatEndedProperly}
