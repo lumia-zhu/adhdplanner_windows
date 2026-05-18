@@ -52,55 +52,141 @@ const FALLBACK_SUGGESTIONS: Record<'daily' | 'weekly', string[]> = {
   weekly: ['哪些做法值得保留？', '哪些任务还停在计划里？', '电脑开着时在做什么？'],
 }
 
-type FreeReflectionIntent =
-  | 'topic_entry'
-  | 'comparison_topic'
-  | 'mood_comparison_topic'
-  | 'mood_behavior_topic'
-  | 'time_activity_topic'
-  | 'task_pattern_topic'
-  | 'emotion_first'
-  | 'emotion_source'
-  | 'stuck_soften'
-  | 'data_guided'
+type ReflectionAction =
+  | 'compare'
+  | 'suggest'
+  | 'guide'
+  | 'close'
+  | 'comfort'
+  | 'soften_stuck'
   | 'extract_strategy'
-  | 'small_experiment'
-  | 'gentle_close'
-  | 'open_reflection'
+  | 'explain_topic'
+  | 'open'
+
+type ReflectionTopic =
+  | 'overall'
+  | 'task'
+  | 'time'
+  | 'mood'
+  | 'stuck'
+  | 'strategy'
+  | 'unknown'
+
+type ReflectionScope =
+  | 'today_vs_yesterday'
+  | 'today_vs_recent_days'
+  | 'this_week_days'
+  | 'current_period'
+  | 'unspecified'
+
+interface ReflectionTurnFrame {
+  action: ReflectionAction
+  topic: ReflectionTopic
+  scope: ReflectionScope
+  source: 'input' | 'suggestion'
+  constraints: string[]
+}
 
 function hasAny(text: string, keywords: string[]): boolean {
   return keywords.some(keyword => text.includes(keyword))
 }
 
-function detectFreeReflectionIntent(text: string, source: 'input' | 'suggestion'): FreeReflectionIntent {
+function detectFreeReflectionFrame(
+  text: string,
+  source: 'input' | 'suggestion',
+  mode: 'daily' | 'weekly',
+): ReflectionTurnFrame {
   const normalized = text.trim().toLowerCase()
-  if (hasAny(normalized, ['差不多', '结束', '先这样', '可以了', '不用了', '没了'])) return 'gentle_close'
-  if (hasAny(normalized, ['怎么办', '怎么做', '有什么办法', '有啥办法', '建议', '小招'])) return 'small_experiment'
-  if (hasAny(normalized, ['不知道聊什么', '不知道说什么', '不知道', '随便', '都行', '没想法'])) return 'data_guided'
 
-  const hasComparisonTopic = hasAny(normalized, ['前几天', '昨天', '不同', '变化', '对比', '最近几天', '这两天'])
+  const hasYesterday = hasAny(normalized, ['昨天'])
+  const hasRecentDays = hasAny(normalized, ['前几天', '最近几天', '这几天', '这两天'])
+  const hasComparisonTopic = hasAny(normalized, ['前几天', '昨天', '不同', '变化', '对比', '最近几天', '这几天', '这两天'])
   const hasMoodTopic = hasAny(normalized, ['心情', '状态', '情绪'])
   const hasMoodBehaviorTopic = hasAny(normalized, ['这种心情下', '这种状态下', '心情下', '状态下', '更容易开始', '更容易中断'])
   const hasTimeTopic = hasAny(normalized, ['时间', '最活跃', '最忙', '高峰', '电脑开着', '哪段', '几点'])
   const hasTaskTopic = hasAny(normalized, ['任务', '推进', '连续', '停在计划', '没写进计划', '做完', '完成'])
-
-  if (hasMoodTopic && hasMoodBehaviorTopic) return 'mood_behavior_topic'
-  if (hasMoodTopic && hasComparisonTopic) return 'mood_comparison_topic'
-  if (hasComparisonTopic) return 'comparison_topic'
-  if (hasTimeTopic) return 'time_activity_topic'
-  if (hasTaskTopic) return 'task_pattern_topic'
-  if (source === 'suggestion') return 'topic_entry'
-
+  const hasStuckTopic = hasAny(normalized, ['卡住', '中断', '停下来', '做不下去', '压力大', '太难', '接不上'])
+  const hasStrategyTopic = hasAny(normalized, ['子任务', '小任务', '拆', '先打开', '先做', '启动'])
   const hasEmotion = hasAny(normalized, ['情绪', '心情', '状态', '烦', '累', '焦虑', '低落', '难受', '压力', '不想做', '没动力', '崩'])
-  if (hasEmotion) {
-    return hasAny(normalized, ['因为', '来自', '原因', '就是', '从', '开始前', '做着做着'])
-      ? 'emotion_source'
-      : 'emotion_first'
+
+  const topic: ReflectionTopic = hasMoodTopic
+    ? 'mood'
+    : hasTimeTopic
+      ? 'time'
+      : hasTaskTopic
+        ? 'task'
+        : hasStuckTopic
+          ? 'stuck'
+          : hasStrategyTopic
+            ? 'strategy'
+            : hasComparisonTopic
+              ? 'overall'
+              : 'unknown'
+
+  const scope: ReflectionScope = hasYesterday
+    ? 'today_vs_yesterday'
+    : hasRecentDays
+      ? 'today_vs_recent_days'
+      : mode === 'weekly' && hasComparisonTopic
+        ? 'this_week_days'
+        : source === 'suggestion'
+          ? 'current_period'
+          : 'unspecified'
+
+  const constraints: string[] = []
+  if (scope === 'today_vs_yesterday') {
+    constraints.push('用户明确问到“昨天”，只比较当前日期和昨天。')
+    constraints.push('不要把比较范围扩大到前几天、前几次、13 天历史平均或长期规律。')
+    constraints.push('如果没有昨天数据，明确说现在没有昨天数据，不能硬比较。')
+  } else if (scope === 'today_vs_recent_days') {
+    constraints.push('用户问的是最近几天/前几天的变化，可以做多日对比，但不要说成只是在比昨天。')
+  } else if (scope === 'this_week_days') {
+    constraints.push('用户在周视图里问跨天变化，优先比较本周不同日期，不要写成日视图的今天/昨天。')
   }
 
-  if (hasAny(normalized, ['卡住', '做不下去', '拖', '压力大', '太难', '接不上'])) return 'stuck_soften'
-  if (hasAny(normalized, ['子任务', '小任务', '拆', '先打开', '先做', '启动', '做完', '完成'])) return 'extract_strategy'
-  return 'open_reflection'
+  if (topic === 'mood') {
+    constraints.push('心情或状态只能作为背景，不要说“因为心情所以完成/中断”。')
+    if (hasMoodBehaviorTopic) constraints.push('用户问的是心情背景下的任务节奏，不要追问心情原因。')
+  }
+  if (topic === 'time') constraints.push('电脑活跃不等于任务完成，不能猜具体内容。')
+  if (topic === 'task') constraints.push('优先看任务状态、任务用时和任务活动，不要只讲总完成率。')
+  if (topic === 'stuck') constraints.push('不要默认问“为什么卡住”，先把问题变轻。')
+
+  if (hasAny(normalized, ['差不多', '结束', '先这样', '可以了', '不用了', '没了'])) {
+    return { action: 'close', topic, scope, source, constraints }
+  }
+  if (hasAny(normalized, ['怎么办', '怎么做', '有什么办法', '有啥办法', '建议', '小招'])) {
+    constraints.push('用户主动要办法，可以直接给 1 个很小、低压力、可尝试的小实验。')
+    return { action: 'suggest', topic, scope, source, constraints }
+  }
+  if (hasAny(normalized, ['不知道聊什么', '不知道说什么', '不知道', '随便', '都行', '没想法'])) {
+    constraints.push('用户没有明确话题或能量较低，不要继续追问。')
+    return { action: 'guide', topic, scope, source, constraints }
+  }
+
+  if (hasComparisonTopic) {
+    constraints.push('先回答“不同在哪里”，不要只描述当前日期。')
+    return { action: 'compare', topic, scope, source, constraints }
+  }
+  if (hasMoodBehaviorTopic || hasTimeTopic || hasTaskTopic) {
+    return { action: 'explain_topic', topic, scope, source, constraints }
+  }
+  if (source === 'suggestion') {
+    constraints.push('用户点击了探索方向，直接解释这个方向为什么值得看，不要问“你想聊这个吗”。')
+    return { action: 'explain_topic', topic, scope, source, constraints }
+  }
+
+  if (hasEmotion) {
+    const hasSource = hasAny(normalized, ['因为', '来自', '原因', '就是', '从', '开始前', '做着做着'])
+    constraints.push(hasSource
+      ? '用户已经补充了一点情绪来源，先承接原话，再轻轻连接 1 个数据线索。'
+      : '用户正在表达情绪，先接住状态，不要立刻夸完成、分析效率或给建议。')
+    return { action: 'comfort', topic, scope, source, constraints }
+  }
+
+  if (hasStuckTopic) return { action: 'soften_stuck', topic, scope, source, constraints }
+  if (hasStrategyTopic || hasAny(normalized, ['做完', '完成'])) return { action: 'extract_strategy', topic, scope, source, constraints }
+  return { action: 'open', topic, scope, source, constraints }
 }
 
 function buildFreeReflectionDirectorInstruction(
@@ -108,31 +194,35 @@ function buildFreeReflectionDirectorInstruction(
   source: 'input' | 'suggestion',
   mode: 'daily' | 'weekly',
 ): string {
-  const intent = detectFreeReflectionIntent(text, source)
+  const frame = detectFreeReflectionFrame(text, source, mode)
   const nextLabel = mode === 'weekly' ? '下周' : '下次'
   const dataLabel = mode === 'weekly' ? '周数据' : '当天数据'
 
-  const instructionMap: Record<FreeReflectionIntent, string> = {
-    topic_entry: `用户只是选择了一个探索方向。先用 1 个${dataLabel}线索解释这个方向为什么值得看；如果还缺背景，只轻问 1 个问题，不要给建议。`,
-    comparison_topic: `用户在问对比。必须先回答“不同在哪里”，至少对照今天和前几天/昨天；如果历史数据不足，明确说现在不能硬比。不要只描述今天。`,
-    mood_comparison_topic: `用户在问心情或状态的跨天变化。先比较心情/状态记录，再谨慎连接行为；心情只能当背景，不能说“因为心情所以完成/中断”。如果缺少前几天心情记录，要明确说明。`,
-    mood_behavior_topic: `用户在问某种心情或状态下的任务开始/中断。把心情当背景，重点看哪些任务、时段或卡点更容易开始/中断；不要追问心情原因，也不要做情绪因果判断。`,
-    time_activity_topic: `用户在问时间段、高峰或电脑活跃。优先使用活动分布、电脑活动或应用使用线索；电脑活跃不等于任务完成，不能猜具体内容。`,
-    task_pattern_topic: `用户在问任务模式。优先使用任务用时、任务状态或任务活动线索；重点说明哪些任务推进连续、停在计划里或没有被记录，不要只讲总完成率。`,
-    emotion_first: '用户正在主动表达情绪。本轮只做“接住情绪 + 轻问感受来源”，不要立刻夸完成、分析效率或给建议。',
-    emotion_source: `用户已经补充了一点情绪来源。先承接原话，再连接 1 个${dataLabel}线索，帮助用户看见情绪下仍能动起来的条件；如果背景足够，可以提取 1 个可保留做法。`,
-    stuck_soften: `用户在说困难或卡住。本轮不要问“为什么卡住”，把问题变轻：围绕${nextLabel}怎么少费点劲、哪一部分需要变小来回应。`,
-    data_guided: '用户没有明确话题或能量较低。本轮不要追问，降低负担，并提示可以看下面标准方向或换一批。',
+  const actionInstructionMap: Record<ReflectionAction, string> = {
+    compare: '用户在问差异。先回答“不同在哪里”，再决定是否需要 1 个开放问题；不要急着给建议。',
+    suggest: '用户主动问怎么办。本轮可以直接给 1 个低压力小实验，动作要小、具体、可尝试，不要给一整套方法。',
+    guide: '用户没有明确话题或能量较低。本轮不要追问，降低负担，并提示可以看下面标准方向或换一批。',
+    close: '用户可能想结束。本轮用 1-2 句话收束成一个小发现，不挽留、不生成新问题。',
+    comfort: '用户正在表达情绪或状态。本轮先接住状态，不要立刻夸完成、分析效率或给建议。',
+    soften_stuck: `用户在说困难或卡住。本轮不要问“为什么卡住”，把问题变轻：围绕${nextLabel}怎么少费点劲、哪一部分需要变小来回应。`,
     extract_strategy: `用户提到可能有效的做法。本轮优先提取成${nextLabel}可保留的小做法，不问“怎么想到的”。`,
-    small_experiment: `用户主动问怎么办。本轮可以直接给 1 个低压力小实验，动作要小、具体、可尝试，不要给一整套方法。`,
-    gentle_close: '用户可能想结束。本轮用 1-2 句话收束成一个小发现，不挽留、不生成新问题。',
-    open_reflection: `用户在自由补充。本轮先判断是否有可见模式；能总结就总结，确实缺关键信息才问 1 个能帮助${nextLabel}更容易开始/继续/恢复的问题。`,
+    explain_topic: `用户选择或提出了一个探索方向。先用 1 个${dataLabel}线索解释这个方向为什么值得看；如果还缺背景，只轻问 1 个问题，不要过早给建议。`,
+    open: `用户在自由补充。本轮先判断是否有可见模式；能总结就总结，确实缺关键信息才问 1 个能帮助${nextLabel}更容易开始/继续/恢复的问题。`,
   }
 
   return [
     '【自由反思调度】',
-    `前端轻量判断：${intent}。这只是内部对话管理指令，不要在正文提到。`,
-    instructionMap[intent],
+    `用户原话：${text}`,
+    '结构化理解：',
+    `- action: ${frame.action}`,
+    `- topic: ${frame.topic}`,
+    `- scope: ${frame.scope}`,
+    `- source: ${frame.source}`,
+    '本轮约束：',
+    ...frame.constraints.map(item => `- ${item}`),
+    `- ${actionInstructionMap[frame.action]}`,
+    '- 如果结构化理解和用户原话存在冲突，优先服从用户原话里的明确对象、时间范围和限制。',
+    '- 这只是内部对话管理指令，不要在正文提到 action/topic/scope/source。',
     '本轮只能选择一个核心动作。不要写成“承接 + 数据 + 建议 + 鼓励”的固定四段。',
   ].join('\n')
 }

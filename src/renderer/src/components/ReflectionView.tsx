@@ -826,6 +826,20 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
           }
         }
 
+        const yesterdayDate = shiftDate(selectedDate, -1)
+        const yesterday = rows.find(row => row.date === yesterdayDate)
+        if (current?.summary && yesterday?.summary) {
+          const currentStats = current.summary.stats
+          const yesterdayStats = yesterday.summary.stats
+          const currentCompleted = current.tasks.filter(task => task.completed).length
+          const currentPending = current.tasks.filter(task => !task.completed).length
+          const yesterdayCompleted = yesterday.tasks.filter(task => task.completed).length
+          const yesterdayPending = yesterday.tasks.filter(task => !task.completed).length
+          lines.push(`- 昨日对比线索（仅当用户明确问“昨天”时优先使用）：昨天（${yesterdayDate}）完成任务 ${yesterdayCompleted} 个，未完成任务 ${yesterdayPending} 个，专注 ${yesterdayStats.totalFocusMinutes} 分钟，卡顿 ${yesterdayStats.totalStuckCount} 次；当前日期（${selectedDate}）完成任务 ${currentCompleted} 个，未完成任务 ${currentPending} 个，专注 ${currentStats.totalFocusMinutes} 分钟，卡顿 ${currentStats.totalStuckCount} 次。用户问“今天和昨天”时，只使用当前日期与昨天做比较，不要改用前几次或 13 天历史平均。`)
+        } else {
+          lines.push(`- 昨日对比限制：没有找到昨天（${yesterdayDate}）的完整行为摘要；如果用户问“今天和昨天”，明确说目前没有昨天数据，不能硬比较，不要改用 13 天历史平均代替昨天。`)
+        }
+
         const repeatedPending = new Map<string, { title: string; days: string[] }>()
         for (const row of rows.filter(row => row.hasData)) {
           for (const task of row.tasks) {
