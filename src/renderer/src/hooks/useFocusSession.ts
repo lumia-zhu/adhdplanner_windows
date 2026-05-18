@@ -396,37 +396,14 @@ export function useFocusSession({
       })
     }
 
-    let allDone = false
     setTasks(prev => prev.map(t => {
       if (t.id !== session.taskId) return t
       const updatedSubs = (t.subtasks ?? []).map(s =>
         s.id === subtaskId ? { ...s, completed: !s.completed } : s
       )
-      allDone = updatedSubs.length > 0 && updatedSubs.every(s => s.completed)
       return { ...t, subtasks: updatedSubs }
     }))
-
-    if (allDone) {
-      setTimeout(() => {
-        const segDur = Math.floor((Date.now() - session.sessionStartTime) / 1000)
-        const totalDur = segDur + (session.elapsedOffset || 0)
-        tracker.track('session.macro_completed', {
-          taskId: session.taskId, taskTitle: session.taskTitle, completedVia: 'subtasks_all_done',
-        })
-        tracker.track('session.ended', {
-          sessionId: sessionIdRef.current, taskId: session.taskId,
-          taskTitle: session.taskTitle, totalDurationSeconds: totalDur,
-          completedMicroSteps: session.microHistory.length, endReason: 'task_done',
-        })
-        setTasks(prev => prev.map(t =>
-          t.id === session.taskId ? { ...t, completed: true } : t,
-        ))
-        setFocusTaskId(null)
-        setSession(null)
-        setIsStandbyMode(true)
-      }, 400)
-    }
-  }, [session, setTasks, setIsStandbyMode])
+  }, [session, tasks, setTasks])
 
   // ===================== 暂停 =====================
 

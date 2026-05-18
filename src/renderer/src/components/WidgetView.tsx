@@ -72,6 +72,7 @@ const BAR_H_RELAY = 280
 const BAR_H_STUCK = 340
 const BAR_H_STUCK_CHAT = 460
 const BAR_H_FIRST_STEP = 52  // 简化模式：横向低干扰任务条
+const BAR_H_SUBTASK_PANEL = 220
 const STUCK_APP_CONTEXT_WINDOW_MS = 90_000
 const STUCK_APP_CONTEXT_TIMEOUT_MS = 200
 const STUCK_APP_CONTEXT_MIN_PRIMARY_SHARE = 0.5
@@ -279,6 +280,8 @@ function FocusDynamicBar({
   const inputRef = useRef<HTMLInputElement>(null)
   const relayPanelRef = useRef<HTMLDivElement>(null)  // 用于测量 relay 面板真实内容高度
   const taskStructurePanelRef = useRef<HTMLDivElement>(null)  // 用于测量任务结构面板高度
+  const [subtaskPanelOpen, setSubtaskPanelOpen] = useState(false)
+  const [lastTouchedSubtaskId, setLastTouchedSubtaskId] = useState<string | null>(null)
 
   // ---- 急救面板状态 ----
   const [stuckChips, setStuckChips] = useState<string[]>([])
@@ -300,11 +303,36 @@ function FocusDynamicBar({
   const stuckStreamCleanupRef = useRef<(() => void) | null>(null)
   const isStuckChatBusy = loadingStuckChat || streamingStuckChat
 
+  const completedSubtaskCount = taskSubtasks.filter(subtask => subtask.completed).length
+  const lastTouchedSubtask = lastTouchedSubtaskId
+    ? taskSubtasks.find(subtask => subtask.id === lastTouchedSubtaskId)
+    : undefined
+  const firstIncompleteSubtask = taskSubtasks.find(subtask => !subtask.completed)
+  const previewSubtask = lastTouchedSubtask && !lastTouchedSubtask.completed
+    ? lastTouchedSubtask
+    : firstIncompleteSubtask ?? taskSubtasks[taskSubtasks.length - 1]
+  const previewSubtaskText = taskSubtasks.length === 0
+    ? session.firstStepHint
+    : completedSubtaskCount === taskSubtasks.length
+      ? '清单都勾完了'
+      : previewSubtask?.title
+
   useEffect(() => {
     return () => {
       stuckStreamCleanupRef.current?.()
     }
   }, [])
+
+  useEffect(() => {
+    if (taskSubtasks.length === 0) {
+      setSubtaskPanelOpen(false)
+      setLastTouchedSubtaskId(null)
+      return
+    }
+    if (lastTouchedSubtaskId && !taskSubtasks.some(subtask => subtask.id === lastTouchedSubtaskId)) {
+      setLastTouchedSubtaskId(null)
+    }
+  }, [taskId, taskSubtasks, lastTouchedSubtaskId])
 
   // ---- ★ Workaround: Windows 下 Chromium 拖拽区域缓存 bug ----
   // 窗口 resize 后 -webkit-app-region 命中区域不会自动重算，
@@ -393,22 +421,16 @@ function FocusDynamicBar({
       let execHeight = BAR_H_THIN
       if (!ENABLE_STEP_BY_STEP) {
         if (isFlowMode) {
-          if (taskSubtasks.length === 0 && !session.firstStepHint) {
-            execHeight = BAR_H_FIRST_STEP
-          } else {
-            // 任务结构视图：基础高度 + 每个子任务 36px + 可选第一步提示行，上限 300px
-            const hintH = session.firstStepHint ? 24 : 0
-            const baseH = 106 + hintH  // 顶部任务名 + 底部按钮行
-            const subsH = taskSubtasks.length * 36
-            execHeight = Math.min(baseH + subsH, 300)
-          }
+          execHeight = subtaskPanelOpen && taskSubtasks.length > 0
+            ? BAR_H_SUBTASK_PANEL
+            : BAR_H_FIRST_STEP
         } else {
           execHeight = BAR_H_FIRST_STEP
         }
       }
       const execWidth = !ENABLE_STEP_BY_STEP
         && phase === 'executing'
-        && (!isFlowMode || (taskSubtasks.length === 0 && !session.firstStepHint))
+        && (!isFlowMode || (!subtaskPanelOpen && taskSubtasks.length === 0 && !session.firstStepHint))
         ? BAR_W_EXECUTING
         : BAR_W_PANEL
       window.electronAPI.resizeWidget(execWidth, execHeight)
@@ -425,7 +447,7 @@ function FocusDynamicBar({
       // 清理回退定时器
       if (fallbackTimerRef.current) { clearTimeout(fallbackTimerRef.current); fallbackTimerRef.current = null }
     }
-  }, [phase, currentSubtaskId, allSubtasksDone, isFlowMode, taskSubtasks])
+  }, [phase, currentSubtaskId, allSubtasksDone, isFlowMode, taskSubtasks, subtaskPanelOpen, session.firstStepHint])
 
   // ---- ★ relay 面板高度自适应 ----
   // 当面板内容变化（如 AI 建议加载完成、chip 数量变化）时，
@@ -1160,68 +1182,149 @@ function FocusDynamicBar({
         )
       }
 
-      // —— 任务结构视图（主任务 + AI 第一步提示 + 子任务 checkbox） ——
-      const taskStructureRef = taskStructurePanelRef
+      const renderSubtaskProgressButton = () => taskSubtasks.length > 0 ? (
+        <button
+          type="button"
+          onClick={() => setSubtaskPanelOpen(open => !open)}
+          className={`no-drag inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg text-xxs font-semibold
+                      whitespace-nowrap transition-all active:scale-95 ${
+            subtaskPanelOpen
+              ? 'bg-emerald-100 text-emerald-700'
+              : 'bg-gray-100/80 text-gray-500 hover:bg-emerald-50 hover:text-emerald-600'
+          }`}
+          title={subtaskPanelOpen ? '收起子任务清单' : '展开子任务清单'}
+        >
+          <span>{subtaskPanelOpen ? '收起清单' : '展开清单'}</span>
+          <span>{completedSubtaskCount}/{taskSubtasks.length}</span>
+          <span className="inline-flex h-3.5 w-3.5 items-center justify-center rounded-full bg-white/70">
+            <svg
+              className={`h-2.5 w-2.5 transition-transform ${subtaskPanelOpen ? 'rotate-180' : ''}`}
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 9l6 6 6-6" />
+            </svg>
+          </span>
+        </button>
+      ) : null
+
+      if (!subtaskPanelOpen || taskSubtasks.length === 0) {
+        return (
+          <div className="drag-region relative w-full h-full flex items-center gap-2.5 bg-white/75 hover:bg-white/95 backdrop-blur-md
+                          border border-gray-200/35 hover:border-gray-200/60 rounded-xl
+                          shadow-[0_2px_12px_rgba(0,0,0,0.035)] hover:shadow-[0_4px_18px_rgba(0,0,0,0.08)]
+                          px-3 py-1 select-none overflow-hidden transition-all duration-200">
+            <div className="flex-1 min-w-0 flex items-center gap-2">
+              <TruncatedTextTooltip
+                text={taskTitle}
+                className="text-sm text-gray-950 font-semibold truncate max-w-[170px]"
+              />
+              {previewSubtaskText && (
+                <>
+                  <span className="text-gray-300 flex-shrink-0">·</span>
+                  <TruncatedTextTooltip
+                    text={previewSubtaskText}
+                    className={`text-xs truncate max-w-[180px] ${
+                      completedSubtaskCount === taskSubtasks.length && taskSubtasks.length > 0
+                        ? 'text-emerald-500 font-medium'
+                        : 'text-gray-600'
+                    }`}
+                  />
+                </>
+              )}
+              {renderSubtaskProgressButton()}
+            </div>
+
+            <div className="no-drag flex items-center gap-2.5 flex-shrink-0">
+              <span className="text-xxs text-gray-400 font-mono
+                               bg-gray-100/70 px-2 py-0.5 rounded-lg">{timeStr}</span>
+              <button
+                onClick={onPause}
+                className="flex items-center gap-1 text-xs text-gray-800
+                           hover:text-blue-600 active:scale-95 transition-colors whitespace-nowrap"
+                title="暂停，去处理别的事"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M10 9v6m4-6v6" />
+                </svg>
+                暂停
+              </button>
+              <button
+                onClick={handleTaskDoneClick}
+                className="px-3.5 py-1 rounded-full text-white text-xs font-semibold
+                           shadow-sm hover:shadow-md active:scale-95 transition-all"
+                style={{ backgroundColor: '#3daeac' }}
+              >
+                完成主任务
+              </button>
+              <button
+                onClick={onStuck}
+                className="px-3.5 py-1 rounded-full text-xs font-semibold text-white whitespace-nowrap
+                           active:scale-95 transition-all"
+                style={{ backgroundColor: '#f08080' }}
+                title="需要帮助？让AI帮你换条路"
+              >
+                需要帮助
+              </button>
+            </div>
+            {/* 完成鼓励语覆盖层 */}
+            {renderCelebrationOverlay('rounded-xl')}
+          </div>
+        )
+      }
+
       return (
-        <div ref={taskStructureRef}
+        <div ref={taskStructurePanelRef}
              className="drag-region relative w-full h-full flex flex-col bg-white/85 backdrop-blur-md
                         border border-gray-200/60 rounded-2xl
                         shadow-[0_3px_18px_rgba(0,0,0,0.06)] select-none overflow-hidden">
-
-          {/* 顶部：主任务名 + 计时器 —— ★ 这是拖拽手柄区域，不加 no-drag */}
-          <div className="px-4 pt-3 pb-2">
-            <div className="flex items-center justify-between">
-              <span className="text-xs text-gray-400 font-medium tracking-wide">📋 当前任务</span>
-              <span className="text-xxs text-gray-400 font-mono
-                               bg-gray-100/80 px-1.5 py-0.5 rounded-md">{timeStr}</span>
-            </div>
-            <p className="text-sm text-gray-800 font-semibold mt-1 leading-snug text-center">{taskTitle}</p>
+          <div className="px-4 pt-3 pb-2 flex items-center gap-2">
+            <TruncatedTextTooltip
+              text={taskTitle}
+              className="text-sm text-gray-800 font-semibold truncate max-w-[280px]"
+              prefix="当前任务："
+            />
+            <div className="flex-1" />
+            {renderSubtaskProgressButton()}
+            <span className="text-xxs text-gray-400 font-mono
+                             bg-gray-100/80 px-1.5 py-0.5 rounded-md">{timeStr}</span>
           </div>
 
-          {/* AI 第一步提示行（非强制，仅展示） */}
-          {session.firstStepHint && (
-            <div className="px-4 pt-0.5 pb-1">
-              <p className="text-xxs text-gray-400 leading-snug truncate text-center">
-                第一步：{session.firstStepHint}
-              </p>
-            </div>
-          )}
+          <div className="no-drag px-4 pb-2 flex-1 overflow-y-auto space-y-1">
+            {taskSubtasks.map((sub) => {
+              const checked = sub.completed
+              return (
+                <label
+                  key={sub.id}
+                  className={`flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl cursor-pointer
+                             transition-all hover:bg-gray-50
+                             ${checked ? 'opacity-60' : ''}`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={() => {
+                      setLastTouchedSubtaskId(sub.id)
+                      onWidgetSubtaskToggle?.(sub.id)
+                    }}
+                    className="no-drag w-4 h-4 rounded border-gray-300
+                               text-emerald-500 focus:ring-emerald-200
+                               cursor-pointer flex-shrink-0"
+                  />
+                  <span className={`text-s leading-snug truncate ${
+                    checked
+                      ? 'text-gray-400 line-through'
+                      : 'text-gray-700'
+                  }`}>
+                    {sub.title}
+                  </span>
+                </label>
+              )
+            })}
+          </div>
 
-          {/* 中间：子任务列表（有子任务时显示） */}
-          {taskSubtasks.length > 0 && (
-            <div className="no-drag px-4 py-2.5 flex flex-col gap-1.5 flex-1 overflow-y-auto">
-              {taskSubtasks.map((sub) => {
-                const checked = sub.completed
-                return (
-                  <label
-                    key={sub.id}
-                    className={`flex items-center gap-2.5 px-2.5 py-2 rounded-xl cursor-pointer
-                               transition-all hover:bg-gray-50
-                               ${checked ? 'opacity-60' : ''}`}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={() => onWidgetSubtaskToggle?.(sub.id)}
-                      className="no-drag w-4 h-4 rounded border-gray-300
-                                 text-emerald-500 focus:ring-emerald-200
-                                 cursor-pointer flex-shrink-0"
-                    />
-                    <span className={`text-s leading-snug ${
-                      checked
-                        ? 'text-gray-400 line-through'
-                        : 'text-gray-700'
-                    }`}>
-                      {sub.title}
-                    </span>
-                  </label>
-                )
-              })}
-            </div>
-          )}
-
-          {/* 底部：暂停 + 完成主任务 + 卡住了 */}
-          <div className="no-drag px-3 pb-3 pt-1.5 flex items-center">
+          <div className="no-drag px-3 pb-3 pt-1 flex items-center">
             <div className="w-[72px] flex items-center flex-shrink-0">
               <button
                 onClick={onPause}
@@ -1245,10 +1348,10 @@ function FocusDynamicBar({
                 完成主任务
               </button>
             </div>
-            <div className="w-[72px] flex items-center justify-end flex-shrink-0">
+            <div className="w-[88px] flex items-center justify-end flex-shrink-0">
               <button
                 onClick={onStuck}
-                className="px-3.5 py-1 rounded-full text-xs font-semibold text-white
+                className="px-3.5 py-1 rounded-full text-xs font-semibold text-white whitespace-nowrap
                            active:scale-95 transition-all"
                 style={{ backgroundColor: '#f08080' }}
                 title="需要帮助？让AI帮你换条路"
