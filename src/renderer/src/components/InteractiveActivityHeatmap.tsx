@@ -216,7 +216,7 @@ export default function InteractiveActivityHeatmap({
     if (highlightHourRange) {
       startHour = highlightHourRange.startHour
       endHour = highlightHourRange.endHour
-    } else if (Number.isInteger(highlightHour)) {
+    } else if (typeof highlightHour === 'number' && Number.isInteger(highlightHour)) {
       startHour = highlightHour
       endHour = highlightHour + 1
     }
@@ -310,6 +310,7 @@ export default function InteractiveActivityHeatmap({
             <div
               key={`ai-heatmap-highlight-${highlightPulseKey ?? 'pulse'}`}
               className="ai-focus-target pointer-events-none absolute top-0 z-20 h-7 rounded-[5px]"
+              data-ai-focus-kind="activity-heatmap"
               style={{
                 left: `${highlightFrame.leftPct}%`,
                 width: `${highlightFrame.widthPct}%`,

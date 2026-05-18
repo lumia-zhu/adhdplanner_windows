@@ -8,7 +8,7 @@
 import { useState, useEffect, useRef, useCallback, useImperativeHandle, forwardRef } from 'react'
 import { tracker } from '../services/tracker'
 import type { AIConfig, ReflectionMessage, MessageContentPart, ReflectionStyle, VisualTarget } from '../services/ai'
-import { chatReflectionStream, extractMemoryFromChat, generateSuggestions, selectReflectionVisualFocus } from '../services/ai'
+import { chatReflectionStream, extractMemoryFromChat, generateSuggestions, getReflectionTagBank, selectReflectionVisualFocus } from '../services/ai'
 import { recordReflectionMemory } from '../services/memory-manager'
 
 interface ChatBubble {
@@ -45,10 +45,38 @@ const CHART_ID_MAP: Record<string, { domId: string; label: string }> = {
 }
 
 const STREAM_CHART_FALLBACK_DELAY_MS = 700
+const SUGGESTIONS_PER_PAGE = 3
 
 const FALLBACK_SUGGESTIONS: Record<'daily' | 'weekly', string[]> = {
   daily: ['哪些做法值得保留？', '哪些任务还停在计划里？', '电脑开着时在做什么？'],
   weekly: ['哪些做法值得保留？', '哪些任务还停在计划里？', '电脑开着时在做什么？'],
+}
+
+function buildSuggestionPool(items: string[], mode: 'daily' | 'weekly', allowStandardFill: boolean): string[] {
+  const standardTags = getReflectionTagBank(mode)
+  const standardSet = new Set(standardTags)
+  const normalized = items
+    .map(cleanSuggestionLabel)
+    .filter((item): item is string => Boolean(item))
+    .filter(item => standardSet.has(item))
+
+  const pool = Array.from(new Set(normalized))
+  if (allowStandardFill && pool.length > 0) {
+    for (const tag of standardTags) {
+      if (pool.length >= 9) break
+      if (!pool.includes(tag)) pool.push(tag)
+    }
+  }
+
+  return pool.slice(0, 9)
+}
+
+function getSuggestionPage(pool: string[], page: number): string[] {
+  if (pool.length === 0) return []
+  const pageCount = Math.max(Math.ceil(pool.length / SUGGESTIONS_PER_PAGE), 1)
+  const start = (page % pageCount) * SUGGESTIONS_PER_PAGE
+  const batch = pool.slice(start, start + SUGGESTIONS_PER_PAGE)
+  return batch.length > 0 ? batch : pool.slice(0, SUGGESTIONS_PER_PAGE)
 }
 
 export type VisualFocusType = 'activity-hour' | 'activity-range' | 'task-duration' | 'metric' | 'app-usage'
@@ -269,6 +297,27 @@ function visualTargetsToVisualRef(targets: VisualTarget[]): VisualRef | null {
   }
 }
 
+function visualTextContainsCandidate(text: string, candidate?: string): boolean {
+  const normalizedText = text.trim().toLowerCase()
+  const normalizedCandidate = candidate?.trim().toLowerCase()
+  if (!normalizedText || !normalizedCandidate) return false
+
+  return normalizedText.includes(normalizedCandidate) ||
+    normalizedText.replace(/\s+/g, '').includes(normalizedCandidate.replace(/\s+/g, ''))
+}
+
+function visualRefMatchesAssistantText(ref: VisualRef, text: string): boolean {
+  const visibleText = sanitizeAssistantDisplayText(text)
+  if (ref.kind === 'multi-focus') {
+    return ref.refs.every(item => visualRefMatchesAssistantText(item, visibleText))
+  }
+  if (ref.kind !== 'focus') return true
+  if (ref.focusType !== 'app-usage' && ref.focusType !== 'task-duration') return true
+
+  return visualTextContainsCandidate(visibleText, ref.value) ||
+    visualTextContainsCandidate(visibleText, ref.label)
+}
+
 function parseVisualRefMarkers(text: string, visualTargets: VisualTarget[]): VisualRef[] {
   const refs: VisualRef[] = []
   const targetMap = new Map(visualTargets.map(target => [target.targetId, target]))
@@ -283,12 +332,13 @@ function parseVisualRefMarkers(text: string, visualTargets: VisualTarget[]): Vis
           .map(id => targetMap.get(id))
           .filter((target): target is VisualTarget => Boolean(target))
         const ref = visualTargetsToVisualRef(targets)
-        if (ref) refs.push(ref)
+        if (ref && visualRefMatchesAssistantText(ref, text)) refs.push(ref)
         continue
       }
 
       if (typeof payload.chartId === 'string') {
         const ref = chartIdToRef(payload.chartId)
+        if (ref && hasLocalVisualTargets(ref.chartId, visualTargets)) continue
         if (ref) refs.push(ref)
       }
     } catch (e) {
@@ -297,6 +347,10 @@ function parseVisualRefMarkers(text: string, visualTargets: VisualTarget[]): Vis
   }
 
   return refs
+}
+
+function hasLocalVisualTargets(chartId: string, visualTargets: VisualTarget[]): boolean {
+  return visualTargets.some(target => target.chartId === chartId)
 }
 
 function cleanSuggestionLabel(label: unknown): string | null {
@@ -607,6 +661,8 @@ const ReflectionChat = forwardRef<ReflectionChatHandle, ReflectionChatProps>(fun
   const [storageReady, setStorageReady] = useState(false)
   const [restartKey, setRestartKey] = useState(0)
   const [suggestions, setSuggestions] = useState<string[]>([])
+  const [suggestionPool, setSuggestionPool] = useState<string[]>([])
+  const [suggestionPage, setSuggestionPage] = useState(0)
   const [endingState, setEndingState] = useState<'idle' | 'saving' | 'saved'>('idle')
   const scrollRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -643,6 +699,19 @@ const ReflectionChat = forwardRef<ReflectionChatHandle, ReflectionChatProps>(fun
       metadata: { storageKey: key },
     }).catch(e => console.warn('[Conversation] 反思对话保存失败:', e))
   }, [storageKey])
+
+  const applySuggestionPool = useCallback((items: string[], allowStandardFill = true) => {
+    const pool = buildSuggestionPool(items, mode, allowStandardFill)
+    setSuggestionPool(pool)
+    setSuggestionPage(0)
+    setSuggestions(getSuggestionPage(pool, 0))
+  }, [mode])
+
+  const clearSuggestions = useCallback(() => {
+    setSuggestionPool([])
+    setSuggestionPage(0)
+    setSuggestions([])
+  }, [])
 
   const scrollToBottom = useCallback(() => {
     requestAnimationFrame(() => {
@@ -725,7 +794,7 @@ const ReflectionChat = forwardRef<ReflectionChatHandle, ReflectionChatProps>(fun
           const cleanedSuggestions = extractSuggestions(rawContent)
           if (cleanedSuggestions.length > 0) {
             console.log('[ReflectionChat] 内嵌探索方向:', cleanedSuggestions)
-            setSuggestions(cleanedSuggestions)
+            applySuggestionPool(cleanedSuggestions)
           } else {
             const shouldFallbackOnEmpty = hasSuggestionMarkerIntent(rawContent)
             void generateSuggestions(
@@ -737,16 +806,13 @@ const ReflectionChat = forwardRef<ReflectionChatHandle, ReflectionChatProps>(fun
               mode,
               reflectionStyle,
             ).then(generated => {
-              const nextSuggestions = generated
-                .map(cleanSuggestionLabel)
-                .filter((item): item is string => Boolean(item))
-                .slice(0, 3)
-              setSuggestions(nextSuggestions.length > 0
-                ? nextSuggestions
-                : shouldFallbackOnEmpty && reflectionStyle === 'structured' ? FALLBACK_SUGGESTIONS[mode] : [])
+              const nextSuggestions = generated.length > 0
+                ? generated
+                : shouldFallbackOnEmpty && reflectionStyle === 'structured' ? FALLBACK_SUGGESTIONS[mode] : []
+              applySuggestionPool(nextSuggestions)
             }).catch(error => {
               console.warn('[ReflectionChat] 探索方向兜底生成失败:', error)
-              setSuggestions(shouldFallbackOnEmpty && reflectionStyle === 'structured'
+              applySuggestionPool(shouldFallbackOnEmpty && reflectionStyle === 'structured'
                 ? FALLBACK_SUGGESTIONS[mode]
                 : [])
             })
@@ -791,6 +857,7 @@ const ReflectionChat = forwardRef<ReflectionChatHandle, ReflectionChatProps>(fun
       }
 
       const scheduleChartFallback = (chartRef: Extract<VisualRef, { kind: 'chart' }>) => {
+        if (hasLocalVisualTargets(chartRef.chartId, visualTargets)) return
         if (pendingChartFallback || triggeredVisualRefKeysRef.current.size > 0) return
         pendingChartFallback = {
           ref: chartRef,
@@ -811,6 +878,9 @@ const ReflectionChat = forwardRef<ReflectionChatHandle, ReflectionChatProps>(fun
         if (!hasStreamTriggeredRef && visualTargets.length > 0) {
           const selected = await selectReflectionVisualFocus(content, aiConfig, visualTargets)
           visualRef = visualTargetsToVisualRef(selected.result?.visualFocusTargets ?? [])
+          if (visualRef && !visualRefMatchesAssistantText(visualRef, content)) {
+            visualRef = null
+          }
         }
 
         if (visualRef) {
@@ -894,7 +964,7 @@ const ReflectionChat = forwardRef<ReflectionChatHandle, ReflectionChatProps>(fun
         })
       })()
     })
-  }, [aiConfig, mode, onVisualRef, reflectionStyle, visualTargets])
+  }, [aiConfig, applySuggestionPool, mode, onVisualRef, reflectionStyle, visualTargets])
 
   useEffect(() => {
     if (messagesRef.current[0]?.role === 'system') {
@@ -969,10 +1039,10 @@ const ReflectionChat = forwardRef<ReflectionChatHandle, ReflectionChatProps>(fun
     setError(null)
     setLoading(false)
     setStreaming(false)
-    setSuggestions([])
+    clearSuggestions()
     initCalledRef.current = false
     setRestartKey(k => k + 1)
-  }, [storageKey])
+  }, [clearSuggestions, storageKey])
 
   // ---- 核心收尾逻辑（保存记忆、标记 session） ----
   const doEndChat = useCallback(async () => {
@@ -1101,6 +1171,14 @@ const ReflectionChat = forwardRef<ReflectionChatHandle, ReflectionChatProps>(fun
 
   const isBusy = loading || streaming
   const canSend = chatActive && !isBusy
+  const canRerollSuggestions = suggestionPool.length > SUGGESTIONS_PER_PAGE
+
+  const handleRerollSuggestions = useCallback(() => {
+    if (suggestionPool.length <= SUGGESTIONS_PER_PAGE) return
+    const nextPage = suggestionPage + 1
+    setSuggestionPage(nextPage)
+    setSuggestions(getSuggestionPage(suggestionPool, nextPage))
+  }, [suggestionPage, suggestionPool])
 
   // 发送一条用户消息；displayText 给用户看，aiText 可以携带不展示的流程语义
   const sendUserMessage = useCallback(async (
@@ -1123,7 +1201,7 @@ const ReflectionChat = forwardRef<ReflectionChatHandle, ReflectionChatProps>(fun
       logicalDate: rawSessionRef.current.date,
     })
 
-    setSuggestions([])
+    clearSuggestions()
     persistRawMessage('user', text)
     const userBubble: ChatBubble = { role: 'user', content: text, timestamp: Date.now() }
     setBubbles(prev => [...prev, userBubble])
@@ -1135,14 +1213,14 @@ const ReflectionChat = forwardRef<ReflectionChatHandle, ReflectionChatProps>(fun
 
     await sendToAI(newMessages, { suppressSuggestions: source === 'suggestion' })
     inputRef.current?.focus()
-  }, [canSend, sendToAI, persistRawMessage])
+  }, [canSend, clearSuggestions, sendToAI, persistRawMessage])
 
   const sendSuggestionMessage = useCallback((label: string) => {
     const scopeText = mode === 'weekly' ? '本周行为模式和历史行为记录' : '用户当天行为模式和历史行为记录'
     const aiText = reflectionStyle === 'free'
       ? [
-        `用户选择了分析方向：${label}`,
-        `这是 AI 基于${scopeText}发现的一个任务管理问题入口。请围绕这个方向判断下一步最合适的回应方式：如果还缺真实背景，先结合相关图表/行为记录解释现象，再问 1 个开放问题；如果用户已给出足够上下文或主动要方法，可以给 1 个低压力建议；如果这个方向已经有清楚发现，可以温和总结并按需给新的探索方向。每轮只做一个核心动作。`,
+        `用户想顺着这个话题聊：${label}`,
+        `这个话题来自${scopeText}里的一个可探索线索。请像自然聊天一样回应：如果用户还没给背景，只解释 1 个最相关的数据现象并问 1 个轻问题；如果用户主动问怎么办或背景已经足够，只给 1 个低压力小实验；如果已经有清楚发现，就温和收束。每轮只做一个核心动作，不要把它当成固定第二步。`,
       ].join('\n')
       : [
         `用户选择了分析角度：${label}`,
@@ -1208,6 +1286,12 @@ const ReflectionChat = forwardRef<ReflectionChatHandle, ReflectionChatProps>(fun
           {endButtonLabel}
         </button>
       </div>
+
+      {reflectionStyle === 'free' && (
+        <div className="border-b border-indigo-50 bg-indigo-50/45 px-4 py-2 text-[11px] leading-relaxed text-indigo-500">
+          可以直接说：找找小努力 / 看看哪里卡住 / 给我一个下次能试的小招
+        </div>
+      )}
 
       {/* 聊天区域 */}
       <div
@@ -1277,8 +1361,24 @@ const ReflectionChat = forwardRef<ReflectionChatHandle, ReflectionChatProps>(fun
         {/* 备选反思问题 */}
         {suggestions.length > 0 && !isBusy && (
           <div className="pl-1 space-y-2">
-            <div className="text-[11px] text-gray-400">
-              可以聊聊这几个方向：
+            <div className="flex items-center gap-1.5 text-[11px] text-gray-400">
+              <span>可以聊聊这几个方向：</span>
+              {canRerollSuggestions && (
+                <button
+                  type="button"
+                  onClick={handleRerollSuggestions}
+                  className="inline-flex h-5 w-5 items-center justify-center rounded-full text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
+                  title="换一批方向"
+                  aria-label="换一批方向"
+                >
+                  <svg className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 6.5A6.5 6.5 0 0 0 5.1 4.3L3.5 6" />
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M3.5 3.5V6h2.5" />
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M3.5 13.5a6.5 6.5 0 0 0 11.4 2.2L16.5 14" />
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 16.5V14H14" />
+                  </svg>
+                </button>
+              )}
             </div>
             <div className="flex flex-wrap gap-2">
               {suggestions.map((q, i) => (

@@ -1252,12 +1252,14 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
     }
   }, [])
 
-  const scrollElementIntoDataPanel = useCallback((target: Element) => {
+  const scrollElementIntoDataPanel = useCallback((target: Element, behavior: ScrollBehavior = 'smooth') => {
     const metrics = getElementVisibilityInDataPanel(target)
-    if (!metrics) return false
+    if (!metrics) return null
 
     const { panel, panelRect, targetRect, visibleRatio, targetCenterRatio } = metrics
-    if (visibleRatio >= 0.85 && targetCenterRatio >= 0.28 && targetCenterRatio <= 0.72) return true
+    if (visibleRatio >= 0.85 && targetCenterRatio >= 0.28 && targetCenterRatio <= 0.72) {
+      return { panel, targetTop: panel.scrollTop }
+    }
 
     const panelHeight = Math.max(panelRect.height, 1)
     const targetHeight = Math.max(targetRect.height, 1)
@@ -1267,8 +1269,8 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
     const maxTop = Math.max(panel.scrollHeight - panel.clientHeight, 0)
     const targetTop = Math.max(0, Math.min(rawTop, maxTop))
 
-    panel.scrollTo({ top: targetTop, behavior: 'smooth' })
-    return true
+    panel.scrollTo({ top: targetTop, behavior })
+    return { panel, targetTop }
   }, [getElementVisibilityInDataPanel])
 
   const isElementReadyForSpotlight = useCallback((target: Element) => {
@@ -1296,8 +1298,9 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
     cancelSpotlightVisibleWait()
 
     const startedAt = performance.now()
-    scrollElementIntoDataPanel(target)
-    const panel = dataPanelRef.current
+    const scrollResult = scrollElementIntoDataPanel(target, 'auto')
+    const panel = scrollResult?.panel ?? dataPanelRef.current
+    const expectedScrollTop = scrollResult?.targetTop
     let lastScrollTop = panel?.scrollTop ?? 0
     let stableFrameCount = 0
 
@@ -1316,13 +1319,16 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
       }
       lastScrollTop = currentScrollTop
 
-      if (isElementReadyForSpotlight(target)) {
+      const scrollIsStable = stableFrameCount >= SPOTLIGHT_SCROLL_STABLE_FRAMES &&
+        (expectedScrollTop == null || Math.abs(currentScrollTop - expectedScrollTop) <= 1)
+
+      if (scrollIsStable && isElementReadyForSpotlight(target)) {
         spotlightWaitFrameRef.current = null
         onVisible()
         return
       }
 
-      if (stableFrameCount >= SPOTLIGHT_SCROLL_STABLE_FRAMES && hasElementVisibleAreaInDataPanel(target)) {
+      if (elapsed >= SPOTLIGHT_WAIT_VISIBLE_MS && hasElementVisibleAreaInDataPanel(target)) {
         spotlightWaitFrameRef.current = null
         onVisible()
         return
@@ -1401,23 +1407,29 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
     setSpotlightVisible(true)
   }, [hideSpotlight])
 
-  const findSpotlightTarget = useCallback((fallbackChartId?: string) => {
+  const findSpotlightTarget = useCallback((fallbackChartId?: string, focusType?: VisualFocusType) => {
     const panel = dataPanelRef.current
     if (!panel) return null
+    const preferredSelector = focusType === 'activity-hour' || focusType === 'activity-range'
+      ? '[data-ai-focus-kind="activity-heatmap"]'
+      : null
     const fallback = fallbackChartId ? document.getElementById(fallbackChartId) : null
     if (fallback && panel.contains(fallback)) {
-      return fallback.querySelector('.ai-focus-target') ?? fallback
+      return (preferredSelector ? fallback.querySelector(preferredSelector) : null)
+        ?? fallback.querySelector('.ai-focus-target')
+        ?? fallback
     }
-    return panel.querySelector('.ai-focus-target')
+    return (preferredSelector ? panel.querySelector(preferredSelector) : null)
+      ?? panel.querySelector('.ai-focus-target')
   }, [])
 
-  const waitForSpotlightTargetElement = useCallback((fallbackChartId: string | undefined, requestId: number, onFound: (target: Element | null) => void) => {
+  const waitForSpotlightTargetElement = useCallback((fallbackChartId: string | undefined, requestId: number, onFound: (target: Element | null) => void, focusType?: VisualFocusType) => {
     const startedAt = performance.now()
 
     const tick = () => {
       if (requestId !== spotlightRequestRef.current) return
 
-      const target = findSpotlightTarget(fallbackChartId)
+      const target = findSpotlightTarget(fallbackChartId, focusType)
       const isLocalTarget = target?.classList.contains('ai-focus-target') ?? false
       if (isLocalTarget || performance.now() - startedAt >= SPOTLIGHT_TARGET_LOOKUP_MS) {
         onFound(target)
@@ -1528,10 +1540,6 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
         ? weekDayData.flatMap(day => day.activity)
         : displayActivityData
 
-      if (viewMode === 'week') {
-        scrollChartIntoDataPanel(fallbackChartId)
-      }
-
       const resolvedApps: string[] = []
       const labels: string[] = []
       for (const sub of ref.refs) {
@@ -1555,7 +1563,6 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
         logicalDate: selectedDate,
       })
 
-      scrollChartIntoDataPanel(fallbackChartId)
       const focusRootChartId = focusChartSection(fallbackChartId)
 
       if (uniqueApps.length === 0) {
@@ -1638,7 +1645,6 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
       logicalDate: selectedDate,
     })
 
-    scrollChartIntoDataPanel(fallbackChartId)
     const focusRootChartId = focusChartSection(fallbackChartId)
 
     if (!matched) {
@@ -1677,7 +1683,7 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
       window.requestAnimationFrame(() => {
         waitForSpotlightTargetElement(fallbackChartId, requestId, (target) => {
           showSpotlightForElement(target, requestId, fallbackChartId)
-        })
+        }, activeHighlight.type)
       })
     }, 0)
     return () => {
