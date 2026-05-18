@@ -52,6 +52,69 @@ const FALLBACK_SUGGESTIONS: Record<'daily' | 'weekly', string[]> = {
   weekly: ['哪些做法值得保留？', '哪些任务还停在计划里？', '电脑开着时在做什么？'],
 }
 
+type FreeReflectionIntent =
+  | 'topic_entry'
+  | 'emotion_first'
+  | 'emotion_source'
+  | 'stuck_soften'
+  | 'data_guided'
+  | 'extract_strategy'
+  | 'small_experiment'
+  | 'gentle_close'
+  | 'open_reflection'
+
+function hasAny(text: string, keywords: string[]): boolean {
+  return keywords.some(keyword => text.includes(keyword))
+}
+
+function detectFreeReflectionIntent(text: string, source: 'input' | 'suggestion'): FreeReflectionIntent {
+  const normalized = text.trim().toLowerCase()
+  if (source === 'suggestion') return 'topic_entry'
+  if (hasAny(normalized, ['差不多', '结束', '先这样', '可以了', '不用了', '没了'])) return 'gentle_close'
+  if (hasAny(normalized, ['怎么办', '怎么做', '有什么办法', '有啥办法', '建议', '小招'])) return 'small_experiment'
+  if (hasAny(normalized, ['不知道聊什么', '不知道说什么', '不知道', '随便', '都行', '没想法'])) return 'data_guided'
+
+  const hasEmotion = hasAny(normalized, ['情绪', '烦', '累', '焦虑', '低落', '难受', '压力', '不想做', '没动力', '崩'])
+  if (hasEmotion) {
+    return hasAny(normalized, ['因为', '来自', '原因', '就是', '从', '开始前', '做着做着'])
+      ? 'emotion_source'
+      : 'emotion_first'
+  }
+
+  if (hasAny(normalized, ['卡住', '做不下去', '拖', '压力大', '太难', '接不上'])) return 'stuck_soften'
+  if (hasAny(normalized, ['子任务', '小任务', '拆', '先打开', '先做', '启动', '做完', '完成'])) return 'extract_strategy'
+  return 'open_reflection'
+}
+
+function buildFreeReflectionDirectorInstruction(
+  text: string,
+  source: 'input' | 'suggestion',
+  mode: 'daily' | 'weekly',
+): string {
+  const intent = detectFreeReflectionIntent(text, source)
+  const nextLabel = mode === 'weekly' ? '下周' : '下次'
+  const dataLabel = mode === 'weekly' ? '周数据' : '当天数据'
+
+  const instructionMap: Record<FreeReflectionIntent, string> = {
+    topic_entry: `用户只是选择了一个探索方向。先用 1 个${dataLabel}线索解释这个方向为什么值得看；如果还缺背景，只轻问 1 个问题，不要给建议。`,
+    emotion_first: '用户正在主动表达情绪。本轮只做“接住情绪 + 轻问感受来源”，不要立刻夸完成、分析效率或给建议。',
+    emotion_source: `用户已经补充了一点情绪来源。先承接原话，再连接 1 个${dataLabel}线索，帮助用户看见情绪下仍能动起来的条件；如果背景足够，可以提取 1 个可保留做法。`,
+    stuck_soften: `用户在说困难或卡住。本轮不要问“为什么卡住”，把问题变轻：围绕${nextLabel}怎么少费点劲、哪一部分需要变小来回应。`,
+    data_guided: '用户没有明确话题或能量较低。本轮不要追问，降低负担，并提示可以看下面标准方向或换一批。',
+    extract_strategy: `用户提到可能有效的做法。本轮优先提取成${nextLabel}可保留的小做法，不问“怎么想到的”。`,
+    small_experiment: `用户主动问怎么办。本轮可以直接给 1 个低压力小实验，动作要小、具体、可尝试，不要给一整套方法。`,
+    gentle_close: '用户可能想结束。本轮用 1-2 句话收束成一个小发现，不挽留、不生成新问题。',
+    open_reflection: `用户在自由补充。本轮先判断是否有可见模式；能总结就总结，确实缺关键信息才问 1 个能帮助${nextLabel}更容易开始/继续/恢复的问题。`,
+  }
+
+  return [
+    '【自由反思调度】',
+    `前端轻量判断：${intent}。这只是内部对话管理指令，不要在正文提到。`,
+    instructionMap[intent],
+    '本轮只能选择一个核心动作。不要写成“承接 + 数据 + 建议 + 鼓励”的固定四段。',
+  ].join('\n')
+}
+
 function buildSuggestionPool(items: string[], mode: 'daily' | 'weekly', allowStandardFill: boolean): string[] {
   const standardTags = getReflectionTagBank(mode)
   const standardSet = new Set(standardTags)
@@ -1206,14 +1269,18 @@ const ReflectionChat = forwardRef<ReflectionChatHandle, ReflectionChatProps>(fun
     const userBubble: ChatBubble = { role: 'user', content: text, timestamp: Date.now() }
     setBubbles(prev => [...prev, userBubble])
 
+    const messageForAI = reflectionStyle === 'free'
+      ? `${aiText}\n\n${buildFreeReflectionDirectorInstruction(text, source, mode)}`
+      : aiText
+
     const newMessages: ReflectionMessage[] = [
       ...messagesRef.current,
-      { role: 'user', content: aiText },
+      { role: 'user', content: messageForAI },
     ]
 
     await sendToAI(newMessages, { suppressSuggestions: source === 'suggestion' })
     inputRef.current?.focus()
-  }, [canSend, clearSuggestions, sendToAI, persistRawMessage])
+  }, [canSend, clearSuggestions, mode, reflectionStyle, sendToAI, persistRawMessage])
 
   const sendSuggestionMessage = useCallback((label: string) => {
     const scopeText = mode === 'weekly' ? '本周行为模式和历史行为记录' : '用户当天行为模式和历史行为记录'
@@ -1287,11 +1354,6 @@ const ReflectionChat = forwardRef<ReflectionChatHandle, ReflectionChatProps>(fun
         </button>
       </div>
 
-      {reflectionStyle === 'free' && (
-        <div className="border-b border-indigo-50 bg-indigo-50/45 px-4 py-2 text-[11px] leading-relaxed text-indigo-500">
-          可以直接说：找找小努力 / 看看哪里卡住 / 给我一个下次能试的小招
-        </div>
-      )}
 
       {/* 聊天区域 */}
       <div
