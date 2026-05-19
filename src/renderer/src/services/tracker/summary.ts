@@ -10,6 +10,8 @@
  *   const summary = buildDailySummary('2026-02-21', events)
  */
 
+import type { DailyMoodRecord } from '../../types'
+import { getMoodOptionForDate } from '../../utils/mood'
 import type { TrackEvent, DailySummary } from './types'
 
 /**
@@ -29,6 +31,7 @@ export interface WeekDayDataLite {
     completed: boolean
     stuckMarks: { reason: string; resolved: boolean }[]
   }[]
+  moodRecord?: DailyMoodRecord | null
 }
 
 // ===================== 辅助函数 =====================
@@ -436,6 +439,26 @@ export function buildWeeklyLLMContext(days: WeekDayDataLite[]): string {
       ? Math.round((completedMicroSteps / totalMicroSteps) * 100)
       : 0
     lines.push(`- ${day.dateFull}：${rate}%（${completedMicroSteps}/${totalMicroSteps} 步）`)
+  }
+
+  // ---- 1.5 每日心情记录 ----
+  lines.push(`\n### 每日心情记录与任务节奏`)
+  for (const day of days) {
+    if (!day.hasData) {
+      lines.push(`- ${day.dateFull}：无数据`)
+      continue
+    }
+    const moodOption = day.moodRecord
+      ? getMoodOptionForDate(day.date, day.moodRecord.mood)
+      : null
+    const moodText = day.moodRecord
+      ? `${moodOption?.label ?? `${day.moodRecord.mood}/5`}（${day.moodRecord.mood}/5）${day.moodRecord.note ? `，备注：${day.moodRecord.note}` : ''}`
+      : '未记录'
+    const { totalMicroSteps, completedMicroSteps, totalFocusMinutes, totalStuckCount } = day.summary.stats
+    const rate = totalMicroSteps > 0
+      ? Math.round((completedMicroSteps / totalMicroSteps) * 100)
+      : 0
+    lines.push(`- ${day.dateFull}：心情 ${moodText}；完成率 ${rate}%（${completedMicroSteps}/${totalMicroSteps} 步），专注 ${totalFocusMinutes} 分钟，卡顿 ${totalStuckCount} 次`)
   }
 
   // ---- 2. 周汇总指标 ----

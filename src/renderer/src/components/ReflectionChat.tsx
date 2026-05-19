@@ -103,6 +103,10 @@ function detectFreeReflectionFrame(
   const hasComparisonTopic = hasAny(normalized, ['前几天', '昨天', '不同', '变化', '对比', '最近几天', '这几天', '这两天'])
   const hasMoodTopic = hasAny(normalized, ['心情', '状态', '情绪'])
   const hasMoodBehaviorTopic = hasAny(normalized, ['这种心情下', '这种状态下', '心情下', '状态下', '更容易开始', '更容易中断'])
+  const hasMoodRhythmTopic = hasMoodTopic && (
+    hasAny(normalized, ['不同心情', '不同状态', '心情不同', '状态不同', '不同心情的日子', '不同状态的日子'])
+    || (hasAny(normalized, ['任务节奏', '任务怎么变', '节奏有什么不同', '任务有什么不同']) && hasComparisonTopic)
+  )
   const hasTimeTopic = hasAny(normalized, ['时间', '最活跃', '最忙', '高峰', '电脑开着', '哪段', '几点'])
   const hasTaskTopic = hasAny(normalized, ['任务', '推进', '连续', '停在计划', '没写进计划', '做完', '完成'])
   const hasStuckTopic = hasAny(normalized, ['卡住', '中断', '停下来', '做不下去', '压力大', '太难', '接不上'])
@@ -146,6 +150,10 @@ function detectFreeReflectionFrame(
 
   if (topic === 'mood') {
     constraints.push('心情或状态只能作为背景，不要说“因为心情所以完成/中断”。')
+    if (hasMoodRhythmTopic) {
+      constraints.push('用户问的是“不同心情/状态记录下的任务节奏”。必须先基于每日心情记录分组或逐日比较，再看对应日期的完成率、任务数、专注时长、启动/中断等节奏线索。')
+      constraints.push('不要用卡顿次数、历史记忆或“状态差”这类概括替代每日心情记录；卡顿只能作为任务节奏的辅助指标。')
+    }
     if (hasMoodBehaviorTopic) constraints.push('用户问的是心情背景下的任务节奏，不要追问心情原因。')
   }
   if (topic === 'time') constraints.push('电脑活跃不等于任务完成，不能猜具体内容。')
@@ -241,7 +249,8 @@ function buildMemoryRelationInstruction(relations: ReflectionMemoryRelation[]): 
     `当前证据：${relation.currentEvidence}`,
     relation.reason ? `为什么相关：${relation.reason}` : '',
     `使用方式：${styleText}`,
-    '边界：每轮最多引用这一条记忆；不要说“你又...”“上次明明...”；不要追问用户以前有没有做到。',
+    '边界：每轮最多引用这一条记忆；必须服从【自由反思调度】里的用户原话、scope 和证据优先级；不要让记忆替代当前数据。',
+    '禁忌：不要说“你又...”“上次明明...”；不要追问用户以前有没有做到。',
   ].filter(Boolean).join('\n')
 }
 
