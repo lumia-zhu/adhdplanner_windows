@@ -19,7 +19,7 @@ export interface CarryOverGroup {
 interface CarryOverBannerProps {
   groups: CarryOverGroup[]
   onCarryOver: (dateTaskMap: Record<string, string[]>) => void
-  onDismiss: () => void
+  onDismiss: (source: 'collapsed' | 'expanded') => void
 }
 
 function dateLabel(fromDate: string): string {
@@ -85,7 +85,7 @@ export default function CarryOverBanner({ groups, onCarryOver, onDismiss }: Carr
           <span
             onClick={(event) => {
               event.stopPropagation()
-              onDismiss()
+              onDismiss('collapsed')
             }}
             className="ml-0 flex h-4 w-0 items-center justify-center overflow-hidden rounded-full text-orange-300 opacity-0 transition-all duration-150 hover:bg-white/80 hover:text-orange-500 group-hover:ml-1.5 group-hover:w-4 group-hover:opacity-100"
             title="忽略搬迁提示"
@@ -131,7 +131,7 @@ export default function CarryOverBanner({ groups, onCarryOver, onDismiss }: Carr
               ? ` (${selectedIds.size})` : ''}
           </button>
           <button
-            onClick={onDismiss}
+            onClick={() => onDismiss('expanded')}
             className="text-xxs text-gray-400 hover:text-gray-600 transition-colors px-1"
             title="不需要"
           >

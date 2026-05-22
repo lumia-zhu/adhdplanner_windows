@@ -165,6 +165,50 @@ export interface StuckPivotChosenPayload {
   pivotSource: 'ai_chip' | 'self' | 'resume_original' // 来源
 }
 
+export interface StuckChatStartedPayload {
+  sessionId: string
+  taskId: string
+  taskTitle: string
+  microAction: string
+  conversationId: string
+  stuckReason: string
+  stuckCategory?: StuckReasonPayload['stuckCategory']
+  stuckResponseMode?: StuckReasonPayload['stuckResponseMode']
+}
+
+export interface StuckChatMessageSentPayload {
+  sessionId: string
+  taskId: string
+  taskTitle: string
+  microAction: string
+  conversationId: string
+  messageIndex: number
+  charCount: number
+}
+
+export interface StuckChatReplyReceivedPayload {
+  sessionId: string
+  taskId: string
+  taskTitle: string
+  microAction: string
+  conversationId: string
+  messageIndex: number
+  charCount: number
+  usedFallback: boolean
+  error?: string
+}
+
+export interface StuckChatEndedPayload {
+  sessionId: string
+  taskId: string
+  taskTitle: string
+  microAction: string
+  conversationId: string
+  messageCount: number
+  durationMs: number
+  reason: 'resume' | 'exit' | 'phase_change'
+}
+
 /** ====== 4. 中断与放弃 (Abandonment) ====== */
 
 /** 用户直接退出，未走完成或急救流程 */
@@ -262,6 +306,14 @@ export interface TaskCarriedOverPayload {
   fromDate: string
 }
 
+export interface TaskCarryOverDismissedPayload {
+  date: string
+  totalCount: number
+  groupCount: number
+  fromDates: string[]
+  source: 'collapsed' | 'expanded'
+}
+
 export interface TaskReorderedPayload {
   taskId: string
   fromIndex: number
@@ -332,6 +384,16 @@ export interface ReflectFullscreenToggledPayload {
   date: string
   mode: 'daily' | 'weekly'
   fullscreen: boolean
+}
+
+/** ====== 8.5 心情记录 (Mood) ====== */
+
+export interface MoodSavedPayload {
+  date: string
+  mood: number
+  hasNote: boolean
+  noteCharCount: number
+  isUpdate: boolean
 }
 
 /** ====== 9. 导航与模式 (Navigation & Mode) ====== */
@@ -448,6 +510,10 @@ export interface TrackEventMap {
   'stuck.hint_feedback_summary': StuckHintFeedbackSummaryPayload
   'stuck.pivot_offered':        StuckPivotOfferedPayload
   'stuck.pivot_chosen':         StuckPivotChosenPayload
+  'stuck.chat_started':         StuckChatStartedPayload
+  'stuck.chat_message_sent':    StuckChatMessageSentPayload
+  'stuck.chat_reply_received':  StuckChatReplyReceivedPayload
+  'stuck.chat_ended':           StuckChatEndedPayload
 
   // 中断放弃
   'abandon.exit':               AbandonExitPayload
@@ -467,6 +533,7 @@ export interface TrackEventMap {
   'task.toggled':               TaskToggledPayload
   'task.deleted':               TaskDeletedPayload
   'task.carried_over':          TaskCarriedOverPayload
+  'task.carry_over_dismissed':  TaskCarryOverDismissedPayload
   'task.reordered':             TaskReorderedPayload
   'task.edited':                TaskEditedPayload
   'task.subtask_created':       TaskSubtaskCreatedPayload
@@ -485,6 +552,9 @@ export interface TrackEventMap {
   'reflect.chart_referenced':   ReflectChartReferencedPayload
   'reflect.visual_ref_clicked': ReflectVisualRefClickedPayload
   'reflect.fullscreen_toggled': ReflectFullscreenToggledPayload
+
+  // 心情记录
+  'mood.saved':                 MoodSavedPayload
 
   // 导航与模式
   'nav.date_changed':           NavDateChangedPayload

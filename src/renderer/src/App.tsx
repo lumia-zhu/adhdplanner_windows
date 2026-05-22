@@ -356,10 +356,12 @@ export default function App() {
       completed: false,
       createdAt: Date.now(),
     }])
+    tracker.track('task.created', { taskId: id, title, source: 'quick-add' })
   }, [setTasks])
 
   const handleDeleteTask = useCallback((taskId: string) => {
     setTasks(prev => prev.filter(t => t.id !== taskId))
+    tracker.track('task.deleted', { taskId })
   }, [setTasks])
 
   // -------- AI 配置保存 --------
@@ -404,9 +406,16 @@ export default function App() {
     }
   }
 
-  const handleDismissCarryOver = () => {
+  const handleDismissCarryOver = (source: 'collapsed' | 'expanded') => {
     const totalCount = carryOverGroups.reduce((s, g) => s + g.tasks.length, 0)
     localStorage.setItem(`carryOverDismissed-${currentDate}`, String(totalCount))
+    tracker.track('task.carry_over_dismissed', {
+      date: currentDate,
+      totalCount,
+      groupCount: carryOverGroups.length,
+      fromDates: carryOverGroups.map(g => g.fromDate),
+      source,
+    }, { date: currentDate, logicalDate: currentDate })
     setCarryOverGroups([])
   }
 

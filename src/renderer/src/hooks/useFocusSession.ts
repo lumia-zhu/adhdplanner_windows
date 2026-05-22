@@ -542,6 +542,10 @@ export function useFocusSession({
   // ===================== Widget toggle =====================
 
   const handleWidgetToggle = useCallback((id: string) => {
+    const task = tasks.find(t => t.id === id)
+    if (task) {
+      tracker.track('task.toggled', { taskId: id, completed: !task.completed })
+    }
     setTasks(prev => prev.map(t => {
       if (t.id !== id) return t
       const nowCompleted = !t.completed
@@ -550,7 +554,7 @@ export function useFocusSession({
       }
       return { ...t, completed: nowCompleted }
     }))
-  }, [setTasks])
+  }, [tasks, setTasks])
 
   return {
     session, setSession,

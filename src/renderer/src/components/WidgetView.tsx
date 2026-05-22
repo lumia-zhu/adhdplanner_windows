@@ -298,6 +298,8 @@ function FocusDynamicBar({
   const [streamingStuckChat, setStreamingStuckChat] = useState(false)
   const [stuckChatError, setStuckChatError] = useState('')
   const stuckConversationIdRef = useRef<string>('')
+  const stuckChatStartedAtRef = useRef<number>(0)
+  const stuckChatEndedRef = useRef(false)
   const stuckChatInputRef = useRef<HTMLTextAreaElement>(null)
   const stuckMessagesEndRef = useRef<HTMLDivElement>(null)
   const stuckStreamCleanupRef = useRef<(() => void) | null>(null)
@@ -444,6 +446,8 @@ function FocusDynamicBar({
       setStuckChatInput('')
       setStuckChatError('')
       stuckConversationIdRef.current = ''
+      stuckChatStartedAtRef.current = 0
+      stuckChatEndedRef.current = false
       // 清理回退定时器
       if (fallbackTimerRef.current) { clearTimeout(fallbackTimerRef.current); fallbackTimerRef.current = null }
     }
@@ -737,6 +741,27 @@ function FocusDynamicBar({
     }).catch(e => console.warn('[Conversation] 卡住对话保存失败:', e))
   }
 
+  const trackStuckChatEnded = (reason: 'resume' | 'exit' | 'phase_change') => {
+    const conversationId = stuckConversationIdRef.current
+    if (!conversationId || stuckChatEndedRef.current) return
+    stuckChatEndedRef.current = true
+    tracker.track('stuck.chat_ended', {
+      sessionId: session.sessionId,
+      taskId: session.taskId,
+      taskTitle: session.taskTitle,
+      microAction: currentMicroTask,
+      conversationId,
+      messageCount: stuckMessages.length,
+      durationMs: stuckChatStartedAtRef.current ? Date.now() - stuckChatStartedAtRef.current : 0,
+      reason,
+    })
+  }
+
+  const handleResumeFromStuckChat = () => {
+    trackStuckChatEnded('resume')
+    onResume(currentMicroTask)
+  }
+
   const requestStuckChatReply = async (
     messages: StuckChatMessage[],
     context: StuckChatContext,
@@ -769,8 +794,20 @@ function FocusDynamicBar({
       const finish = (content: string, error?: string) => {
         if (settled) return
         settled = true
-        const finalContent = content.trim() || fallbackText
+        const trimmedContent = content.trim()
+        const finalContent = trimmedContent || fallbackText
         const finalMessages = [...visibleMessages, { role: 'assistant' as const, content: finalContent }]
+        tracker.track('stuck.chat_reply_received', {
+          sessionId: session.sessionId,
+          taskId: session.taskId,
+          taskTitle: session.taskTitle,
+          microAction: currentMicroTask,
+          conversationId: stuckConversationIdRef.current,
+          messageIndex: finalMessages.length - 1,
+          charCount: finalContent.length,
+          usedFallback: !trimmedContent,
+          error,
+        })
         setStuckMessages(finalMessages)
         saveStuckConversation(finalMessages, context)
         setStuckChatError(error ?? '')
@@ -811,6 +848,15 @@ function FocusDynamicBar({
       ...stuckMessages,
       { role: 'user', content: text },
     ]
+    tracker.track('stuck.chat_message_sent', {
+      sessionId: session.sessionId,
+      taskId: session.taskId,
+      taskTitle: session.taskTitle,
+      microAction: currentMicroTask,
+      conversationId: stuckConversationIdRef.current,
+      messageIndex: nextMessages.length - 1,
+      charCount: text.length,
+    })
     setStuckMessages(nextMessages)
     setStuckChatInput('')
     const fallbackText = shouldAskEmotionSource(nextMessages, stuckChatContext)
@@ -821,6 +867,17 @@ function FocusDynamicBar({
         ...nextMessages,
         { role: 'assistant' as const, content: fallbackText },
       ]
+      tracker.track('stuck.chat_reply_received', {
+        sessionId: session.sessionId,
+        taskId: session.taskId,
+        taskTitle: session.taskTitle,
+        microAction: currentMicroTask,
+        conversationId: stuckConversationIdRef.current,
+        messageIndex: fallbackMessages.length - 1,
+        charCount: fallbackText.length,
+        usedFallback: true,
+        error: 'request_failed',
+      })
       setStuckMessages(fallbackMessages)
       saveStuckConversation(fallbackMessages, stuckChatContext)
       setStuckChatError('AI 暂时没有回复，先给你一个备用想法。')
@@ -860,6 +917,8 @@ function FocusDynamicBar({
     setStuckChatError('')
     setStuckMessages([])
     stuckConversationIdRef.current = `stuck-${session.sessionId}-${Date.now()}`
+    stuckChatStartedAtRef.current = Date.now()
+    stuckChatEndedRef.current = false
 
     Promise.all([
       loadMemory().catch(() => null),
@@ -891,6 +950,16 @@ function FocusDynamicBar({
           stuckCategory,
           stuckResponseMode,
           activeAppContext,
+        })
+        tracker.track('stuck.chat_started', {
+          sessionId: session.sessionId,
+          taskId: session.taskId,
+          taskTitle: session.taskTitle,
+          microAction: currentMicroTask,
+          conversationId: stuckConversationIdRef.current,
+          stuckReason: trimmedReason,
+          stuckCategory,
+          stuckResponseMode,
         })
         const initialInstruction = stuckResponseMode === 'direct_action'
           ? '请你直接允许用户先处理这个现实事务或阻碍，并给一个很短的回来点，不要追问。'
@@ -924,6 +993,16 @@ function FocusDynamicBar({
           stuckCategory,
           stuckResponseMode,
         })
+        tracker.track('stuck.chat_started', {
+          sessionId: session.sessionId,
+          taskId: session.taskId,
+          taskTitle: session.taskTitle,
+          microAction: currentMicroTask,
+          conversationId: stuckConversationIdRef.current,
+          stuckReason: trimmedReason,
+          stuckCategory,
+          stuckResponseMode,
+        })
         const initialInstruction = stuckResponseMode === 'direct_action'
           ? '请你直接允许用户先处理这个现实事务或阻碍，并给一个很短的回来点，不要追问。'
           : stuckResponseMode === 'emotion_elaboration'
@@ -938,6 +1017,17 @@ function FocusDynamicBar({
           const fallbackMessages = [
             { role: 'assistant' as const, content: fallbackStuckFirstReply(context) },
           ]
+          tracker.track('stuck.chat_reply_received', {
+            sessionId: session.sessionId,
+            taskId: session.taskId,
+            taskTitle: session.taskTitle,
+            microAction: currentMicroTask,
+            conversationId: stuckConversationIdRef.current,
+            messageIndex: 0,
+            charCount: fallbackMessages[0].content.length,
+            usedFallback: true,
+            error: 'request_failed',
+          })
           setStuckMessages(fallbackMessages)
           saveStuckConversation(fallbackMessages, context)
           setStuckChatError('AI 暂时没有回复，先给你一个备用想法。')
@@ -1599,7 +1689,7 @@ function FocusDynamicBar({
           <span className="text-xs text-gray-500 font-mono flex-shrink-0
                            bg-gray-100/80 px-2 py-0.5 rounded-md">{timeStr}</span>
           <button
-            onClick={() => onResume(currentMicroTask)}
+            onClick={handleResumeFromStuckChat}
             className="no-drag w-6 h-6 rounded-xl flex items-center justify-center
                        text-gray-300 hover:text-gray-500 hover:bg-gray-100
                        transition-all flex-shrink-0"
@@ -1699,7 +1789,7 @@ function FocusDynamicBar({
           <div className="flex items-center justify-between pt-1.5 border-t border-gray-100/80">
             <span className="text-xxs text-gray-400">找到一个能做的小动作就回去试试吧。</span>
             <button
-              onClick={() => onResume(currentMicroTask)}
+              onClick={handleResumeFromStuckChat}
               className="px-4 py-1.5 rounded-xl bg-emerald-500 text-white text-xs font-semibold
                          shadow-sm shadow-emerald-200/50 hover:bg-emerald-600
                          active:scale-95 transition-all"

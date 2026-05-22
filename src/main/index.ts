@@ -61,6 +61,22 @@ if (!gotTheLock) {
   app.quit()
 }
 
+let appQuitTracked = false
+
+function appendAppQuitEvent(): void {
+  if (appQuitTracked) return
+  appQuitTracked = true
+  const date = getTodayStr()
+  appendTrackerEvents(date, [{
+    id: `main-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    type: 'app.quit',
+    timestamp: Date.now(),
+    date,
+    logicalDate: date,
+    payload: {},
+  }])
+}
+
 // ===================== IPC 通信 =====================
 
 function setupIPC(): void {
@@ -523,6 +539,8 @@ app.whenReady().then(async () => {
 })
 
 app.on('before-quit', () => {
+  appendAppQuitEvent()
+  flushSync()
   stopWidgetHeartbeat()
   activitySampler.stop()
   stopSync()

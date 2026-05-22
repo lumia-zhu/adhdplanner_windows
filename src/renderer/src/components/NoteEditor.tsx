@@ -291,9 +291,17 @@ export default function NoteEditor({
     try {
       const ok = await window.electronAPI.saveMoodRecord(record)
       if (ok) {
+        const isUpdate = !!moodRecord
         setMoodLoadError(false)
         setMoodRecord(record)
         setMoodOpen(false)
+        tracker.track('mood.saved', {
+          date: moodDate,
+          mood: record.mood,
+          hasNote: record.note.length > 0,
+          noteCharCount: record.note.length,
+          isUpdate,
+        }, { date: moodDate, logicalDate: moodDate })
       } else {
         showMoodGateToast('心情保存失败了，请稍后再试。')
       }
@@ -303,7 +311,7 @@ export default function NoteEditor({
     } finally {
       setSavingMood(false)
     }
-  }, [draftMood, draftMoodNote, moodDate, savingMood, showMoodGateToast])
+  }, [draftMood, draftMoodNote, moodDate, moodRecord, savingMood, showMoodGateToast])
 
   // ===================== 数据变更 =====================
 

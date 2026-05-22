@@ -629,21 +629,28 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
     return hints[Math.floor(Math.random() * hints.length)]
   }, [viewMode, isToday])
 
+  const changeReflectionDate = useCallback((nextDate: string, method: 'arrow' | 'calendar' | 'today') => {
+    const todayStr = getToday()
+    const safeNextDate = nextDate > todayStr ? todayStr : nextDate
+    if (safeNextDate === selectedDate) return
+    setActiveHighlight(null)
+    tracker.track('nav.date_changed', {
+      from: selectedDate,
+      to: safeNextDate,
+      method,
+    }, { date: safeNextDate, logicalDate: safeNextDate })
+    setSelectedDate(safeNextDate)
+  }, [selectedDate])
+
   const goPrev = useCallback(() => {
-    setActiveHighlight(null)
-    setSelectedDate(d => shiftDate(d, -1))
-  }, [])
+    changeReflectionDate(shiftDate(selectedDate, -1), 'arrow')
+  }, [changeReflectionDate, selectedDate])
   const goNext = useCallback(() => {
-    setActiveHighlight(null)
-    setSelectedDate(d => {
-      const next = shiftDate(d, 1)
-      return next > getToday() ? d : next   // 不能超过今天
-    })
-  }, [])
+    changeReflectionDate(shiftDate(selectedDate, 1), 'arrow')
+  }, [changeReflectionDate, selectedDate])
   const goToday = useCallback(() => {
-    setActiveHighlight(null)
-    setSelectedDate(getToday())
-  }, [])
+    changeReflectionDate(getToday(), 'today')
+  }, [changeReflectionDate])
 
   // const handleReflectionStyleChange = useCallback((style: ReflectionStyle) => {
   //   setReflectionStyle(style)
@@ -2303,8 +2310,7 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
                   <MiniCalendar
                     selectedDate={selectedDate}
                     onSelect={(date) => {
-                      const todayStr = getToday()
-                      setSelectedDate(date > todayStr ? todayStr : date)
+                      changeReflectionDate(date, 'calendar')
                       setReflCalendarOpen(false)
                     }}
                     onClose={() => setReflCalendarOpen(false)}
