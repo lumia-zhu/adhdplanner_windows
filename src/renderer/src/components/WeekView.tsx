@@ -20,6 +20,7 @@ import WeekTaskRanking from './WeekTaskRanking'
 import WeekHeatmapGrid, { computeWeekActiveTimeRange } from './WeekHeatmapGrid'
 import WeekRhythmChart from './WeekRhythmChart'
 import AppUsageRanking from './AppUsageRanking'
+import ChartInfoTooltip from './ChartInfoTooltip'
 import type { VisualFocusType } from './ReflectionChat'
 import { tracker } from '../services/tracker'
 import type { DailyMoodRecord } from '../types'
@@ -278,9 +279,7 @@ function WeekCompletionSection({
       <div className="mb-3 flex items-center justify-between gap-3">
         <h3 className="flex items-center gap-1.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">
           {heading}
-          <span className="relative group">
-          <span className="inline-flex items-center justify-center w-4 h-4 rounded-full border border-gray-300 text-gray-400 text-[10px] leading-none cursor-help group-hover:text-gray-600 group-hover:border-gray-400 transition-colors">?</span>
-          <span className="pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-150 absolute left-1/2 -translate-x-1/2 top-full mt-1.5 z-50 w-[240px] bg-gray-800 text-white text-[11px] leading-relaxed rounded-lg px-3 py-2.5 shadow-lg normal-case tracking-normal font-normal">
+          <ChartInfoTooltip width={240}>
             {barsOnly ? (
               <>
                 <b>每日任务完成率</b> = 当天已完成的任务数 ÷ 当天全部任务数 × 100%。<br/><span className="text-gray-300">{colorMode === 'moodSaturation' ? '本区块为心情色阶预览：柱子颜色来自模拟心情记录，灰色表示当天未记录心情。' : '本区块为仅柱状图样式预览，不含心情折线与右侧刻度，方便你对比和改版。'}</span>
@@ -290,8 +289,7 @@ function WeekCompletionSection({
                 <b>每日任务完成率</b> = 当天已完成的任务数 ÷ 当天全部任务数 × 100%。<br/><span className="text-gray-300">{moodPointsOnly ? '本区块为心情散点预览：只显示有心情记录日期的点，不绘制点之间的连线。' : lineMissingMoodMode === 'carryForwardDotted' ? '柱子表示完成率；折线表示 1–5 级心情。未记录心情的日期会用灰色空心点沿用前一天位置，并用虚线连接；如果前面没有真实记录，则不画占位点。' : lineMissingMoodMode === 'breakOnMissing' ? '本区块为折线缺失预览：未记录心情的日期不显示心情点，折线会在缺失日期前后断开。' : '柱子表示完成率；折线表示 1–5 级心情，真实记录优先，没有记录时用示例心情补齐。右侧 1 表示很低落，5 表示很开心。'}</span>
               </>
             )}
-          </span>
-          </span>
+          </ChartInfoTooltip>
         </h3>
         {toggleMoodTrend ? (
           <MoodToggleButton
@@ -376,12 +374,9 @@ function WeekMoodCompletionDemo({ days }: { days: WeekDayData[] }) {
       <div>
         <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider flex items-center gap-1.5">
           不同心情下的任务完成率
-          <span className="relative group">
-            <span className="inline-flex items-center justify-center w-4 h-4 rounded-full border border-gray-300 text-gray-400 text-[10px] leading-none cursor-help group-hover:text-gray-600 group-hover:border-gray-400 transition-colors">?</span>
-            <span className="pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-150 absolute left-1/2 -translate-x-1/2 top-full mt-1.5 z-50 w-[280px] bg-gray-800 text-white text-[11px] leading-relaxed rounded-lg px-3 py-2.5 shadow-lg normal-case tracking-normal font-normal">
-              按 5 档心情汇总本周每天的完成步数 ÷ 总步数。某天若未记心情，则用与上方柱状图相同的「从左到右示例档位」归入对应心情后再汇总。
-            </span>
-          </span>
+          <ChartInfoTooltip>
+            按 5 档心情汇总本周每天的完成步数 ÷ 总步数。某天若未记心情，则用与上方柱状图相同的「从左到右示例档位」归入对应心情后再汇总。
+          </ChartInfoTooltip>
         </h3>
       </div>
 
@@ -583,12 +578,9 @@ export default function WeekView({ weekEndDate, onDataReady, chatOpen, activeHig
         <div className="mb-3 flex items-center justify-between gap-3">
           <h3 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-gray-500">
             电脑活动分布
-            <span className="relative group">
-              <span className="inline-flex items-center justify-center w-4 h-4 rounded-full border border-gray-300 text-gray-400 text-[10px] leading-none cursor-help group-hover:text-gray-600 group-hover:border-gray-400 transition-colors">?</span>
-              <span className="pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-150 absolute left-1/2 -translate-x-1/2 top-full mt-1.5 z-50 w-[280px] bg-gray-800 text-white text-[11px] leading-relaxed rounded-lg px-3 py-2.5 shadow-lg normal-case tracking-normal font-normal">
-                <b>每小时电脑活跃时长</b>（曲线）= 该小时内电脑被实际使用的分钟数（0~60分钟）。曲线越高，表示该时段使用电脑的时间越长。周视图中，面积为多天的活跃时长叠加。<br/><br/><b>每小时电脑活跃度</b>（色块）= 该小时内检测到的电脑使用时间 ÷ 1小时。颜色越深表示这个时段电脑使用越多。<br/><span className="text-gray-300 mt-1 inline-block">注：连续 1 分钟没有鼠标或键盘操作即视为不活跃。</span>
-              </span>
-            </span>
+            <ChartInfoTooltip>
+              <b>每小时电脑活跃时长</b>（曲线）= 该小时内电脑被实际使用的分钟数（0~60分钟）。曲线越高，表示该时段使用电脑的时间越长。周视图中，面积为多天的活跃时长叠加。<br/><br/><b>每小时电脑活跃度</b>（色块）= 该小时内检测到的电脑使用时间 ÷ 1小时。颜色越深表示这个时段电脑使用越多。<br/><span className="text-gray-300 mt-1 inline-block">注：连续 1 分钟没有鼠标或键盘操作即视为不活跃。</span>
+            </ChartInfoTooltip>
           </h3>
           <MoodToggleButton
             active={showActivityMood}
@@ -620,12 +612,9 @@ export default function WeekView({ weekEndDate, onDataReady, chatOpen, activeHig
       <ChartFocusSection id="chart-week-app-usage">
         <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-1.5">
           周应用使用时长
-          <span className="relative group">
-            <span className="inline-flex items-center justify-center w-4 h-4 rounded-full border border-gray-300 text-gray-400 text-[10px] leading-none cursor-help group-hover:text-gray-600 group-hover:border-gray-400 transition-colors">?</span>
-            <span className="pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-150 absolute left-1/2 -translate-x-1/2 top-full mt-1.5 z-50 w-[280px] bg-gray-800 text-white text-[11px] leading-relaxed rounded-lg px-3 py-2.5 shadow-lg normal-case tracking-normal font-normal">
-              本周 7 天累计的前台应用使用时长。仅在电脑处于活跃状态时统计，已自动排除 MetaPlan 自身、资源管理器、终端等非生产力应用。
-            </span>
-          </span>
+          <ChartInfoTooltip>
+            本周 7 天累计的前台应用使用时长。仅在电脑处于活跃状态时统计，已自动排除 MetaPlan 自身、资源管理器、终端等非生产力应用。
+          </ChartInfoTooltip>
         </h3>
         <AppUsageRanking data={weekData.flatMap((d) => d.activity)} highlightApps={highlightedApps} highlightPulseKey={highlightPulseKey} />
       </ChartFocusSection>

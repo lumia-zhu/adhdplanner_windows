@@ -832,9 +832,9 @@ interface ReflectionChatProps {
   aiConfig: AIConfig
   /** 反思模式：日反思 or 周反思，用于生成不同风格的探索方向 */
   mode?: 'daily' | 'weekly'
-  /** 对话结构：默认三段式 or 自由反思模式 */
+  /** 对话结构：默认采用自由反思；三段式切换暂时下线，保留类型方便恢复 */
   reflectionStyle?: ReflectionStyle
-  /** 切换对话结构 */
+  /** 切换对话结构（暂时不在 UI 暴露） */
   onReflectionStyleChange?: (style: ReflectionStyle) => void
   /** 仪表板截图 base64（data:image/jpeg;base64,...） */
   screenshotBase64?: string | null
@@ -860,8 +860,8 @@ const ReflectionChat = forwardRef<ReflectionChatHandle, ReflectionChatProps>(fun
   systemPrompt,
   aiConfig,
   mode = 'daily',
-  reflectionStyle = 'structured',
-  onReflectionStyleChange,
+  reflectionStyle = 'free',
+  // onReflectionStyleChange,
   screenshotBase64,
   selectedDate,
   storageKey,
@@ -1496,6 +1496,11 @@ const ReflectionChat = forwardRef<ReflectionChatHandle, ReflectionChatProps>(fun
           <span className="text-xs font-semibold text-gray-500">
             AI助手
           </span>
+          {/*
+            三段式/自由反思切换暂时下线。需要恢复时，放开 onReflectionStyleChange
+            prop 和下面这个按钮即可。
+          */}
+          {/*
           <button
             type="button"
             onClick={() => onReflectionStyleChange?.(reflectionStyle === 'free' ? 'structured' : 'free')}
@@ -1509,6 +1514,7 @@ const ReflectionChat = forwardRef<ReflectionChatHandle, ReflectionChatProps>(fun
             <span className={`h-1.5 w-1.5 rounded-full ${reflectionStyle === 'free' ? 'bg-indigo-500' : 'bg-gray-300'}`} />
             自由反思
           </button>
+          */}
         </div>
         <button
           onClick={handleEndChat}

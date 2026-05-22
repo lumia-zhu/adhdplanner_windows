@@ -25,6 +25,7 @@ import ActivityRhythmChart from './ActivityRhythmChart'
 import InteractiveActivityHeatmap from './InteractiveActivityHeatmap'
 import { computeActiveTimeRange } from '../utils/activity-time-range'
 import AppUsageRanking from './AppUsageRanking'
+import ChartInfoTooltip from './ChartInfoTooltip'
 import ReflectionChat from './ReflectionChat'
 import type { ReflectionChatHandle, VisualFocusType, VisualRef } from './ReflectionChat'
 import { buildReflectionMemoryCapsule, expireOldCommitments, recordReflectionMemory } from '../services/memory-manager'
@@ -234,7 +235,7 @@ const SPOTLIGHT_WAIT_VISIBLE_MS = 2200
 const SPOTLIGHT_TARGET_LOOKUP_MS = 300
 const SPOTLIGHT_SCROLL_STABLE_FRAMES = 6
 const SPOTLIGHT_SCROLL_EPSILON_PX = 0.5
-const REFLECTION_STYLE_STORAGE_KEY = 'reflectionStyle'
+// const REFLECTION_STYLE_STORAGE_KEY = 'reflectionStyle'
 
 const FOCUS_FALLBACK_CHARTS: Record<VisualFocusType, string> = {
   'activity-hour': 'chart-activity-heatmap',
@@ -585,13 +586,15 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
   // ---- 日/周 视图模式 ----
   const [viewMode, setViewMode] = useState<'day' | 'week'>('day')
   const trackerMode = viewMode === 'week' ? 'weekly' : 'daily'
-  const [reflectionStyle, setReflectionStyle] = useState<ReflectionStyle>(() => {
-    try {
-      return localStorage.getItem(REFLECTION_STYLE_STORAGE_KEY) === 'free' ? 'free' : 'structured'
-    } catch {
-      return 'structured'
-    }
-  })
+  const [reflectionStyle] = useState<ReflectionStyle>('free')
+  // 三段式/自由反思切换暂时下线；保留旧初始化逻辑，后续需要恢复切换时可直接放开。
+  // const [reflectionStyle, setReflectionStyle] = useState<ReflectionStyle>(() => {
+  //   try {
+  //     return localStorage.getItem(REFLECTION_STYLE_STORAGE_KEY) === 'free' ? 'free' : 'structured'
+  //   } catch {
+  //     return 'structured'
+  //   }
+  // })
 
   // ---- 日期选择 & 日历弹窗 ----
   const today = getToday()
@@ -642,14 +645,14 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
     setSelectedDate(getToday())
   }, [])
 
-  const handleReflectionStyleChange = useCallback((style: ReflectionStyle) => {
-    setReflectionStyle(style)
-    try {
-      localStorage.setItem(REFLECTION_STYLE_STORAGE_KEY, style)
-    } catch {
-      // 忽略 localStorage 不可用；本次会话仍会切换。
-    }
-  }, [])
+  // const handleReflectionStyleChange = useCallback((style: ReflectionStyle) => {
+  //   setReflectionStyle(style)
+  //   try {
+  //     localStorage.setItem(REFLECTION_STYLE_STORAGE_KEY, style)
+  //   } catch {
+  //     // 忽略 localStorage 不可用；本次会话仍会切换。
+  //   }
+  // }, [])
 
   // ---- 拖拽分隔条 ----
   const isDragging = useRef(false)
@@ -2552,12 +2555,9 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
               <ChartFocusSection id="chart-activity-heatmap">
                 <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-1.5">
                   电脑活动分布
-                  <span className="relative group">
-                    <span className="inline-flex items-center justify-center w-4 h-4 rounded-full border border-gray-300 text-gray-400 text-[10px] leading-none cursor-help group-hover:text-gray-600 group-hover:border-gray-400 transition-colors">?</span>
-                    <span className="pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-150 absolute left-1/2 -translate-x-1/2 top-full mt-1.5 z-50 w-[280px] bg-gray-800 text-white text-[11px] leading-relaxed rounded-lg px-3 py-2.5 shadow-lg normal-case tracking-normal font-normal">
-                      <b>每小时电脑活跃时长</b>（曲线）= 该小时内电脑被实际使用的分钟数（0~60分钟）。曲线越高，表示该时段使用电脑的时间越长。<br/><br/><b>每小时电脑活跃度</b>（色块）= 该小时内检测到的电脑使用时间 ÷ 1小时。颜色越深表示这个时段电脑使用越多。<br/><span className="text-gray-300 mt-1 inline-block">注：连续 1 分钟没有鼠标或键盘操作即视为不活跃。</span>
-                    </span>
-                  </span>
+                  <ChartInfoTooltip>
+                    <b>每小时电脑活跃时长</b>（曲线）= 该小时内电脑被实际使用的分钟数（0~60分钟）。曲线越高，表示该时段使用电脑的时间越长。<br/><br/><b>每小时电脑活跃度</b>（色块）= 该小时内检测到的电脑使用时间 ÷ 1小时。颜色越深表示这个时段电脑使用越多。<br/><span className="text-gray-300 mt-1 inline-block">注：连续 1 分钟没有鼠标或键盘操作即视为不活跃。</span>
+                  </ChartInfoTooltip>
                 </h3>
                 <div id="chart-rhythm">
                   <ActivityRhythmChart
@@ -2591,12 +2591,9 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
               <ChartFocusSection id="chart-app-usage">
                 <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-1.5">
                   应用使用时长
-                  <span className="relative group">
-                    <span className="inline-flex items-center justify-center w-4 h-4 rounded-full border border-gray-300 text-gray-400 text-[10px] leading-none cursor-help group-hover:text-gray-600 group-hover:border-gray-400 transition-colors">?</span>
-                    <span className="pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-150 absolute left-1/2 -translate-x-1/2 top-full mt-1.5 z-50 w-[280px] bg-gray-800 text-white text-[11px] leading-relaxed rounded-lg px-3 py-2.5 shadow-lg normal-case tracking-normal font-normal">
-                      今日各前台应用的累计使用时长（精度到分钟，少于 1 分钟显示「&lt; 1 分钟」）。仅在电脑处于活跃状态时统计，已自动排除 MetaPlan 自身、资源管理器、终端等非生产力应用。默认显示前 5 项，可展开查看全部。
-                    </span>
-                  </span>
+                  <ChartInfoTooltip>
+                    今日各前台应用的累计使用时长（精度到分钟，少于 1 分钟显示「&lt; 1 分钟」）。仅在电脑处于活跃状态时统计，已自动排除 MetaPlan 自身、资源管理器、终端等非生产力应用。默认显示前 5 项，可展开查看全部。
+                  </ChartInfoTooltip>
                 </h3>
                 <AppUsageRanking
                   data={displayActivityData}
@@ -2726,6 +2723,7 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
                   </div>
                 </div>
               ) : activeSystemPrompt ? (
+                // 暂时不传 onReflectionStyleChange，恢复切换时可放开上方保留的 handler。
                 <ReflectionChat
                   ref={chatRef}
                   key={viewMode === 'week' ? `week-${weekEndDate}` : `day-${selectedDate}`}
@@ -2733,7 +2731,6 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
                   aiConfig={aiConfig}
                   mode={viewMode === 'week' ? 'weekly' : 'daily'}
                   reflectionStyle={reflectionStyle}
-                  onReflectionStyleChange={handleReflectionStyleChange}
                   screenshotBase64={null}
                   selectedDate={viewMode === 'week' ? weekEndDate : selectedDate}
                   storageKey={viewMode === 'week' ? `week-${weekEndDate}` : selectedDate}

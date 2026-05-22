@@ -1,7 +1,7 @@
 /**
  * ProfileSettings —— 个人资料设置弹窗
  *
- * 让用户填写：称呼、专业、年级、挑战标签、常用工作场所、每日反思提醒时间
+ * 让用户填写：称呼、专业、年级、挑战标签、常用工作场所、每日复盘提醒时间
  * 这些信息会被 AI 用来提供更精准的个性化建议
  */
 
@@ -260,10 +260,10 @@ export default function ProfileSettings({ visible, profile, onSave, onClose }: P
             <p className="text-xs text-gray-400 mt-1">设置后每天会在该时间提醒你为今天列计划</p>
           </div>
 
-          {/* 每日反思提醒时间 */}
+          {/* 每日复盘提醒时间 */}
           <div>
             <label className="block text-sm font-semibold text-gray-800 mb-1.5">
-              每日反思提醒时间
+              每日复盘提醒时间
             </label>
             <div className="relative">
               <input
@@ -275,7 +275,7 @@ export default function ProfileSettings({ visible, profile, onSave, onClose }: P
                            outline-none bg-gray-50 focus:bg-white transition-all"
               />
             </div>
-            <p className="text-xs text-gray-400 mt-1">设置后每天会在该时间提醒你进行反思总结</p>
+            <p className="text-xs text-gray-400 mt-1">设置后每天会在该时间提醒你进行复盘总结</p>
           </div>
 
           {/* 个性化功能提示 */}
