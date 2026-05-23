@@ -35,6 +35,32 @@ const ACTIVE_VIEW_REFLECTION = 'reflection'
 const MAIN_WIDTH = 480
 const MAIN_HEIGHT = 760
 
+const getTasksCacheKey = (date: string, userId?: string | null): string =>
+  userId ? `tasksCache-${userId}-${date}` : `tasksCache-${date}`
+
+function normalizeProfile(profile: Record<string, unknown> | null | undefined): UserProfile {
+  return {
+    preferredName: String(profile?.preferredName || ''),
+    major: String(profile?.major || ''),
+    grade: String(profile?.grade || ''),
+    challenges: Array.isArray(profile?.challenges) ? profile.challenges.map(String) : [],
+    workplaces: Array.isArray(profile?.workplaces) ? profile.workplaces.map(String) : [],
+    planTime: profile?.planTime ? String(profile.planTime) : null,
+    reflectionTime: profile?.reflectionTime ? String(profile.reflectionTime) : null,
+  }
+}
+
+function normalizeAIConfig(config: Record<string, string> | null | undefined): AIConfig {
+  if (config?.apiKey) {
+    return {
+      apiUrl: config.apiUrl || DEFAULT_AI_CONFIG.apiUrl,
+      apiKey: config.apiKey || DEFAULT_AI_CONFIG.apiKey,
+      modelId: config.modelId || DEFAULT_AI_CONFIG.modelId,
+    }
+  }
+  return { ...DEFAULT_AI_CONFIG }
+}
+
 function markReflectionActive(): void {
   try {
     localStorage.setItem(ACTIVE_VIEW_STORAGE_KEY, ACTIVE_VIEW_REFLECTION)
@@ -130,6 +156,53 @@ export default function App() {
     }
   }, [])
 
+  const resetUserScopedState = useCallback(() => {
+    setUserProfile({ ...EMPTY_PROFILE })
+    setAIConfig({ ...DEFAULT_AI_CONFIG })
+    setHasMemory(false)
+    setTasks([])
+    setCarryOverGroups([])
+    setPendingStandbyTaskId(null)
+    setShowProfile(false)
+    setShowAISettings(false)
+    setShowMemory(false)
+    focusSession.setSession(null)
+    focusSession.sessionIdRef.current = ''
+    widgetMode.setShowReflection(false)
+    widgetMode.setIsStandbyMode(false)
+    try {
+      localStorage.removeItem('focusSession')
+      localStorage.removeItem('focusSessionId')
+      localStorage.removeItem(getTasksCacheKey(currentDate))
+      if (currentUser?.id) {
+        localStorage.removeItem(getTasksCacheKey(currentDate, currentUser.id))
+      }
+    } catch {
+      // 忽略 localStorage 清理失败；主流程仍会从当前用户目录重新加载。
+    }
+  }, [currentDate, currentUser?.id, focusSession, widgetMode])
+
+  const loadUserScopedState = useCallback(async () => {
+    const [savedConfig, savedProfile, memoryStore] = await Promise.all([
+      window.electronAPI.loadAIConfig().catch(() => null),
+      window.electronAPI.loadProfile().catch(() => null),
+      loadMemory().catch(() => null),
+    ])
+
+    setAIConfig(normalizeAIConfig(savedConfig))
+    setUserProfile(normalizeProfile(savedProfile))
+    setHasMemory(
+      !!memoryStore && (
+        memoryStore.sessions.length > 0 ||
+        memoryStore.commitments.length > 0 ||
+        memoryStore.firstSteps.length > 0 ||
+        memoryStore.stableFirstSteps.length > 0 ||
+        memoryStore.stuckReasons.length > 0 ||
+        memoryStore.hintFeedback.length > 0
+      ),
+    )
+  }, [])
+
   const openReflection = useCallback(() => {
     clearReflectionReminder()
     markReflectionActive()
@@ -166,37 +239,17 @@ export default function App() {
   useEffect(() => {
     const bootstrap = async () => {
       try {
-        const [authResult, savedConfig, savedProfile, windowMode, memoryStore] = await Promise.all([
+        const [authResult, windowMode] = await Promise.all([
           window.electronAPI.authGetUser().catch(() => ({ user: null })),
-          window.electronAPI.loadAIConfig().catch(() => null),
-          window.electronAPI.loadProfile().catch(() => null),
           window.electronAPI.getWindowMode().catch(() => null),
-          loadMemory().catch(() => null),
         ])
 
         if (authResult.user && typeof authResult.user === 'object') {
           const u = authResult.user as AuthUser
           setCurrentUser({ id: u.id, email: u.email })
-        }
-        if (savedConfig && savedConfig.apiKey) {
-          setAIConfig({
-            apiUrl: savedConfig.apiUrl || DEFAULT_AI_CONFIG.apiUrl,
-            apiKey: savedConfig.apiKey || DEFAULT_AI_CONFIG.apiKey,
-            modelId: savedConfig.modelId || DEFAULT_AI_CONFIG.modelId,
-          })
-        } else if (DEFAULT_AI_CONFIG.apiKey) {
-          setAIConfig({ ...DEFAULT_AI_CONFIG })
-        }
-        if (savedProfile && typeof savedProfile === 'object') {
-          setUserProfile({
-            preferredName: String(savedProfile.preferredName || ''),
-            major: String(savedProfile.major || ''),
-            grade: String(savedProfile.grade || ''),
-            challenges: Array.isArray(savedProfile.challenges) ? savedProfile.challenges.map(String) : [],
-            workplaces: Array.isArray(savedProfile.workplaces) ? savedProfile.workplaces.map(String) : [],
-            planTime: savedProfile.planTime ? String(savedProfile.planTime) : null,
-            reflectionTime: savedProfile.reflectionTime ? String(savedProfile.reflectionTime) : null,
-          })
+          await loadUserScopedState()
+        } else {
+          resetUserScopedState()
         }
         if (windowMode?.isWidgetMode) {
           setIsWidgetMode(true)
@@ -206,16 +259,6 @@ export default function App() {
           }
         } else if (authResult.user && shouldRestoreReflection()) {
           widgetMode.setShowReflection(true)
-        }
-        if (memoryStore) {
-          setHasMemory(
-            memoryStore.sessions.length > 0 ||
-            memoryStore.commitments.length > 0 ||
-            memoryStore.firstSteps.length > 0 ||
-            memoryStore.stableFirstSteps.length > 0 ||
-            memoryStore.stuckReasons.length > 0 ||
-            memoryStore.hintFeedback.length > 0,
-          )
         }
       } catch (e) {
         console.error('启动初始化失败:', e)
@@ -228,10 +271,16 @@ export default function App() {
 
   // -------- 按日期加载任务 + 搬迁检测 --------
   useEffect(() => {
+    if (authChecking) return
+    if (!currentUser) {
+      setLoading(false)
+      return
+    }
+
     tasksLoadedForDate.current = null
 
     // 先用 localStorage 缓存立即渲染，减少白屏等待
-    const cacheKey = `tasksCache-${currentDate}`
+    const cacheKey = getTasksCacheKey(currentDate, currentUser.id)
     try {
       const cached = localStorage.getItem(cacheKey)
       if (cached) {
@@ -293,7 +342,7 @@ export default function App() {
           const groups = await window.electronAPI.findAllCarryOver(currentDate)
           if (groups && groups.length > 0) {
             const totalCount = groups.reduce((s, g) => s + g.tasks.length, 0)
-            const dismissKey = `carryOverDismissed-${currentDate}`
+            const dismissKey = `carryOverDismissed-${currentUser.id}-${currentDate}`
             const dismissedCount = parseInt(localStorage.getItem(dismissKey) || '0', 10)
             if (totalCount > dismissedCount) {
               setCarryOverGroups(groups.map(g => ({
@@ -326,17 +375,17 @@ export default function App() {
       }
     }
     loadDailyTasks()
-  }, [currentDate]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [authChecking, currentDate, currentUser?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // -------- 数据自动保存 + 托盘同步 --------
   const saveTasks = useCallback(async (date: string, newTasks: Task[]) => {
     try {
       await window.electronAPI.saveTasks(date, newTasks)
-      try { localStorage.setItem(`tasksCache-${date}`, JSON.stringify(newTasks)) } catch { /* quota */ }
+      try { localStorage.setItem(getTasksCacheKey(date, currentUser?.id), JSON.stringify(newTasks)) } catch { /* quota */ }
     } catch (e) {
       console.error('保存任务失败:', e)
     }
-  }, [])
+  }, [currentUser?.id])
 
   useEffect(() => {
     if (!loading && tasksLoadedForDate.current === currentDate) {
@@ -408,7 +457,7 @@ export default function App() {
 
   const handleDismissCarryOver = (source: 'collapsed' | 'expanded') => {
     const totalCount = carryOverGroups.reduce((s, g) => s + g.tasks.length, 0)
-    localStorage.setItem(`carryOverDismissed-${currentDate}`, String(totalCount))
+    localStorage.setItem(`carryOverDismissed-${currentUser?.id ?? 'anonymous'}-${currentDate}`, String(totalCount))
     tracker.track('task.carry_over_dismissed', {
       date: currentDate,
       totalCount,
@@ -429,16 +478,35 @@ export default function App() {
   const pendingTasks = tasks.filter(t => !t.completed)
   const completedTasks = tasks.filter(t => t.completed)
 
+  const handleLoginSuccess = useCallback(async (user: AuthUser) => {
+    tracker.track('auth.login', {})
+    setLoading(true)
+    resetUserScopedState()
+    setCurrentUser(user)
+    try {
+      await loadUserScopedState()
+    } catch (e) {
+      console.error('登录后加载用户数据失败:', e)
+    }
+  }, [loadUserScopedState, resetUserScopedState])
+
   // -------- 退出登录（必须在条件 return 之前，满足 hooks 顺序规则） --------
   const handleLogout = useCallback(async () => {
     tracker.track('auth.logout', {})
     await window.electronAPI.authSignOut()
     clearActiveView()
+    resetUserScopedState()
     setCurrentUser(null)
-    setTasks([])
+    setIsWidgetMode(false)
     setAuthChecking(false)
-    try { localStorage.removeItem(`tasksCache-${currentDate}`) } catch { /* ignore */ }
-  }, [currentDate])
+    setLoading(false)
+    try {
+      localStorage.removeItem(getTasksCacheKey(currentDate))
+      if (currentUser?.id) {
+        localStorage.removeItem(getTasksCacheKey(currentDate, currentUser.id))
+      }
+    } catch { /* ignore */ }
+  }, [clearActiveView, currentDate, currentUser?.id, resetUserScopedState])
 
   const handleCloseReflection = useCallback(() => {
     clearActiveView()
@@ -469,7 +537,7 @@ export default function App() {
   // -------- 未登录：显示登录页 --------
   if (!currentUser) {
     return (
-      <AuthPage onLoginSuccess={(user) => { tracker.track('auth.login', {}); setCurrentUser(user) }} />
+      <AuthPage onLoginSuccess={handleLoginSuccess} />
     )
   }
 

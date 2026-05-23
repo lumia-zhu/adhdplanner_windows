@@ -146,28 +146,13 @@ export function useFocusSession({
       aiCache.prefetch(newId, title, aiConfig)
     }
 
-    const pendingSnap = [...tasks.filter(t => !t.completed), newTask]
-    tracker.track('plan.brain_dump', {
-      tasks: pendingSnap.map(t => ({ id: t.id, title: t.title })),
-      taskCount: pendingSnap.length,
-    })
-    tracker.track('plan.focus_selected', { taskId: newId, taskTitle: title })
-  }, [tasks, aiConfig, setTasks])
+  }, [aiConfig, setTasks])
 
   // ===================== 聚焦已有任务 =====================
 
   const handleFocusTask = useCallback((id: string) => {
     setScaffoldTaskId(id)
-    const task = tasks.find(t => t.id === id)
-    if (task) {
-      const pendingSnap = tasks.filter(t => !t.completed)
-      tracker.track('plan.brain_dump', {
-        tasks: pendingSnap.map(t => ({ id: t.id, title: t.title })),
-        taskCount: pendingSnap.length,
-      })
-      tracker.track('plan.focus_selected', { taskId: task.id, taskTitle: task.title, taskNote: task.note || undefined })
-    }
-  }, [tasks])
+  }, [])
 
   // ===================== FocusFlow 确认微任务 → 进入执行 =====================
 
@@ -204,6 +189,12 @@ export function useFocusSession({
     if (understandingContext) {
       tracker.track('plan.task_understanding', { taskId: task.id, taskTitle: task.title, understandingContext })
     }
+    const pendingSnap = tasks.filter(t => !t.completed)
+    tracker.track('plan.brain_dump', {
+      tasks: pendingSnap.map(t => ({ id: t.id, title: t.title })),
+      taskCount: pendingSnap.length,
+    })
+    tracker.track('plan.focus_selected', { taskId: task.id, taskTitle: task.title, taskNote: task.note || undefined })
     tracker.track('plan.first_micro', { taskId: task.id, taskTitle: task.title, microAction: microTask, source })
     tracker.track('session.started', { sessionId: sid, taskId: task.id, taskTitle: task.title })
     tracker.track('exec.micro_started', { sessionId: sid, taskId: task.id, taskTitle: task.title, microAction: microTask })
@@ -358,15 +349,19 @@ export function useFocusSession({
       return
     }
 
-    const flowDuration = Math.floor((Date.now() - session.startTime) / 1000)
     const segmentDuration = Math.floor((Date.now() - session.sessionStartTime) / 1000)
     const totalDuration = segmentDuration + (session.elapsedOffset || 0)
-    tracker.track('exec.flow_ended', {
-      sessionId: sessionIdRef.current, taskId: session.taskId,
-      taskTitle: session.taskTitle, flowDurationSeconds: flowDuration, endReason: 'task_done',
-    })
+    if (ENABLE_STEP_BY_STEP && session.isFlowMode) {
+      const flowDuration = Math.floor((Date.now() - session.startTime) / 1000)
+      tracker.track('exec.flow_ended', {
+        sessionId: sessionIdRef.current, taskId: session.taskId,
+        taskTitle: session.taskTitle, flowDurationSeconds: flowDuration, endReason: 'task_done',
+      })
+    }
     tracker.track('session.macro_completed', {
-      taskId: session.taskId, taskTitle: session.taskTitle, completedVia: 'flow',
+      taskId: session.taskId,
+      taskTitle: session.taskTitle,
+      completedVia: ENABLE_STEP_BY_STEP && session.isFlowMode ? 'flow' : 'main_task',
     })
     tracker.track('session.ended', {
       sessionId: sessionIdRef.current, taskId: session.taskId,

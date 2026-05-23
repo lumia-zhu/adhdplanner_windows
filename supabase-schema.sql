@@ -21,6 +21,7 @@ drop table if exists profiles cascade;
 -- 1. 用户资料
 create table if not exists profiles (
   user_id uuid primary key references auth.users(id) on delete cascade,
+  preferred_name text default '',
   major text default '',
   grade text default '',
   challenges text[] default '{}',
@@ -31,6 +32,7 @@ create table if not exists profiles (
 );
 
 -- 已建库的用户：补加 plan_time 列（多次执行不会报错）
+alter table profiles add column if not exists preferred_name text default '';
 alter table profiles add column if not exists plan_time text;
 alter table profiles add column if not exists reflection_time text;
 

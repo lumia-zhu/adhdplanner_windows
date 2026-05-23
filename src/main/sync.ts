@@ -43,9 +43,12 @@ function isMissingAppUsageColumn(error: unknown): boolean {
   return msg.includes('app_usage') && msg.includes('schema cache')
 }
 
-function isMissingPlanTimeColumn(error: unknown): boolean {
+const OPTIONAL_PROFILE_COLUMNS = ['preferred_name', 'plan_time', 'reflection_time'] as const
+
+function getMissingOptionalProfileColumn(error: unknown): string | null {
   const msg = getErrorMessage(error)
-  return msg.includes('plan_time') && msg.includes('schema cache')
+  if (!msg.includes('schema cache')) return null
+  return OPTIONAL_PROFILE_COLUMNS.find(col => msg.includes(col)) ?? null
 }
 
 function isMissingMoodRecordsTable(error: unknown): boolean {
@@ -207,6 +210,7 @@ async function pushToCloud(userId: string, entity: string, key: string): Promise
       const profile = loadProfile()
       const row = {
         user_id: userId,
+        preferred_name: String(profile.preferredName || ''),
         major: String(profile.major || ''),
         grade: String(profile.grade || ''),
         challenges: Array.isArray(profile.challenges) ? profile.challenges : [],
@@ -215,16 +219,20 @@ async function pushToCloud(userId: string, entity: string, key: string): Promise
         reflection_time: profile.reflectionTime ? String(profile.reflectionTime) : null,
         updated_at: new Date().toISOString(),
       }
-      const { error } = await sb.from('profiles').upsert(row)
-      if (error) {
-        if (!isMissingPlanTimeColumn(error)) throw error
+      const profileRow: Record<string, unknown> = { ...row }
+      for (let attempt = 0; attempt <= OPTIONAL_PROFILE_COLUMNS.length; attempt++) {
+        const { error } = await sb.from('profiles').upsert(profileRow)
+        if (!error) break
 
-        // 线上库还没执行 plan_time migration 时，先同步其他个人资料字段。
-        // 等数据库列补上后，新版本会自动恢复上传 planTime。
-        console.warn('[Sync] profile: plan_time column unavailable, retrying without plan time')
-        const { plan_time: _planTime, ...rowWithoutPlanTime } = row
-        const { error: retryError } = await sb.from('profiles').upsert(rowWithoutPlanTime)
-        if (retryError) throw retryError
+        const missingColumn = getMissingOptionalProfileColumn(error)
+        if (!missingColumn || !(missingColumn in profileRow) || attempt === OPTIONAL_PROFILE_COLUMNS.length) {
+          throw error
+        }
+
+        // 线上库还没执行 profile migration 时，先同步其他个人资料字段。
+        // 等数据库列补上后，新版本会自动恢复上传这些字段。
+        console.warn(`[Sync] profile: ${missingColumn} column unavailable, retrying without it`)
+        delete profileRow[missingColumn]
       }
       console.log('[Sync] profile synced')
       break
@@ -541,6 +549,7 @@ export async function pullFromCloud(userId: string): Promise<void> {
     if (profiles.length > 0) {
       const p = profiles[0]
       const profile = {
+        preferredName: p.preferred_name || '',
         major: p.major || '',
         grade: p.grade || '',
         challenges: p.challenges ?? [],

@@ -273,7 +273,7 @@ export interface SessionResumedPayload {
 export interface MacroTaskCompletedPayload {
   taskId: string
   taskTitle: string
-  completedVia: 'flow' | 'manual' | 'subtasks_all_done' // 完成方式
+  completedVia: 'main_task' | 'flow' | 'manual' | 'subtasks_all_done' // 完成方式
 }
 
 /** ====== 6. 每日快照 (Daily Snapshot) ====== */

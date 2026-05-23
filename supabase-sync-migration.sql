@@ -29,6 +29,7 @@ $$;
 
 create index if not exists idx_mood_records_user_date on mood_records(user_id, date);
 
+alter table profiles add column if not exists preferred_name text default '';
 alter table profiles add column if not exists plan_time text;
 alter table profiles add column if not exists reflection_time text;
 
