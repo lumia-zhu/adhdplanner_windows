@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, net, powerMonitor, screen } from 'electron'
+import { app, BrowserWindow, ipcMain, powerMonitor, screen } from 'electron'
 import fs from 'fs'
 import { S } from './state'
 import {
@@ -265,7 +265,10 @@ function setupIPC(): void {
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), AI_TIMEOUT_MS)
     try {
-      const resp = await net.fetch(payload.url, {
+      // 使用 Node/Electron 主进程的 global fetch，而不是 Electron net.fetch。
+      // 在部分 Windows 网络环境下，net.fetch 会在 TLS 握手阶段触发 ERR_CONNECTION_RESET，
+      // 但同进程 global fetch 和系统 curl 均可正常访问 Ark API。
+      const resp = await fetch(payload.url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -308,7 +311,7 @@ function setupIPC(): void {
 
     ;(async () => {
       try {
-        const resp = await net.fetch(payload.url, {
+        const resp = await fetch(payload.url, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',

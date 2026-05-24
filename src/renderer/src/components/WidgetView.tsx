@@ -36,29 +36,11 @@ function TruncatedTextTooltip({
   className: string
   prefix?: string
 }) {
-  const textRef = useRef<HTMLSpanElement>(null)
-  const [showTooltip, setShowTooltip] = useState(false)
-
-  const handleMouseEnter = () => {
-    const el = textRef.current
-    if (!el) return
-    setShowTooltip(el.scrollWidth > el.clientWidth)
-  }
-
   return (
-    <span
-      className="relative inline-flex min-w-0"
-      onMouseEnter={handleMouseEnter}
-      onMouseLeave={() => setShowTooltip(false)}
-    >
-      <span ref={textRef} className={className}>
+    <span className="no-drag inline-flex min-w-0">
+      <span className={className} title={text}>
         {prefix}{text}
       </span>
-      {showTooltip && (
-        <span className="pointer-events-none absolute left-0 top-full z-50 mt-1.5 max-w-[260px] rounded-xl bg-gray-800 px-2.5 py-1.5 text-xs leading-relaxed text-white shadow-lg">
-          {text}
-        </span>
-      )}
     </span>
   )
 }
@@ -1481,9 +1463,12 @@ function FocusDynamicBar({
             )}
           </div>
           {/* 中区：任务名 */}
-          <span className="flex-1 min-w-0 text-md text-gray-800 font-semibold truncate text-center">
-            {displayTask}
-          </span>
+          <div className="flex-1 min-w-0 flex justify-center">
+            <TruncatedTextTooltip
+              text={displayTask}
+              className="block max-w-full text-md text-gray-800 font-semibold truncate text-center"
+            />
+          </div>
           {/* 右区：计时 + 关闭（宽度与左区平衡） */}
           <div className="w-[60px] flex items-center justify-end gap-1 flex-shrink-0">
             <span className="text-xxs text-gray-400 font-mono
@@ -1569,9 +1554,11 @@ function FocusDynamicBar({
                           flex items-center justify-center flex-shrink-0 shadow-sm">
             <span className="text-white text-2xs">🆘</span>
           </div>
-          <span className="text-xs text-orange-600 font-medium flex-1 truncate">
-            卡住了：{currentMicroTask}
-          </span>
+          <TruncatedTextTooltip
+            text={currentMicroTask}
+            prefix="卡住了："
+            className="text-xs text-orange-600 font-medium flex-1 truncate"
+          />
           <span className="text-xs text-gray-500 font-mono flex-shrink-0
                            bg-gray-100/80 px-2 py-0.5 rounded-md">{timeStr}</span>
           <button
@@ -1703,12 +1690,16 @@ function FocusDynamicBar({
 
         <div className="no-drag flex-1 px-4 py-3 flex flex-col gap-2.5 min-h-0">
           <div className="text-xxs text-gray-500 bg-amber-50/70 border border-amber-100 rounded-xl px-3 py-2 leading-relaxed">
-            <span className="block truncate">
-              任务：<span className="text-amber-700 font-medium">{taskTitle}</span>
-            </span>
-            <span className="block truncate mt-0.5">
-              卡住原因：<span className="text-amber-700">{stuckReason || '这个步骤'}</span>
-            </span>
+            <TruncatedTextTooltip
+              text={taskTitle}
+              prefix="任务："
+              className="block truncate text-amber-700 font-medium"
+            />
+            <TruncatedTextTooltip
+              text={stuckReason || '这个步骤'}
+              prefix="卡住原因："
+              className="block truncate mt-0.5 text-amber-700"
+            />
           </div>
 
           <div className="flex-1 overflow-y-auto pr-1 flex flex-col gap-2.5">
