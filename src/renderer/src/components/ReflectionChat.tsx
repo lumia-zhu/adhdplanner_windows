@@ -168,7 +168,8 @@ function detectFreeReflectionFrame(
     return { action: 'suggest', topic, scope, source, constraints }
   }
   if (hasAny(normalized, ['不知道聊什么', '不知道说什么', '不知道', '随便', '都行', '没想法'])) {
-    constraints.push('用户没有明确话题或能量较低，不要继续追问。')
+    constraints.push('用户没有明确话题或能量较低，不要把“选话题”也交给用户。')
+    constraints.push('本轮由 AI 主动挑一个最轻、最好回答的数据角度：优先看一个已经推进的地方、后来接上的地方、或一个不需要解释原因的小变化。')
     return { action: 'guide', topic, scope, source, constraints }
   }
 
@@ -209,7 +210,7 @@ function buildFreeReflectionDirectorInstruction(
   const actionInstructionMap: Record<ReflectionAction, string> = {
     compare: '用户在问差异。先回答“不同在哪里”，再决定是否需要 1 个开放问题；不要急着给建议。',
     suggest: '用户主动问怎么办。本轮可以直接给 1 个低压力小实验，动作要小、具体、可尝试，不要给一整套方法。',
-    guide: '用户没有明确话题或能量较低。本轮不要追问，降低负担，并提示可以看下面标准方向或换一批。',
+    guide: `用户没有明确话题或能量较低。本轮先用一句轻松的话接住（例如“没关系，我们不硬聊大的。”），然后由 AI 主动挑 1 个${dataLabel}里最轻、最好回答的角度展开；优先帮用户看见一个已经推进、后来接上、或比想象中没那么糟的地方。最多问 1 个很容易回答的小问题，不要只说“可以看下面方向”。语气可以自然一点、带一点轻松感，但不要夸张游戏化。`,
     close: '用户可能想结束。本轮用 1-2 句话收束成一个小发现，不挽留、不生成新问题。',
     comfort: '用户正在表达情绪或状态。本轮先接住状态，不要立刻夸完成、分析效率或给建议。',
     soften_stuck: `用户在说困难或卡住。本轮不要问“为什么卡住”，把问题变轻：围绕${nextLabel}怎么少费点劲、哪一部分需要变小来回应。`,
@@ -239,8 +240,10 @@ function buildMemoryRelationInstruction(relations: ReflectionMemoryRelation[]): 
   if (relations.length === 0) return ''
   const relation = relations[0]
   const styleText = relation.useStyle === 'suggestion'
-    ? '如果本轮要给建议，可以把这条记忆轻轻转成一个可选小实验。'
-    : '如果本轮自然相关，可以轻轻提一句；不相关就不用。'
+    ? '如果本轮要给建议，优先把这条记忆轻轻转成一个可选小实验。'
+    : relation.relation === 'similar_pattern' || relation.relation === 'reuse_strategy' || relation.relation === 'positive_change'
+      ? '这条记忆已被判断为和当前数据相关；本轮优先用一句话帮用户看见相似模式、可复用做法或积极变化。'
+      : '如果本轮自然相关，可以轻轻提一句；不相关就不用。'
 
   return [
     '【可用记忆关系线索】',
@@ -249,7 +252,8 @@ function buildMemoryRelationInstruction(relations: ReflectionMemoryRelation[]): 
     `当前证据：${relation.currentEvidence}`,
     relation.reason ? `为什么相关：${relation.reason}` : '',
     `使用方式：${styleText}`,
-    '边界：每轮最多引用这一条记忆；必须服从【自由反思调度】里的用户原话、scope 和证据优先级；不要让记忆替代当前数据。',
+    '边界：每轮最多引用这一条记忆；必须服从【自由反思调度】里的用户原话、scope 和证据优先级；记忆要和当前数据并排使用，不能替代当前数据。',
+    '表达：可以说“这和你之前提到的 XX 有点像”“你之前试过的 XX 可能能接上这里”；不要把记忆写成考核或追责。',
     '禁忌：不要说“你又...”“上次明明...”；不要追问用户以前有没有做到。',
   ].filter(Boolean).join('\n')
 }
@@ -260,7 +264,7 @@ function buildSuggestionPool(items: string[], mode: 'daily' | 'weekly', allowSta
   const normalized = items
     .map(cleanSuggestionLabel)
     .filter((item): item is string => Boolean(item))
-    .filter(item => standardSet.has(item))
+    .filter(item => standardSet.has(item) || isSafeCustomSuggestion(item))
 
   const pool = Array.from(new Set(normalized))
   if (allowStandardFill && pool.length > 0) {
@@ -582,6 +586,25 @@ function cleanSuggestionLabel(label: unknown): string | null {
   if (cleaned.length < 4 || cleaned.length > 30) return null
   if (/chart:|SUGGESTIONS|<!--|\*\*/i.test(cleaned)) return null
   return cleaned
+}
+
+function isSafeCustomSuggestion(label: string): boolean {
+  const normalized = label.trim()
+  if (normalized.length < 6 || normalized.length > 28) return false
+  if (/[\r\n"'“”‘’`]/.test(normalized)) return false
+  if (/[a-z]:\\|\/|\\|\.\w{2,5}\b/i.test(normalized)) return false
+  if (/\d{1,2}\s*[:：点]\s*\d{0,2}/.test(normalized)) return false
+  if (/(cursor|edge|chrome|微信|word|excel|powerpoint|vscode|visual studio code)/i.test(normalized)) return false
+  if (/(拖延|浪费|懒|自控|效率低|失败|糟糕|不够努力)/.test(normalized)) return false
+  if (/(试试|建议|应该|必须|需要你|不如|可以先|记得|马上)/.test(normalized)) return false
+  if (/(哪里需要变小|只收一个小发现|值得保留|顺的地方|小发现)/.test(normalized)) return false
+  if (/^(完成率|指标卡片|任务用时|活动分布|电脑活动|应用使用时长|周汇总指标|任务排行)$/.test(normalized)) return false
+
+  const hasTaskManagementAnchor = /(任务|计划|开始|推进|中断|卡住|节奏|时间|电脑|心情|状态|策略|规律|接上|停下|完成|用时|顺|不顺|变化|不同)/.test(normalized)
+  if (!hasTaskManagementAnchor) return false
+
+  return /[？?]$/.test(normalized)
+    || /^(哪些|哪里|哪段|什么|为什么|怎么|有没有|和|今天|这周|不同|更容易|总是|一直|列了|电脑|任务|状态|心情)/.test(normalized)
 }
 
 function extractSuggestions(rawText: string): string[] {

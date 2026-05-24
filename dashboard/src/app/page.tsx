@@ -15,8 +15,38 @@ import { STAT_DEFS } from '@/components/QuickStats'
 import BehaviorTab from '@/components/BehaviorTab'
 import ChatsTab from '@/components/ChatsTab'
 import TasksActivityTab from '@/components/TasksActivityTab'
+import { normalizeConversations } from '@/lib/conversations'
 
 type TabKey = 'behavior' | 'chats' | 'tasks'
+
+const PAGE_SIZE = 1000
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function fetchPagedRows(createQuery: () => any): Promise<Array<Record<string, unknown>>> {
+  const all: Array<Record<string, unknown>> = []
+  let from = 0
+  while (true) {
+    const { data, error } = await createQuery().range(from, from + PAGE_SIZE - 1)
+    if (error) {
+      console.warn('[Dashboard] paged query failed:', error)
+      break
+    }
+    if (!data) break
+    all.push(...(data as Array<Record<string, unknown>>))
+    if (data.length < PAGE_SIZE) break
+    from += PAGE_SIZE
+  }
+  return all
+}
+
+function LoadingBlock({ label }: { label: string }) {
+  return (
+    <div className="flex items-center justify-center h-64 text-sm text-gray-400 gap-3">
+      <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600" />
+      <span>{label}</span>
+    </div>
+  )
+}
 
 export default function DashboardPage() {
   const today = format(new Date(), 'yyyy-MM-dd')
@@ -26,29 +56,87 @@ export default function DashboardPage() {
   const [activeTab, setActiveTab] = useState<TabKey>('behavior')
   const [behaviorTypeFilter, setBehaviorTypeFilter] = useState<string>('')
 
-  // Raw data
+  // Overview data uses lightweight fields so the dashboard can open quickly.
   const [users, setUsers] = useState<Array<{ user_id: string; email: string }>>([])
+  const [overviewEvents, setOverviewEvents] = useState<Array<Record<string, unknown>>>([])
+  const [overviewSessions, setOverviewSessions] = useState<Array<Record<string, unknown>>>([])
+  const [overviewAIConversations, setOverviewAIConversations] = useState<Array<Record<string, unknown>>>([])
+  const [overviewTasks, setOverviewTasks] = useState<Array<Record<string, unknown>>>([])
+
+  // Detail data is loaded after a user/tab is selected.
   const [events, setEvents] = useState<Array<Record<string, unknown>>>([])
   const [sessions, setSessions] = useState<Array<Record<string, unknown>>>([])
+  const [aiConversations, setAIConversations] = useState<Array<Record<string, unknown>>>([])
   const [tasks, setTasks] = useState<Array<Record<string, unknown>>>([])
   const [activities, setActivities] = useState<Array<Record<string, unknown>>>([])
-  const [loading, setLoading] = useState(true)
+  const [overviewLoading, setOverviewLoading] = useState(true)
+  const [behaviorLoading, setBehaviorLoading] = useState(false)
+  const [chatsLoading, setChatsLoading] = useState(false)
+  const [tasksLoading, setTasksLoading] = useState(false)
+  const [behaviorLoadedKey, setBehaviorLoadedKey] = useState<string | null>(null)
+  const [chatsLoadedKey, setChatsLoadedKey] = useState<string | null>(null)
+  const [tasksLoadedKey, setTasksLoadedKey] = useState<string | null>(null)
 
-  // ------ 加载用户列表 ------
-  useEffect(() => {
-    async function loadUsers() {
+  const detailKey = selectedUserId ? `${selectedUserId}|${dateFrom}|${dateTo}` : null
+
+  // ------ 首屏轻量概览 ------
+  const loadOverview = useCallback(async () => {
+    setOverviewLoading(true)
+    try {
       const userIdSet = new Set<string>()
 
-      const [profileRes, evtRes, taskRes, emailRes] = await Promise.all([
+      const fetchAIConversationOverview = async () => {
+        const { data, error } = await supabase
+          .from('ai_conversations')
+          .select('user_id, conversation_id')
+          .gte('logical_date', dateFrom)
+          .lte('logical_date', dateTo)
+        if (error) {
+          console.warn('[Dashboard] ai_conversations overview unavailable:', error)
+          return [] as Array<Record<string, unknown>>
+        }
+        return (data ?? []) as Array<Record<string, unknown>>
+      }
+
+      const [
+        profileRes,
+        emailRes,
+        overviewEventRows,
+        overviewTaskRows,
+        overviewSessionRows,
+        overviewAIRows,
+      ] = await Promise.all([
         supabase.from('profiles').select('user_id'),
-        supabase.from('tracker_events').select('user_id'),
-        supabase.from('tasks').select('user_id'),
         supabase.from('user_emails').select('user_id, email'),
+        fetchPagedRows(() =>
+          supabase
+            .from('tracker_events')
+            .select('user_id, date')
+            .gte('date', dateFrom)
+            .lte('date', dateTo)
+        ),
+        fetchPagedRows(() =>
+          supabase
+            .from('tasks')
+            .select('user_id, completed')
+            .gte('date', dateFrom)
+            .lte('date', dateTo)
+        ),
+        fetchPagedRows(() =>
+          supabase
+            .from('reflection_sessions')
+            .select('user_id, session_key')
+            .gte('date', dateFrom)
+            .lte('date', dateTo)
+        ),
+        fetchAIConversationOverview(),
       ])
 
       for (const row of profileRes.data ?? []) userIdSet.add(row.user_id)
-      for (const row of evtRes.data ?? []) userIdSet.add(row.user_id)
-      for (const row of taskRes.data ?? []) userIdSet.add(row.user_id)
+      for (const row of overviewEventRows) userIdSet.add(row.user_id as string)
+      for (const row of overviewTaskRows) userIdSet.add(row.user_id as string)
+      for (const row of overviewSessionRows) userIdSet.add(row.user_id as string)
+      for (const row of overviewAIRows) userIdSet.add(row.user_id as string)
 
       const emailMap = new Map<string, string>()
       for (const r of emailRes.data ?? []) {
@@ -62,70 +150,146 @@ export default function DashboardPage() {
         user_id: uid,
         email: emailMap.get(uid) ?? uid.slice(0, 12) + '...',
       })))
-    }
-    loadUsers()
-  }, [])
 
-  // ------ 加载数据 ------
-  const loadData = useCallback(async () => {
-    setLoading(true)
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const baseFilter = (query: any) => {
-        if (selectedUserId) return query.eq('user_id', selectedUserId)
-        return query
-      }
-
-      // 分页加载所有 tracker_events（Supabase 单次请求上限 1000 条）
-      const PAGE_SIZE = 1000
-      const fetchAllEvents = async () => {
-        const all: typeof events = []
-        let from = 0
-        while (true) {
-          const { data, error } = await baseFilter(
-            supabase.from('tracker_events').select('*')
-          )
-            .gte('date', dateFrom).lte('date', dateTo)
-            .order('timestamp', { ascending: true })
-            .range(from, from + PAGE_SIZE - 1)
-          if (error || !data) break
-          all.push(...data)
-          if (data.length < PAGE_SIZE) break
-          from += PAGE_SIZE
-        }
-        return all
-      }
-
-      const [allEvents, sessRes, taskRes, actRes] = await Promise.all([
-        fetchAllEvents(),
-        baseFilter(supabase.from('reflection_sessions').select('*'))
-          .gte('date', dateFrom).lte('date', dateTo)
-          .order('started_at', { ascending: false }),
-        baseFilter(supabase.from('tasks').select('*'))
-          .gte('date', dateFrom).lte('date', dateTo),
-        baseFilter(supabase.from('activity_records').select('*'))
-          .gte('date', dateFrom).lte('date', dateTo)
-          .order('ts', { ascending: true }),
-      ])
-
-      console.log('[Dashboard] 数据加载结果:', {
-        events: allEvents.length,
-        sessions: sessRes.data?.length ?? 0, sessError: sessRes.error,
-        tasks: taskRes.data?.length ?? 0, taskError: taskRes.error,
-        activities: actRes.data?.length ?? 0, actError: actRes.error,
+      console.log('[Dashboard] 概览加载结果:', {
+        users: userIdSet.size,
+        events: overviewEventRows.length,
+        sessions: overviewSessionRows.length,
+        aiConversations: overviewAIRows.length,
+        tasks: overviewTaskRows.length,
         dateRange: `${dateFrom} ~ ${dateTo}`,
       })
 
-      setEvents(allEvents)
-      setSessions(sessRes.data ?? [])
-      setTasks(taskRes.data ?? [])
-      setActivities(actRes.data ?? [])
+      setOverviewEvents(overviewEventRows)
+      setOverviewTasks(overviewTaskRows)
+      setOverviewSessions(overviewSessionRows)
+      setOverviewAIConversations(overviewAIRows)
     } finally {
-      setLoading(false)
+      setOverviewLoading(false)
     }
-  }, [selectedUserId, dateFrom, dateTo])
+  }, [dateFrom, dateTo])
 
-  useEffect(() => { loadData() }, [loadData])
+  useEffect(() => { loadOverview() }, [loadOverview])
+
+  // ------ 用户明细按需加载 ------
+  useEffect(() => {
+    setEvents([])
+    setSessions([])
+    setAIConversations([])
+    setTasks([])
+    setActivities([])
+    setBehaviorLoadedKey(null)
+    setChatsLoadedKey(null)
+    setTasksLoadedKey(null)
+  }, [detailKey])
+
+  const loadBehaviorData = useCallback(async () => {
+    if (!selectedUserId || !detailKey || behaviorLoadedKey === detailKey) return
+    setBehaviorLoading(true)
+    try {
+      const rows = await fetchPagedRows(() =>
+        supabase
+          .from('tracker_events')
+          .select('*')
+          .eq('user_id', selectedUserId)
+          .gte('date', dateFrom)
+          .lte('date', dateTo)
+          .order('timestamp', { ascending: true })
+      )
+      setEvents(rows)
+      setBehaviorLoadedKey(detailKey)
+      console.log('[Dashboard] 行为明细加载结果:', { userId: selectedUserId, events: rows.length })
+    } finally {
+      setBehaviorLoading(false)
+    }
+  }, [behaviorLoadedKey, dateFrom, dateTo, detailKey, selectedUserId])
+
+  const loadChatsData = useCallback(async () => {
+    if (!selectedUserId || !detailKey || chatsLoadedKey === detailKey) return
+    setChatsLoading(true)
+    try {
+      const fetchAIConversations = async () => {
+        const { data, error } = await supabase
+          .from('ai_conversations')
+          .select('*')
+          .eq('user_id', selectedUserId)
+          .gte('logical_date', dateFrom)
+          .lte('logical_date', dateTo)
+          .order('started_at', { ascending: false })
+        if (error) {
+          console.warn('[Dashboard] ai_conversations unavailable, fallback to reflection_sessions only:', error)
+          return [] as Array<Record<string, unknown>>
+        }
+        return (data ?? []) as Array<Record<string, unknown>>
+      }
+
+      const [sessionRows, aiRows] = await Promise.all([
+        fetchPagedRows(() =>
+          supabase
+            .from('reflection_sessions')
+            .select('*')
+            .eq('user_id', selectedUserId)
+            .gte('date', dateFrom)
+            .lte('date', dateTo)
+            .order('started_at', { ascending: false })
+        ),
+        fetchAIConversations(),
+      ])
+      setSessions(sessionRows)
+      setAIConversations(aiRows)
+      setChatsLoadedKey(detailKey)
+      console.log('[Dashboard] 对话明细加载结果:', {
+        userId: selectedUserId,
+        sessions: sessionRows.length,
+        aiConversations: aiRows.length,
+      })
+    } finally {
+      setChatsLoading(false)
+    }
+  }, [chatsLoadedKey, dateFrom, dateTo, detailKey, selectedUserId])
+
+  const loadTasksData = useCallback(async () => {
+    if (!selectedUserId || !detailKey || tasksLoadedKey === detailKey) return
+    setTasksLoading(true)
+    try {
+      const [taskRows, activityRows] = await Promise.all([
+        fetchPagedRows(() =>
+          supabase
+            .from('tasks')
+            .select('*')
+            .eq('user_id', selectedUserId)
+            .gte('date', dateFrom)
+            .lte('date', dateTo)
+        ),
+        fetchPagedRows(() =>
+          supabase
+            .from('activity_records')
+            .select('*')
+            .eq('user_id', selectedUserId)
+            .gte('date', dateFrom)
+            .lte('date', dateTo)
+            .order('ts', { ascending: true })
+        ),
+      ])
+      setTasks(taskRows)
+      setActivities(activityRows)
+      setTasksLoadedKey(detailKey)
+      console.log('[Dashboard] 任务与活跃明细加载结果:', {
+        userId: selectedUserId,
+        tasks: taskRows.length,
+        activities: activityRows.length,
+      })
+    } finally {
+      setTasksLoading(false)
+    }
+  }, [dateFrom, dateTo, detailKey, selectedUserId, tasksLoadedKey])
+
+  useEffect(() => {
+    if (!selectedUserId) return
+    if (activeTab === 'behavior') loadBehaviorData()
+    if (activeTab === 'chats') loadChatsData()
+    if (activeTab === 'tasks') loadTasksData()
+  }, [activeTab, loadBehaviorData, loadChatsData, loadTasksData, selectedUserId])
 
   // ------ 用户卡片数据 ------
   const userCards: UserCardData[] = useMemo(() => {
@@ -145,7 +309,7 @@ export default function DashboardPage() {
 
     // 聚合 events
     const dayEventCount = new Map<string, Map<string, number>>()
-    for (const e of events) {
+    for (const e of overviewEvents) {
       const uid = e.user_id as string
       const card = map.get(uid)
       if (card) card.eventCount++
@@ -155,14 +319,20 @@ export default function DashboardPage() {
       dc.set(d, (dc.get(d) ?? 0) + 1)
     }
 
-    for (const s of sessions) {
+    for (const s of overviewSessions) {
       const uid = s.user_id as string
       const card = map.get(uid)
       if (card) card.chatCount++
     }
 
+    for (const c of overviewAIConversations) {
+      const uid = c.user_id as string
+      const card = map.get(uid)
+      if (card) card.chatCount++
+    }
+
     for (const [uid, card] of map) {
-      const userTasks = tasks.filter(t => t.user_id === uid)
+      const userTasks = overviewTasks.filter(t => t.user_id === uid)
       card.taskCompletionRate = userTasks.length > 0
         ? userTasks.filter(t => t.completed).length / userTasks.length
         : null
@@ -177,7 +347,7 @@ export default function DashboardPage() {
     }
 
     return Array.from(map.values()).sort((a, b) => b.eventCount - a.eventCount)
-  }, [users, events, sessions, tasks, selectedUserId])
+  }, [users, overviewEvents, overviewSessions, overviewAIConversations, overviewTasks, selectedUserId])
 
   // ------ 快速统计 ------
   const quickStats = useMemo(() => {
@@ -199,6 +369,11 @@ export default function DashboardPage() {
   // ------ 时间线 ------
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const timelineItems = useMemo(() => mergeTimeline(events as any[], sessions as any[]), [events, sessions])
+
+  const conversations = useMemo(
+    () => normalizeConversations(aiConversations, sessions),
+    [aiConversations, sessions]
+  )
 
   // ------ 统计条点击 → 跳转 Tab + 设筛选 ------
   const handleStatClick = (statKey: string) => {
@@ -229,59 +404,63 @@ export default function DashboardPage() {
         onDateToChange={setDateTo}
       />
 
-      {loading ? (
-        <div className="flex items-center justify-center h-64">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
-        </div>
+      {!selectedUserId && overviewLoading ? (
+        <LoadingBlock label="正在加载用户概览..." />
       ) : !selectedUserId ? (
         /* 状态 A：用户卡片 */
         <UserCardGrid users={userCards} onSelectUser={uid => handleSelectUser(uid)} />
       ) : (
         /* 状态 B：统计条 + Tab */
         <div>
-          <QuickStats stats={quickStats} onStatClick={handleStatClick} />
+          {behaviorLoading && events.length === 0 ? (
+            <LoadingBlock label="正在加载用户统计..." />
+          ) : (
+            <QuickStats stats={quickStats} onStatClick={handleStatClick} />
+          )}
 
           {/* 事件配对完整性校验 */}
-          <div className="px-6 pb-2">
-            <details className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-              <summary className="px-4 py-3 text-sm font-medium text-gray-700 cursor-pointer hover:bg-gray-50 select-none flex items-center gap-2">
-                <span>🔍 数据配对完整性</span>
-                <span className="text-xs text-gray-400 font-normal">
-                  （共 {pairChecks.totalEvents} 条事件）
-                </span>
-                {pairChecks.checks.some(c => c.orphanCount > 0) && (
-                  <span className="ml-auto text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">
-                    有未配对事件
+          {events.length > 0 && (
+            <div className="px-6 pb-2">
+              <details className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                <summary className="px-4 py-3 text-sm font-medium text-gray-700 cursor-pointer hover:bg-gray-50 select-none flex items-center gap-2">
+                  <span>🔍 数据配对完整性</span>
+                  <span className="text-xs text-gray-400 font-normal">
+                    （共 {pairChecks.totalEvents} 条事件）
                   </span>
-                )}
-              </summary>
-              <div className="px-4 pb-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
-                {pairChecks.checks.map(c => (
-                  <div
-                    key={c.label}
-                    className={`rounded-lg border p-3 ${
-                      c.orphanCount > 0
-                        ? 'border-amber-200 bg-amber-50'
-                        : 'border-green-200 bg-green-50'
-                    }`}
-                  >
-                    <p className="text-xs text-gray-600 mb-1">{c.label}</p>
-                    <p className="text-lg font-bold">
-                      {c.rate !== null ? `${Math.round(c.rate * 100)}%` : '-'}
-                    </p>
-                    <p className="text-xs text-gray-500 mt-0.5">
-                      {c.ended}/{c.started} 已配对
-                      {c.orphanCount > 0 && (
-                        <span className="text-amber-600 font-medium ml-1">
-                          ({c.orphanCount} 未闭合)
-                        </span>
-                      )}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            </details>
-          </div>
+                  {pairChecks.checks.some(c => c.orphanCount > 0) && (
+                    <span className="ml-auto text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">
+                      有未配对事件
+                    </span>
+                  )}
+                </summary>
+                <div className="px-4 pb-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  {pairChecks.checks.map(c => (
+                    <div
+                      key={c.label}
+                      className={`rounded-lg border p-3 ${
+                        c.orphanCount > 0
+                          ? 'border-amber-200 bg-amber-50'
+                          : 'border-green-200 bg-green-50'
+                      }`}
+                    >
+                      <p className="text-xs text-gray-600 mb-1">{c.label}</p>
+                      <p className="text-lg font-bold">
+                        {c.rate !== null ? `${Math.round(c.rate * 100)}%` : '-'}
+                      </p>
+                      <p className="text-xs text-gray-500 mt-0.5">
+                        {c.ended}/{c.started} 已配对
+                        {c.orphanCount > 0 && (
+                          <span className="text-amber-600 font-medium ml-1">
+                            ({c.orphanCount} 未闭合)
+                          </span>
+                        )}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </details>
+            </div>
+          )}
 
           {/* Tab 导航 */}
           <div className="px-6 pt-2 pb-4">
@@ -309,20 +488,30 @@ export default function DashboardPage() {
           {/* Tab 内容 */}
           <div className="px-6 pb-8">
             {activeTab === 'behavior' && (
-              <BehaviorTab
-                events={events as never[]}
-                timelineItems={timelineItems}
-                initialTypeFilter={behaviorTypeFilter}
-              />
+              behaviorLoading
+                ? <LoadingBlock label="正在加载行为记录..." />
+                : (
+                  <BehaviorTab
+                    events={events as never[]}
+                    timelineItems={timelineItems}
+                    initialTypeFilter={behaviorTypeFilter}
+                  />
+                )
             )}
             {activeTab === 'chats' && (
-              <ChatsTab sessions={sessions as never[]} />
+              chatsLoading
+                ? <LoadingBlock label="正在加载对话内容..." />
+                : <ChatsTab conversations={conversations} />
             )}
             {activeTab === 'tasks' && (
-              <TasksActivityTab
-                tasks={tasks as never[]}
-                activities={activities as never[]}
-              />
+              tasksLoading
+                ? <LoadingBlock label="正在加载任务与活跃数据..." />
+                : (
+                  <TasksActivityTab
+                    tasks={tasks as never[]}
+                    activities={activities as never[]}
+                  />
+                )
             )}
           </div>
         </div>

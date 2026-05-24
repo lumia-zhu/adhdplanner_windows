@@ -194,7 +194,8 @@ create table if not exists ai_conversations (
   primary key (user_id, conversation_id)
 );
 
-alter table ai_conversations enable row level security;
+-- Dashboard 需要匿名读取完整对话数据，直接关闭这张表的 RLS。
+alter table ai_conversations disable row level security;
 create policy "ai_conversations_user_policy" on ai_conversations
   for all using (auth.uid() = user_id)
   with check (auth.uid() = user_id);

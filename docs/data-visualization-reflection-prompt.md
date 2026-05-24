@@ -1,10 +1,12 @@
-# Data Visualization and Reflection 最新 Prompt 整理
+# Data Visualization and Reflection Prompt 整理
 
-本文整理当前代码中「数据可视化 + AI 反思」部分的最新 prompt 设计。源码以 `src/renderer/src/services/ai.ts` 为准，主要对应：
+> 状态说明：本文保留了旧版“三步循环式反思”的详细整理，便于追溯设计演化。当前默认实现已经切换为**自由反思模式**，最新主轴请以 `paper-writing/reflection-prompts.md` 和 `docs/reflection-ai-flow-and-tag-logic.md` 为准；源码仍以 `src/renderer/src/services/ai.ts` 为准。
+
+本文整理「数据可视化 + AI 反思」部分的 prompt 设计脉络，主要对应：
 
 - `buildReflectionSystemPrompt()`：每日反思 / 历史日期反思
 - `buildWeeklyReflectionSystemPrompt()`：周反思
-- `buildStructuredReflectionMessages()`：结构化输出补充规则
+- `generateSuggestions()`：底部探索方向 Tag 的结构化生成
 
 ## 一、核心定位
 
@@ -17,9 +19,9 @@ AI 的角色不是让用户回答更多问题，而是像朋友一样陪用户�
 - 把当天或本周的行为线索转化为未来可迁移的经验
 - 面向 ADHD 用户保持低压力、短段落、少信息量、非评判语气
 
-## 二、三步循环式反思 Flow
+## 二、旧版三步循环式反思 Flow
 
-当前最新 prompt 使用三步循环：
+旧版 prompt 使用三步循环；当前自由反思保留开场和可选 Tag，但不会强制用户按这个顺序完成复盘：
 
 ```mermaid
 flowchart LR
@@ -403,4 +405,3 @@ Tag 是底部「可以聊聊这几个方向」按钮。它不是结论，也不�
 - 一周整体完成节奏和趋势
 
 周反思第一版高亮更保守，只使用整图高亮，避免“某天某小时”局部定位错误。
-

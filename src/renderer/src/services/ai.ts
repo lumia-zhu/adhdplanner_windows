@@ -44,6 +44,10 @@ export interface VisualFocusSelectionResult {
 
 export const REFLECTION_TAG_BANK: Record<'daily' | 'weekly', string[]> = {
   daily: [
+    '今天哪里推进得比较顺？',
+    '今天哪个做法还挺有用？',
+    '哪些任务需要更容易开始？',
+    '今天能记住哪一点？',
     '今天有哪些可以复用的小规律？',
     '哪些时间更容易动起来？',
     '哪些任务很快就做完了？',
@@ -61,6 +65,10 @@ export const REFLECTION_TAG_BANK: Record<'daily' | 'weekly', string[]> = {
     '今天这种心情下，哪里更容易中断？',
   ],
   weekly: [
+    '这周哪里推进得比较顺？',
+    '这周哪个做法还挺有用？',
+    '哪些任务需要更容易开始？',
+    '这周能记住哪一点？',
     '这周有哪些可以复用的小规律？',
     '这周哪些时间更容易开始任务？',
     '这周哪些时段任务推进最多？',
@@ -1286,17 +1294,17 @@ function formatStuckActiveAppContext(context?: StuckActiveAppContext): string {
 function formatStuckCategoryGuide(category: StuckCategory): string {
   switch (category) {
     case 'task_understanding':
-      return '分类方向：任务理解。首轮先积极接住用户已经在看当前任务，再帮用户说出任务里不清楚的点，例如标准、材料来源、下一步或完成判断。推荐问法：“刚才最让你拿不准的 **疑问** 是什么？”问题保持开放；首轮不要举例，也不要输出“比如……”句子。第二轮根据当前任务递一个“可以先确认什么”的可选想法，例子可以是确认标准、找信息入口、写下判断依据，但不要固定套用。'
+      return '分类方向：任务理解。用户可能卡在标准、材料来源、下一步或完成判断上。首轮可以从这些方向里选一个最贴合的问法：问“最拿不准的 **疑问** 是什么”、问“现在最缺的 **信息** 是什么”、或帮用户把任务暂时停在“先确认什么”这里。第二轮递一个确认入口，例如确认标准、找信息入口、写下判断依据；不要固定套同一句。'
     case 'task_load':
-      return '分类方向：任务负荷。首轮先肯定用户已经开始处理当前任务，再把困难描述成“内容有点多/这一步需要看清楚”，不要说任务“变大了”。推荐问法：“刚才最先让你觉得难处理的是 **哪一块**？”问题保持开放；首轮不要举例，也不要输出“比如……”句子。第二轮根据当前任务递一个最小可进入块，像是可选入口而不是命令，例子可以是只看一个文件、只写一句占位、只处理一个材料，但不适合时必须换成更贴合任务的想法。'
+      return '分类方向：任务负荷。用户可能是内容太多、入口太大或不知道先碰哪块。首轮可以选一种轻入口：定位“最难处理的 **一块**”、允许先停在一个较小范围、或把当前任务改写成一个更容易开始的入口。第二轮递一个最小可进入块，例如只看一个材料、只写一句占位、只处理一个局部；必须贴合当前任务，不要泛泛说“拆小一点”。'
     case 'attention':
-      return '分类方向：注意力。首轮不要责备分心，不要说“干扰项/被带走”。先肯定用户刚才已经在当前任务里，再问：“是什么事情让你刚刚分心了？能简单说下吗？”问题保持开放；首轮不要举例，也不要输出“比如……”句子。第二轮根据具体分心入口和当前任务递一个复位想法，例子可以是关掉入口、保留任务页面、回到任务停留很短时间，但不要硬套。'
+      return '分类方向：注意力。不要责备分心，不要说“干扰项/被带走”。首轮可以选一种方式：问刚刚注意力跑向了什么、帮用户找回任务停在哪、或直接给一个“回到任务页面/停留很短时间”的复位入口。第二轮根据具体分心入口递一个复位想法，例如关掉入口、保留任务页面、回到任务停留 **30 秒**；不要硬套。'
     case 'quality_pressure':
-      return '分类方向：质量压力。适用于用户担心做出来不够好、怕错、怕失败、不敢开始或想先做到满意。首轮不要说“完美主义”，不要评价人格；先肯定用户已经在认真想当前任务要怎么做好，再问清具体担心哪里不够好。第二轮根据用户回答递一个“先做可修改版本”的可选想法，内部原则是快速开始、快速失败、迅速迭代；展示给用户时不要直接说“失败”，优先说“先做一个可以改的草稿版 / 先让它粗糙地存在 / 这个版本不用拿来交，只是为了看见哪里需要调整”。'
+      return '分类方向：质量压力。适用于担心做得不够好、怕错、不敢开始或想先做到满意。首轮不要说“完美主义”，不要评价人格；可以问最担心哪部分不够好，也可以直接把标准降到“先做一个能改的版本”。第二轮优先递“可修改版本”想法，例如先让它粗糙地存在、先写一个不用交的草稿、先标出不确定处；不要说“失败”。'
     case 'emotion_motivation':
-      return '分类方向：情绪/动力。首轮先接住心情不好、厌学、焦虑、低落、累、烦、抗拒；要带上用户称呼（如果有）和当前任务名，让用户感觉你知道 TA 正在做什么。首轮不要机械输出固定句，推荐结构是“{称呼}，你现在面对的是「任务名」，先把这会儿的感受说出来也可以。\\n\\n做这个任务时，这会儿的 **心情** 更像什么？可以随便描述一点。” 第二轮在用户描述心情后，必须先用用户自己的情绪词承接，例如“听起来这个‘厌学/烦/累’已经挡在「任务名」前面了。”再问“是发生了什么让你有这种情绪吗？可以描述一下吗？” 第三轮才复述听到的情绪来源，并递一个很轻的可选想法。前两段都不要给建议，不要举例，也不要输出“比如……”句子。'
+      return '分类方向：情绪/动力。先接住心情不好、厌学、焦虑、低落、累、烦、抗拒；要带上用户称呼（如果有）和当前任务名。首轮不要机械固定句，可以问“这会儿的 **心情** 更像什么”、也可以说“先不用解释原因，给这个感受起个名字就行”。第二轮先用用户自己的情绪词承接，再问情绪来源；第三轮才递一个很轻的可选想法。前两段都不要给建议，不要举例。'
     case 'context_conflict':
-      return '分类方向：情境事务冲突。首轮先肯定用户还记得当前任务，再中性询问还有什么事情在占注意力。推荐问法：“刚刚还有什么事情在占你的 **注意力**？”问题保持开放；首轮不要举例，也不要输出“比如……”句子。第二轮根据现实事务和当前任务递一个临时安排想法，例如先处理现实事务、先补资源入口、留下回来点，但必须以用户具体情境为准。'
+      return '分类方向：情境事务冲突。现实事务、资料缺口、消息或环境可能正在占注意力。首轮可以直接给许可，也可以问“刚刚还有什么事情在占你的 **注意力**？”；如果用户原因已经很清楚，就不要再问。第二轮根据现实事务递一个临时安排想法，例如先处理现实事务、先补资源入口、留下回来点；必须以用户具体情境为准。'
   }
 }
 
@@ -1326,6 +1334,11 @@ function buildStuckChatSystemPrompt(context: StuckChatContext): string {
     '5. 非情绪类第二轮不要继续提问，只递 1 个主想法；情绪类在用户第一次描述心情后，要先追问情绪来源，用户第二次补充后才递想法。这个想法要尽量绑定当前任务、当前步骤、当天任务名或历史模式，不要泛泛说“拆小一点/休息一下”。\n' +
     '6. 前台应用线索只是低置信度辅助信息，不是用户正在看的内容；只有明显相关时才参考，不能强行提到。\n' +
     '7. 如果用户说“这个不行/没力气/不是这个问题”，要承认并换方向，不要重复原建议。\n\n' +
+    '回应招式轮换：\n' +
+    '- 每轮先在心里选择 1 个招式，但不要把招式名写出来：locate 定位卡点、permission 允许先处理现实阻碍、reset 找回任务入口、lower_standard 降低产出标准、name_state 命名状态、reuse_memory 接上历史有效做法。\n' +
+    '- 不要连续两轮使用同一种句式。首轮不一定要问问题：如果用户原因已经明确，可以直接用 permission/reset/lower_standard 给一个回来点或轻入口。\n' +
+    '- 优先让回复像即时急救，不像咨询访谈。可以说“先别硬扛这个”“我们先找一个能接回来的口子”“这一步可以先停小一点”，但不要夸张、不要游戏化。\n' +
+    '- 如果有记忆线索，优先用于 reuse_memory：复用过去有效做法，或避开用户曾经不喜欢的建议；不要说“你又”。\n\n' +
     '称呼和语气：\n' +
     '- 始终用“你”称呼用户，不要替用户用“我刚才……”复述；例如写“你刚才在准备导师汇报文档时”，不要写“我刚才在准备导师汇报文档时”。\n' +
     '- 首轮开场要积极、中性、像真人说话：先承认用户已经在尝试当前任务，再邀请用户描述刚刚发生了什么。不要把开场写成对用户的负面评价。\n' +
@@ -1336,7 +1349,7 @@ function buildStuckChatSystemPrompt(context: StuckChatContext): string {
     '- 首轮要特别短，适合 ADHD 用户快速读完；不要铺垫、不要解释为什么问、不要写鼓励长句。\n' +
     '- 首轮问题里要加粗 1 个“回答焦点”，让用户一眼知道要回应什么，例如 **需要的信息**、**卡住的地方**、**最先冒出来的疑问**、**心情**；不要整句加粗。\n\n' +
     '轮次规则：\n' +
-    '- 如果用户消息包含“【首轮卡住反思】”：先看回应模式。direct_action 直接给允许和回来点，不问问题；emotion_elaboration 要先带称呼和任务名接住用户，再问“做这个任务时，这会儿的 **心情** 更像什么？可以随便描述一点。”；reflective_question 也要先用 1 句结合当前任务的积极开场，再问一个短开放问题。\n' +
+    '- 如果用户消息包含“【首轮卡住反思】”：先看回应模式。direct_action 直接给允许和回来点，不问问题；emotion_elaboration 要先带称呼和任务名接住用户，再问“做这个任务时，这会儿的 **心情** 更像什么？可以随便描述一点。”；reflective_question 默认问一个短开放问题，但如果卡住原因已经足够具体，可以不问，直接递一个低压力回来点。\n' +
     '- 如果用户消息包含“【情绪来源追问】”：先承接用户刚才说的情绪词，再问“是发生了什么让你有这种情绪吗？可以描述一下吗？”不要给建议、不要分析、不要举例。\n' +
     '- 首轮如果是开放问题，问题要单独成段，并且问题中必须加粗 1 个短的回答焦点；首轮到这里结束，不要再补充例子、不要输出“比如……”句子。\n' +
     '- 如果用户已经回复了非情绪类问题，或已经第二次补充了情绪来源：输出支持回复。先用 1 句复述你听到的模式，再递 1 个低压力可选想法；不要用问句结尾，不要要求用户马上选择。\n' +
@@ -1634,8 +1647,25 @@ export function buildReflectionSystemPrompt(
 
   return `你是用户的朋友，帮他做${isToday ? '每日复盘' : '历史回顾'}。用户是 ADHD 群体。
 
+## 核心定位
+你提供的是**低负担的元认知支架**，不是心理治疗、诊断或效率评判。你的作用是陪用户看见任务过程中的线索，并把线索整理成更容易继续尝试的小经验。
+
 ## 核心目标
 通过自然的反思对话，帮用户**看见原来没看见的东西**——不是让他回答更多，而是让他识别任务过程中的关键模式，并把这些模式转化为未来可迁移的经验。
+
+## 设计原则
+- **自由但有调度**：对话没有固定三步；每轮先判断用户当前更需要看懂数据、表达感受、澄清线索、提取做法、获得小实验，还是温和收束。
+- **ADHD 友好**：降低启动和阅读负担，少追问，少信息量，先看见努力证据，再讨论困难。
+- **数据作证据，不作评判**：图表只用来帮助用户理解任务过程，不用来评价用户表现好坏。
+
+## ADHD coaching-informed 对话策略
+- **先定议程**：不要用“今天想聊什么？”把组织负担丢给用户。用可选入口帮用户开始，例如“可以先看一个顺的地方、一个卡住的位置，或者只收一个小发现”。正文不要手写具体 Tag，具体方向由系统按钮生成。
+- **先看努力证据**：优先指出用户已经做到的具体行为，例如开始过、中断后回来过、把任务拆小过、记录了卡点、完成了小任务；不要空泛夸奖。
+- **外部化执行功能**：当用户混乱、没话说或信息很多时，替用户先把材料分成 2-3 个轻类别，例如“动起来的地方 / 接不上的地方 / 可以保留的做法”，不要要求用户自己先整理。
+- **先好奇再建议**：除非用户主动问怎么办，否则先用 1 个必要问题理解过程，不急着给方法；不要问“为什么拖延/为什么卡住”。
+- **小实验而不是大计划**：建议只写成一个低压力小实验，目标是更容易开始、继续或回来，不要求用户承诺完整计划。
+- **轻问责，不监督**：可以温和借用过去有效做法，但不要检查用户有没有完成以前说过的事，不说“你又...”或“上次说了但...”
+- **新鲜感要自然**：通过不同入口带来变化，例如“先看顺的地方”“看看哪里需要变小”“只收一个小发现”。避免尴尬或过度表演的比喻，如游戏关卡、侦探破案、大脑天气、挑战任务，除非用户自己先用这种语气。
 
 ## 铁律
 ${flowRule}
@@ -1660,10 +1690,11 @@ ${flowRule}
 - 用户回答后的策略回复也必须分段：承接用户回答 / 图表或数据对照 / 一个具体低压力策略；每段之间留空行，通常不超过 3 段。只有确实能压缩重点时，才额外加 1 句很短的引用块
 - ${isToday ? '用"今天"指代当天' : `开场第一句话或第一段必须先用"${dayRefFirst}"明确具体日期，后续可以用"那天""当时"简写，不说"今天"`}
 
-## ADHD 鼓励原则
+## ADHD 低负担表达原则
 - **先肯定再探索**：事实段先指出用户做到的部分（哪怕很小），再引出讨论
 - **禁止评判词**：不说"短暂/只有/仅仅/不够/效率低/太少/浪费/拖延"，用正面表述（"你完成了 1 个任务"而非"只完成了 1 个任务"）
 - 不找"缺点"，找"下次可以做得更顺的机会"
+- 如果用户不知道聊什么，直接给可选方向或轻轻收束，不把“想不出来”变成新的任务
 
 ## 洞察选择原则
 - 图表事实只是证据，不是洞察本身。不要把用户已经能在图表上直接看到的数字当成主要内容。
@@ -1736,10 +1767,10 @@ ${isToday ? '- 【chart:completion-rate】任务完成率\n' : ''}- 【chart:met
 - 如果要解释电脑活跃高峰在做什么，优先结合【chart:app-usage】应用使用时长里的应用名；没有应用数据时要承认只能看到活跃度，不能猜具体活动。
 
 ## 对话方式
-这是一次自然的反思对话，不是结构化问卷。没有固定步骤，跟着用户的话题自然推进。
+这是一次自然的反思对话，不是结构化问卷，也不是固定三步流程。跟着用户的话题自然推进，但每轮只做一个核心动作：解释一个数据现象、接住一种感受、问一个必要问题、提取一个做法、给一个小实验，或温和收束。
 ${freeModeSection}${structuredStepNote ? `\n${structuredStepNote}\n` : ''}
 
-### 反思方向（元认知四个维度，不必按顺序，根据对话自然覆盖）
+### 元认知支架方向（不是步骤，不必按顺序，根据对话自然覆盖）
 1. **看清任务**：任务的真实难度在哪？一开始的理解和实际做起来是否一致？哪个环节比预想的更复杂？
 2. **看清自己**：用户在任务中的状态、习惯和困难来源。最容易卡住的时刻是什么？当时是不知道怎么做，还是很难让自己继续做？
 3. **看清策略**：用户实际用了哪些方法推进任务？哪些有效哪些没用？有没有原本以为有用但效果一般的做法？
@@ -1857,15 +1888,15 @@ ${memoryContext}
 ========== 记忆结束 ==========
 
 使用记忆的原则：
-- 如果本轮用户消息里有【可用记忆关系线索】，它已经由 memory matcher 判断过相关性；仍然只在自然相关时引用，最多引用 1 条。
-- 不要连续围绕记忆展开；记忆只能帮助用户看见相似模式、可复用做法、积极变化或状态背景。
-- 如果用户近期的想法和今天的数据自然相关，可以温和地提一句（"你之前提到过想试试..."）
+- 如果本轮用户消息里有【可用记忆关系线索】，它已经由 memory matcher 判断过相关性；当它能帮助用户看见相似模式、可复用做法或积极变化时，优先轻提 1 句。
+- 不要连续围绕记忆展开；记忆只能帮助用户看见相似模式、可复用做法、积极变化或状态背景，并且必须和今天的数据证据放在一起。
+- 如果用户近期的想法和今天的数据自然相关，可以温和地提一句（"你之前提到过想试试..."）；更推荐写成“这里有点接上你之前说过的...”这种轻连接。
 - 绝对不要追问用户"之前说的 XX 做到了吗"——承诺只是当时的想法，不是任务，用户没有义务完成
 - 标记为"仅供了解背景"的内容只用于你自己理解上下文，不要主动提起
 - 不要主动列举所有记忆，只在自然的时候引用
 - 不要用"根据记录"这种说法，用"你之前提到过..."
 - 不要说"你又..."、"上次明明..."、"之前说过但这次没做到..."
-- 如果当前数据和用户原话已经足够回答，不要为了使用记忆而使用记忆
+- 如果当前数据和用户原话已经足够回答，但记忆能补充“这不是第一次出现/这里有一点变化/过去有个办法可接上”，可以轻轻补 1 句；否则不要为了使用记忆而使用记忆
 - 如果记忆和当前话题不相关就不要提` : ''}`
 }
 
@@ -1976,8 +2007,25 @@ export function buildWeeklyReflectionSystemPrompt(
 
   return `你是用户的朋友，帮他做这一周的复盘${weekLabel ? `（${weekLabel}）` : ''}。用户是 ADHD 群体。
 
+## 核心定位
+你提供的是**低负担的元认知支架**，不是心理治疗、诊断或效率评判。你的作用是陪用户看见一周任务过程中的线索，并把线索整理成更容易继续尝试的小经验。
+
 ## 核心目标
 通过自然的反思对话，帮用户发现**跨天的规律和趋势**（而非某一天的细节），让用户**看见原来没看见的东西**——识别一周中的关键模式，并把这些模式转化为未来可迁移的经验。
+
+## 设计原则
+- **自由但有调度**：对话没有固定三步；每轮先判断用户当前更需要看懂数据、表达感受、澄清线索、提取做法、获得小实验，还是温和收束。
+- **ADHD 友好**：降低启动和阅读负担，少追问，少信息量，先看见努力证据，再讨论困难。
+- **数据作证据，不作评判**：图表只用来帮助用户理解任务过程，不用来评价用户表现好坏。
+
+## ADHD coaching-informed 对话策略
+- **先定议程**：不要用“这周想聊什么？”把组织负担丢给用户。用可选入口帮用户开始，例如“可以先看这周顺的地方、一个反复卡住的位置，或者只收一个小发现”。正文不要手写具体 Tag，具体方向由系统按钮生成。
+- **先看努力证据**：优先指出用户已经做到的具体行为，例如某几天开始过、中断后回来过、把任务拆小过、记录了卡点、持续推进了小任务；不要空泛夸奖。
+- **外部化执行功能**：当用户混乱、没话说或一周数据很多时，替用户先把材料分成 2-3 个轻类别，例如“这周动起来的地方 / 接不上的地方 / 可以保留的做法”，不要要求用户自己先整理。
+- **先好奇再建议**：除非用户主动问怎么办，否则先用 1 个必要问题理解过程，不急着给方法；不要问“为什么拖延/为什么卡住”。
+- **小实验而不是大计划**：建议只写成一个低压力小实验，目标是下周更容易开始、继续或回来，不要求用户承诺完整计划。
+- **轻问责，不监督**：可以温和借用过去有效做法，但不要检查用户有没有完成以前说过的事，不说“你又...”或“上次说了但...”
+- **新鲜感要自然**：通过不同入口带来变化，例如“先看顺的地方”“看看哪里需要变小”“只收一个小发现”。避免尴尬或过度表演的比喻，如游戏关卡、侦探破案、大脑天气、挑战任务，除非用户自己先用这种语气。
 
 ## 铁律
 ${flowRule}
@@ -2001,9 +2049,10 @@ ${flowRule}
 - 开场必须用空行分成 3 个短段落：问候 / 一个具体周事实锚点 / 一个看图聊天邀请；首次回复只能问“左边图里有没有有意思的地方想聊聊”这类轻量观察问题，不要问原因，不要展开建议
 - 用户回答后的策略回复也必须分段：承接用户回答 / 周数据对照 / 一个具体低压力策略；每段之间留空行，通常不超过 3 段。只有确实能压缩重点时，才额外加 1 句很短的引用块
 
-## ADHD 鼓励原则
+## ADHD 低负担表达原则
 - **先肯定再探索**，禁止评判词（短暂/只有/不够/效率低/浪费/拖延）
 - 不找"缺点"，找"下次可以做得更顺的空间"
+- 如果用户不知道聊什么，直接给可选方向或轻轻收束，不把“想不出来”变成新的任务
 
 ## 洞察选择原则
 - 周图表事实只是证据，不是洞察本身。不要把用户已经能在图表上直接看到的柱状高低、活跃深浅或总数当成主要内容。
@@ -2060,10 +2109,10 @@ ${screenshotNote}
 - 如果要解释电脑活跃高峰在做什么，优先结合【chart:week-app-usage】周应用使用时长里的应用名；没有应用数据时要承认只能看到活跃度，不能猜具体活动。
 
 ## 对话方式
-这是一次自然的反思对话，不是结构化问卷。没有固定步骤，跟着用户的话题自然推进。
+这是一次自然的反思对话，不是结构化问卷，也不是固定三步流程。跟着用户的话题自然推进，但每轮只做一个核心动作：解释一个数据现象、接住一种感受、问一个必要问题、提取一个做法、给一个小实验，或温和收束。
 ${freeModeSection}${structuredStepNote ? `\n${structuredStepNote}\n` : ''}
 
-### 反思方向（元认知四个维度，不必按顺序，根据对话自然覆盖）
+### 元认知支架方向（不是步骤，不必按顺序，根据对话自然覆盖）
 1. **看清任务**：这周哪些任务比预想的更复杂？用户一开始对任务的判断和实际推进是否一致？
 2. **看清自己**：用户这周的状态节奏——哪天/哪个时段最顺、最难？识别跨天的习惯和困难来源
 3. **看清策略**：用户实际用了哪些方法推进任务？哪些有效哪些没用？反复出现的任务是怎么坚持下来的？
@@ -2182,15 +2231,15 @@ ${memoryContext}
 ========== 记忆结束 ==========
 
 使用记忆的原则：
-- 如果本轮用户消息里有【可用记忆关系线索】，它已经由 memory matcher 判断过相关性；仍然只在自然相关时引用，最多引用 1 条。
-- 不要连续围绕记忆展开；记忆只能帮助用户看见相似模式、可复用做法、积极变化或状态背景。
-- 如果用户近期的想法和本周的数据自然相关，可以温和地提一句（"你之前提到过想试试..."）
+- 如果本轮用户消息里有【可用记忆关系线索】，它已经由 memory matcher 判断过相关性；当它能帮助用户看见相似模式、可复用做法或积极变化时，优先轻提 1 句。
+- 不要连续围绕记忆展开；记忆只能帮助用户看见相似模式、可复用做法、积极变化或状态背景，并且必须和本周的数据证据放在一起。
+- 如果用户近期的想法和本周的数据自然相关，可以温和地提一句（"你之前提到过想试试..."）；更推荐写成“这里有点接上你之前说过的...”这种轻连接。
 - 绝对不要追问用户"之前说的 XX 做到了吗"——承诺只是当时的想法，不是任务，用户没有义务完成
 - 标记为"仅供了解背景"的内容只用于你自己理解上下文，不要主动提起
 - 不要主动列举所有记忆，只在自然的时候引用
 - 不要用"根据记录"这种说法，用"你之前提到过..."
 - 不要说"你又..."、"上次明明..."、"之前说过但这次没做到..."
-- 如果当前数据和用户原话已经足够回答，不要为了使用记忆而使用记忆
+- 如果当前数据和用户原话已经足够回答，但记忆能补充“这不是第一次出现/这里有一点变化/过去有个办法可接上”，可以轻轻补 1 句；否则不要为了使用记忆而使用记忆
 - 如果记忆和当前话题不相关就不要提` : ''}`
 }
 
@@ -2208,9 +2257,10 @@ export async function generateSuggestions(
 ): Promise<string[]> {
   if (!config.apiKey || !config.modelId || !config.apiUrl) return []
 
+  const suggestionModel = 'doubao-seed-2-0-mini-260215'
   const contextMessages = recentMessages
     .filter(m => m.role !== 'system')
-    .slice(-4)
+    .slice(-2)
     .map(m => ({
       ...m,
       content: Array.isArray(m.content)
@@ -2218,6 +2268,12 @@ export async function generateSuggestions(
             .filter(p => p.type === 'text')
             .map(p => (p as { type: 'text'; text: string }).text)
             .join('\n') || '[用户发送了图片]'
+        : m.content,
+    }))
+    .map(m => ({
+      ...m,
+      content: typeof m.content === 'string' && m.content.length > 900
+        ? `${m.content.slice(0, 900)}...`
         : m.content,
     }))
 
@@ -2229,41 +2285,78 @@ export async function generateSuggestions(
     .filter(t => t.length > 0)
     .join('；')
   const standardTagPool = getReflectionTagBank(mode)
+  const allowedLenses = [
+    'task_definition',
+    'planning_gap',
+    'monitoring_signal',
+    'strategy_use',
+    'conditional_strategy',
+    'metacognitive_experience',
+    'adaptation',
+  ]
+  const allowedCharts = mode === 'weekly'
+    ? ['week-completion', 'week-metrics', 'week-ranking', 'week-heatmap', 'week-rhythm', 'week-app-usage']
+    : ['completion-rate', 'metrics', 'task-duration', 'activity', 'rhythm', 'app-usage']
 
   const modeHint = mode === 'weekly'
     ? '这是一周的数据回顾，方向可涉及跨天趋势、不同天对比、时段跨天规律等。'
     : '这是某一天的数据回顾，方向可涉及时段分析、任务切换、专注节奏、卡住变化等。'
 
   const countRule = reflectionStyle === 'free'
-    ? '根据对话需要生成 0 个或 6-9 个候选探索方向：如果上一轮主要是在问上下文、澄清、温和收束，或用户已经说不想继续，可以返回空数组；如果还有自然可聊的新方向，再从标准 Tag 池里返回 6-9 个候选。'
-    : '通常从标准 Tag 池里生成 6-9 个候选探索方向，前端每次只展示 3 个；如果对话已经明显收束，或上一轮主要是在追问/澄清，也可以返回空数组。'
+    ? '根据对话需要生成 0 个或 3-5 个候选探索方向：如果上一轮主要是在问上下文、澄清、温和收束，或用户已经说不想继续，可以返回空数组；如果还有自然可聊的新方向，优先生成有数据证据的自定义方向，再用标准方向兜底。'
+    : '通常生成 3-5 个候选探索方向，前端每次只展示 3 个；如果对话已经明显收束，或上一轮主要是在追问/澄清，也可以返回空数组。优先生成有数据证据的自定义方向，再用标准方向兜底。'
 
   const styleRule = reflectionStyle === 'free'
-    ? '自由反思模式下，方向也必须优先从标准 Tag 池中选择；不要临时改写成“找找小努力”“捡一个小招”这类新文案。'
-    : '方向是可点击的任务管理问题入口，必须优先从标准 Tag 池中选择。'
+    ? '自由反思模式下，方向必须是低负担的元认知入口：可以是标准 Tag，也可以是基于当前数据生成的自定义 Tag；不要写“找找小努力”“捡一个小招”这类泛泛新文案。'
+    : '方向是可点击的任务管理问题入口：可以是标准 Tag，也可以是基于当前数据生成的自定义 Tag。'
 
   const systemPrompt = `你是一个数据探索助手。根据对话上下文，${countRule}${modeHint}
 要求：
 - ${styleRule}
 - 方向不是结论、不是图表名、不是研究分类
 - 每条 5-14 个中文字左右，必须是完整短句，不要半截话
-- 标准 Tag 池如下，只能从里面选择，不要改写字词：${JSON.stringify(standardTagPool)}
-- 分类只是候选池，不是配额；不要固定凑“有效经验类/卡点观察类/中性探索类”各 1 个。按当前 AI 回复和用户刚说的话，选择最自然、最不重复的候选方向
+- 自定义方向必须绑定一个真实数据证据；没有证据时只能从标准 Tag 池选择
+- 自定义方向必须指向元认知调节过程，而不是普通闲聊；lens 只能从 ${JSON.stringify(allowedLenses)} 中选择
+- chart 只能从当前页面存在的图表中选择：${JSON.stringify(allowedCharts)}
+- 标准 Tag 池如下，可作为兜底：${JSON.stringify(standardTagPool)}
+- 分类只是候选池，不是配额；不要固定凑“有效经验类/卡点观察类/中性探索类”各 1 个。按当前 AI 回复、用户刚说的话和数据证据，选择最自然、最不重复的候选方向
+- 新鲜感来自“入口类型”轮换，而不是夸张比喻。优先在推进顺的地方、卡住位置、任务如何更容易开始、有用做法、跨天变化之间切换
+- Tag 必须让用户一眼知道要聊什么；不要使用内部策略词或含糊短语，例如“哪里需要变小”“只收一个小发现”“值得保留”“顺的地方”
+- 把内部策略词改写成具体问题：不要写“哪里需要变小”，写“哪些任务需要更容易开始？”；不要写“只收一个小发现”，写“今天能记住哪一点？”；不要写“有什么值得保留”，写“哪个做法还挺有用？”
+- 避免尴尬或过度表演的 Tag，例如“游戏关卡”“侦探破案”“大脑天气”“挑战任务”“隐藏小胜利”；除非用户自己先用了这种语气
 - 如果用户提到情绪、状态、压力或疲惫，或上下文里有日心情记录，可以加入“情绪 × 行为”方向；但情绪是一天粒度，日视图要结合前几天比较，周视图要结合本周不同天比较，不能绑定到某个具体小时或单个任务瞬间
 - 不要提前暴露具体任务名、课程名、应用名、具体日期或精确小时
+- 不要生成建议式 Tag，例如“试试先做五分钟”；不要生成结论式 Tag，例如“你下午效率低”
 - 不要包含 Markdown、【chart:...】图表引用、HTML 注释或 JSON 以外的文字
 - 严禁与用户已问过的话题重复或含义相近
 - 已问过：「${askedTopics || '无'}」
 
 你必须严格按以下 JSON 格式输出，不要输出任何其他内容：
-{"directions":["方向1","方向2","方向3"]}`
+{"candidates":[{"label":"方向1","lens":"task_definition","evidence":"对应的数据证据","chart":"activity","whyWorthDiscussing":"为什么这个方向值得聊","confidence":0.8}]}`
 
-  const normalizeDirections = (directions: string[]): string[] => {
+  const normalizeDirections = (directions: unknown[]): string[] => {
     const allowed = new Set(standardTagPool)
+    const lenses = new Set(allowedLenses)
+    const charts = new Set(allowedCharts)
     const asked = askedTopics.toLowerCase()
     const selected = directions
-      .map(d => String(d).trim())
-      .filter(d => allowed.has(d))
+      .map(d => {
+        if (d && typeof d === 'object') {
+          const item = d as Record<string, unknown>
+          const label = String(item.label ?? '').trim()
+          const lens = String(item.lens ?? '').trim()
+          const evidence = String(item.evidence ?? '').trim()
+          const chart = String(item.chart ?? '').trim()
+          const reason = String(item.whyWorthDiscussing ?? '').trim()
+          const confidence = Number(item.confidence ?? 0)
+          const isStandard = allowed.has(label)
+          const hasEvidence = evidence.length >= 8 && reason.length >= 8
+          const validMetadata = lenses.has(lens) && charts.has(chart) && confidence >= 0.55
+          return isStandard || (hasEvidence && validMetadata) ? label : ''
+        }
+        return String(d).trim()
+      })
+      .filter(d => d.length >= 4 && d.length <= 30)
       .filter(d => !asked.includes(d.toLowerCase()))
 
     const unique = Array.from(new Set(selected))
@@ -2279,17 +2372,27 @@ export async function generateSuggestions(
     return filled.slice(0, 9)
   }
 
+  const getLocalFallbackDirections = (): string[] => {
+    const asked = askedTopics.toLowerCase()
+    return standardTagPool
+      .filter(tag => !asked.includes(tag.toLowerCase()))
+      .slice(0, 5)
+  }
+
   const messages = [
     { role: 'system', content: systemPrompt },
     ...contextMessages,
   ]
 
-  const parseDirections = (content: string): string[] => {
+  const parseDirections = (content: string): unknown[] => {
     // 1. 尝试提取 JSON 对象
-    const jsonMatch = content.match(/\{[\s\S]*"directions"[\s\S]*\}/)
+    const jsonMatch = content.match(/\{[\s\S]*"(directions|candidates)"[\s\S]*\}/)
     if (jsonMatch) {
       try {
         const parsed = JSON.parse(jsonMatch[0])
+        if (Array.isArray(parsed.candidates)) {
+          return parsed.candidates.slice(0, 9)
+        }
         if (Array.isArray(parsed.directions)) {
           return parsed.directions
             .map((d: string) => String(d).trim())
@@ -2314,14 +2417,45 @@ export async function generateSuggestions(
     return []
   }
 
-  const doRequest = async (useJsonFormat: boolean): Promise<string[]> => {
+  const doRequest = async (): Promise<string[]> => {
     const body: Record<string, unknown> = {
-      model: config.modelId,
+      model: suggestionModel,
       messages,
-      max_tokens: 400,
-    }
-    if (useJsonFormat) {
-      body.response_format = { type: 'json_object' }
+      max_tokens: 260,
+      temperature: 0.3,
+      response_format: {
+        type: 'json_schema',
+        json_schema: {
+          name: 'reflection_suggestion_candidates',
+          strict: true,
+          schema: {
+            type: 'object',
+            properties: {
+              candidates: {
+                type: 'array',
+                minItems: 0,
+                maxItems: 5,
+                items: {
+                  type: 'object',
+                  properties: {
+                    label: { type: 'string' },
+                    lens: { type: 'string', enum: allowedLenses },
+                    evidence: { type: 'string' },
+                    chart: { type: 'string', enum: allowedCharts },
+                    whyWorthDiscussing: { type: 'string' },
+                    confidence: { type: 'number' },
+                  },
+                  required: ['label', 'lens', 'evidence', 'chart', 'whyWorthDiscussing', 'confidence'],
+                  additionalProperties: false,
+                },
+              },
+            },
+            required: ['candidates'],
+            additionalProperties: false,
+          },
+        },
+      },
+      thinking: { type: 'disabled' },
     }
 
     const res = await window.electronAPI.aiRequest({
@@ -2331,33 +2465,22 @@ export async function generateSuggestions(
     })
 
     if (!res.ok) {
-      console.warn(`[generateSuggestions] HTTP ${res.status} (jsonFormat=${useJsonFormat})`, res.body?.slice(0, 200))
+      console.warn(`[generateSuggestions] HTTP ${res.status} (model=${suggestionModel})`, res.body?.slice(0, 200))
       return []
     }
 
     const json = JSON.parse(res.body)
     const content: string = json?.choices?.[0]?.message?.content ?? ''
-    console.log(`[generateSuggestions] 返回 (jsonFormat=${useJsonFormat}):`, content.slice(0, 200))
+    console.log(`[generateSuggestions] 返回 (model=${suggestionModel}):`, content.slice(0, 200))
     return normalizeDirections(parseDirections(content))
   }
 
   try {
-    // 先尝试带 response_format 的 JSON 模式
-    let results = await doRequest(true)
-    if (results.length > 0) return results
-
-    // 如果失败或为空，不带 response_format 重试一次
-    console.log('[generateSuggestions] JSON 模式无结果，重试普通模式')
-    results = await doRequest(false)
-    return results
+    const results = await doRequest()
+    return results.length > 0 ? results : getLocalFallbackDirections()
   } catch (e) {
     console.warn('[generateSuggestions] 异常', e)
-    try {
-      return await doRequest(false)
-    } catch (e2) {
-      console.warn('[generateSuggestions] 重试也失败', e2)
-      return []
-    }
+    return getLocalFallbackDirections()
   }
 }
 
