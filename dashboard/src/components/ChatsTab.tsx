@@ -2,11 +2,12 @@
 
 import { useState } from 'react'
 import ChatViewer from './ChatViewer'
-import { exportCSV } from '@/lib/export-csv'
+import { buildCSVFilename, exportCSV } from '@/lib/export-csv'
 import type { ConversationType, DashboardConversation } from '@/lib/conversations'
 
 interface Props {
   conversations: DashboardConversation[]
+  exportUserLabel?: string
 }
 
 const TYPE_META: Record<ConversationType, { label: string; activeClass: string; badgeClass: string; emptyText: string }> = {
@@ -37,7 +38,7 @@ function getStuckSummary(conversation: DashboardConversation): string {
   return reason || microTask || '未记录卡顿原因'
 }
 
-export default function ChatsTab({ conversations }: Props) {
+export default function ChatsTab({ conversations, exportUserLabel = 'all-users' }: Props) {
   const [selectedKey, setSelectedKey] = useState<string | null>(null)
   const [activeType, setActiveType] = useState<ConversationType>('reflection')
   const sorted = [...conversations].sort((a, b) => b.startedAt - a.startedAt)
@@ -63,7 +64,7 @@ export default function ChatsTab({ conversations }: Props) {
         ts: m.ts ?? '',
       }))
     )
-    exportCSV(rows, `${activeType}_chats.csv`)
+    exportCSV(rows, buildCSVFilename(exportUserLabel, `${activeType}_chats`))
   }
 
   const handleSwitchType = (type: ConversationType) => {

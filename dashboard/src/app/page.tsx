@@ -392,6 +392,10 @@ export default function DashboardPage() {
     if (userId) setActiveTab('behavior')
   }
 
+  const exportUserLabel = selectedUserId
+    ? users.find(user => user.user_id === selectedUserId)?.email ?? selectedUserId.slice(0, 12)
+    : 'all-users'
+
   return (
     <div className="min-h-screen bg-gray-50">
       <FilterBar
@@ -495,13 +499,14 @@ export default function DashboardPage() {
                     events={events as never[]}
                     timelineItems={timelineItems}
                     initialTypeFilter={behaviorTypeFilter}
+                    exportUserLabel={exportUserLabel}
                   />
                 )
             )}
             {activeTab === 'chats' && (
               chatsLoading
                 ? <LoadingBlock label="正在加载对话内容..." />
-                : <ChatsTab conversations={conversations} />
+                : <ChatsTab conversations={conversations} exportUserLabel={exportUserLabel} />
             )}
             {activeTab === 'tasks' && (
               tasksLoading
@@ -510,6 +515,7 @@ export default function DashboardPage() {
                   <TasksActivityTab
                     tasks={tasks as never[]}
                     activities={activities as never[]}
+                    exportUserLabel={exportUserLabel}
                   />
                 )
             )}

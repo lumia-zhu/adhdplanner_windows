@@ -18,9 +18,10 @@ interface Props {
   events: EventRow[]
   timelineItems: TimelineItem[]
   initialTypeFilter?: string
+  exportUserLabel?: string
 }
 
-export default function BehaviorTab({ events, timelineItems, initialTypeFilter }: Props) {
+export default function BehaviorTab({ events, timelineItems, initialTypeFilter, exportUserLabel }: Props) {
   const [view, setView] = useState<'table' | 'timeline'>('table')
 
   return (
@@ -46,7 +47,7 @@ export default function BehaviorTab({ events, timelineItems, initialTypeFilter }
       </div>
 
       {view === 'table'
-        ? <EventTable events={events} initialTypeFilter={initialTypeFilter} />
+        ? <EventTable events={events} initialTypeFilter={initialTypeFilter} exportUserLabel={exportUserLabel} />
         : <TimelineView items={timelineItems} />
       }
     </div>

@@ -637,6 +637,7 @@ function FocusDynamicBar({
   }
 
   const fallbackStuckSecondReply = (context: StuckChatContext): string => {
+    const currentStepRef = context.currentStep ? `「${context.currentStep}」` : '刚才停住的位置'
     if (context.stuckCategory === 'emotion_motivation') {
       const pendingTask = context.todayTasks.find(task => !task.completed && task.title !== context.taskTitle)
       const switchTaskText = pendingTask
@@ -645,9 +646,9 @@ function FocusDynamicBar({
       return `听起来现在更需要先把阻力降下来，而不是硬推完整任务。\n\n${switchTaskText}\n\n目的只是让自己不要完全断掉，不需要马上恢复满格状态。`
     }
     if (context.stuckCategory === 'quality_pressure') {
-      return `听起来这里卡住的不是能力，而是你在一开始就想做出比较正式的版本。\n\n> 或许可以先这样试试：用 **3 分钟** 做一个“可以改的草稿版”，只留下最粗的内容。\n\n这个版本不用拿来交，只是为了更快看见哪里需要调整。`
+      return `听起来「${context.taskTitle}」这里卡住的不是能力，而是你在一开始就想做出比较正式的版本。\n\n> 或许可以先这样试试：回到 ${currentStepRef}，用 **3 分钟** 做一个“可以改的草稿版”。\n\n这个版本不用拿来交，只是为了更快看见哪里需要调整。`
     }
-    return `听起来这里需要一个更容易进入的起点。\n\n> 或许可以先这样试试：回到「${context.taskTitle}」，做一个 **1 分钟** 动作。\n\n打开当前材料或任务页，停在最容易继续的那个位置就可以。`
+    return `听起来「${context.taskTitle}」这里需要一个更容易进入的起点。\n\n> 或许可以先这样试试：回到 ${currentStepRef}，做一个 **1 分钟** 动作。\n\n打开当前材料或任务页，停在最容易继续的那个位置就可以。`
   }
 
   const renderStuckMessageContent = (text: string) => {

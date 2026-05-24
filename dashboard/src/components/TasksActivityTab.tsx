@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useMemo } from 'react'
-import { exportCSV } from '@/lib/export-csv'
+import { buildCSVFilename, exportCSV } from '@/lib/export-csv'
 
 interface TaskRow {
   id: string
@@ -27,12 +27,13 @@ interface ActivityRow {
 interface Props {
   tasks: TaskRow[]
   activities: ActivityRow[]
+  exportUserLabel?: string
 }
 
 const TASK_PAGE_SIZE = 30
 const ACTIVITY_PAGE_SIZE = 50
 
-export default function TasksActivityTab({ tasks, activities }: Props) {
+export default function TasksActivityTab({ tasks, activities, exportUserLabel = 'all-users' }: Props) {
   const [taskFilter, setTaskFilter] = useState<'all' | 'completed' | 'pending'>('all')
   const [taskPage, setTaskPage] = useState(0)
   const [activityPage, setActivityPage] = useState(0)
@@ -70,7 +71,7 @@ export default function TasksActivityTab({ tasks, activities }: Props) {
                 completed: t.completed ? '是' : '否',
                 focus_min: Math.round(t.focus_duration / 60),
                 carried_from: t.carried_from ?? '',
-              })), 'tasks.csv')}
+              })), buildCSVFilename(exportUserLabel, 'tasks'))}
               className="text-xs text-blue-600 hover:underline"
             >
               导出 CSV
@@ -132,7 +133,7 @@ export default function TasksActivityTab({ tasks, activities }: Props) {
               date: a.date, time: new Date(a.ts).toLocaleString('zh-CN'),
               idle_sec: a.idle, active_samples: a.active_samples,
               total_samples: a.total_samples, active_ratio: a.active_ratio.toFixed(3),
-            })), 'activity.csv')}
+            })), buildCSVFilename(exportUserLabel, 'activity'))}
             className="text-xs text-blue-600 hover:underline"
           >
             导出 CSV

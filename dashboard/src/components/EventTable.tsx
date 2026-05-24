@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useMemo, Fragment } from 'react'
-import { exportCSV } from '@/lib/export-csv'
+import { buildCSVFilename, exportCSV } from '@/lib/export-csv'
 
 interface EventRow {
   id: number
@@ -15,13 +15,14 @@ interface EventRow {
 interface Props {
   events: EventRow[]
   initialTypeFilter?: string
+  exportUserLabel?: string
 }
 
 const PAGE_SIZE = 50
 
 const EVENT_DOMAINS = ['task', 'session', 'stuck', 'plan', 'reflect', 'nav', 'mode', 'memory', 'daily', 'manual', 'settings', 'auth', 'app']
 
-export default function EventTable({ events, initialTypeFilter }: Props) {
+export default function EventTable({ events, initialTypeFilter, exportUserLabel = 'all-users' }: Props) {
   const [typeFilter, setTypeFilter] = useState<string>(initialTypeFilter ?? '')
   const [page, setPage] = useState(0)
   const [expandedId, setExpandedId] = useState<number | null>(null)
@@ -57,7 +58,7 @@ export default function EventTable({ events, initialTypeFilter }: Props) {
         event_type: e.event_type,
         payload: JSON.stringify(e.payload),
       })),
-      `events_${typeFilter || 'all'}.csv`
+      buildCSVFilename(exportUserLabel, `events_${typeFilter || 'all'}`)
     )
   }
 
