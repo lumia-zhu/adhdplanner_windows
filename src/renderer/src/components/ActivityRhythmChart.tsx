@@ -9,6 +9,7 @@ import { useMemo, useState } from 'react'
 import type { ActivityRecord } from './ActivityHeatmap'
 import { getActiveRatio } from './ActivityHeatmap'
 import type { TrackEvent } from '../services/tracker'
+import { getWindowHourIndex, getWindowHourLabel } from '../utils/analysis-window'
 
 /** 折线图上的卡顿标记 */
 interface StuckPoint {
@@ -29,6 +30,7 @@ interface Props {
   highlightHour?: number | null
   highlightHourRange?: { startHour: number; endHour: number } | null
   highlightPulseKey?: string
+  windowStartTs?: number
 }
 
 const W = 400
@@ -39,12 +41,19 @@ const PAD_T = 14
 const PAD_B = 16
 const CHART_W = W - PAD_L - PAD_R
 const CHART_H = H - PAD_T - PAD_B
+const HOUR_MS = 60 * 60 * 1000
 
 /** 热力图需要加的左右 padding 百分比，保证和折线图绘图区对齐 */
 export const HEATMAP_PAD_LEFT_PCT = `${(PAD_L / W) * 100}%`
 export const HEATMAP_PAD_RIGHT_PCT = `${(PAD_R / W) * 100}%`
 
-export default function ActivityRhythmChart({ data, events, rangeStart: rs, rangeEnd: re, highlightHour, highlightHourRange, highlightPulseKey }: Props) {
+function formatAxisHour(hour: number, windowStartTs?: number): string {
+  if (typeof windowStartTs !== 'number') return String(hour)
+  const tick = new Date(windowStartTs + hour * HOUR_MS)
+  return String(tick.getHours())
+}
+
+export default function ActivityRhythmChart({ data, events, rangeStart: rs, rangeEnd: re, highlightHour, highlightHourRange, highlightPulseKey, windowStartTs }: Props) {
   const rangeStart = rs ?? 0
   const rangeEnd = re ?? 24
   const visibleHours = rangeEnd - rangeStart
@@ -52,17 +61,21 @@ export default function ActivityRhythmChart({ data, events, rangeStart: rs, rang
   const EXPECTED_RECORDS_PER_HOUR = 120
 
   const hourlyUsage = useMemo(() => {
-    const buckets: { totalRatio: number; count: number }[] = Array.from({ length: 24 }, () => ({
+    const bucketCount = typeof windowStartTs === 'number' ? Math.max(rangeEnd, 1) : 24
+    const buckets: { totalRatio: number; count: number }[] = Array.from({ length: bucketCount }, () => ({
       totalRatio: 0,
       count: 0,
     }))
     for (const r of data) {
-      const h = new Date(r.ts).getHours()
+      const h = typeof windowStartTs === 'number'
+        ? getWindowHourIndex(r.ts, windowStartTs)
+        : new Date(r.ts).getHours()
+      if (h < 0 || h >= buckets.length) continue
       buckets[h].totalRatio += getActiveRatio(r)
       buckets[h].count++
     }
     return buckets.map(b => Math.min((b.totalRatio / EXPECTED_RECORDS_PER_HOUR) * 60, 60))
-  }, [data])
+  }, [data, rangeEnd, windowStartTs])
 
   const maxVal = 60
   const yTicks = [0, 15, 30, 45, 60]
@@ -181,7 +194,9 @@ export default function ActivityRhythmChart({ data, events, rangeStart: rs, rang
         : ''
 
       const d = new Date(ts)
-      const hourFraction = d.getHours() + d.getMinutes() / 60 + d.getSeconds() / 3600
+      const hourFraction = typeof windowStartTs === 'number'
+        ? (ts - windowStartTs) / (60 * 60 * 1000)
+        : d.getHours() + d.getMinutes() / 60 + d.getSeconds() / 3600
       if (hourFraction < rangeStart || hourFraction >= rangeEnd) continue
 
       const x = PAD_L + ((hourFraction - rangeStart) / visibleHours) * CHART_W
@@ -195,7 +210,7 @@ export default function ActivityRhythmChart({ data, events, rangeStart: rs, rang
     }
 
     return pts.sort((a, b) => a.timestamp - b.timestamp)
-  }, [events, rangeStart, rangeEnd, visibleHours])
+  }, [events, rangeStart, rangeEnd, visibleHours, windowStartTs])
 
   const [hovered, setHovered] = useState<number | null>(null)
   const [hoveredStuck, setHoveredStuck] = useState<number | null>(null)
@@ -213,7 +228,7 @@ export default function ActivityRhythmChart({ data, events, rangeStart: rs, rang
       {peakHour.val > 0 && (
         <p className="text-xxs text-gray-500 mb-1.5 flex items-center gap-1">
           <span className="inline-block w-2 h-2 rounded-full bg-emerald-500 flex-shrink-0" />
-          今日使用高峰：<span className="font-semibold text-emerald-600">{peakHour.hour}:00~{peakHour.hour + 1}:00</span>
+          当前窗口使用高峰：<span className="font-semibold text-emerald-600">{windowStartTs ? getWindowHourLabel(windowStartTs, peakHour.hour).replace('-', '~') : `${peakHour.hour}:00~${peakHour.hour + 1}:00`}</span>
           <span className="text-gray-400 ml-1">（活跃 {Math.round(peakHour.val)} 分钟）</span>
         </p>
       )}
@@ -284,7 +299,7 @@ export default function ActivityRhythmChart({ data, events, rangeStart: rs, rang
                   />
                   {(() => {
                     const nextHour = (s.hour + 1) % 24
-                    const headerText = `${s.hour}:00~${nextHour}:00`
+                    const headerText = windowStartTs ? getWindowHourLabel(windowStartTs, s.hour).replace('-', '~') : `${s.hour}:00~${nextHour}:00`
                     const valText = `${Math.round(s.val)} 分钟`
                     const lineH = 14
                     const boxH = lineH * 2 + 8
@@ -373,7 +388,7 @@ export default function ActivityRhythmChart({ data, events, rangeStart: rs, rang
           const x = PAD_L + (i / visibleHours) * CHART_W
           return (
             <text key={h} x={x} y={PAD_T + CHART_H + 11} textAnchor="middle" fontSize={9} fill="#6b7280" fontWeight="500">
-              {h}
+              {formatAxisHour(h, windowStartTs)}
             </text>
           )
         })}

@@ -23,7 +23,6 @@ import type { ActivityRecord } from './ActivityHeatmap'
 import { getActiveRatio } from './ActivityHeatmap'
 import ActivityRhythmChart from './ActivityRhythmChart'
 import InteractiveActivityHeatmap from './InteractiveActivityHeatmap'
-import { computeActiveTimeRange } from '../utils/activity-time-range'
 import AppUsageRanking from './AppUsageRanking'
 import ChartInfoTooltip from './ChartInfoTooltip'
 import ReflectionChat from './ReflectionChat'
@@ -37,6 +36,7 @@ import { getWeekDates } from './WeekView'
 import { computeWeekActiveTimeRange } from './WeekHeatmapGrid'
 import { tracker } from '../services/tracker'
 import { getMoodOptionForDate, parseMoodRecord } from '../utils/mood'
+import { buildAnalysisWindow, formatHour, formatWindowOffsetHour, getWindowHourIndex, getWindowHourLabel, isTimestampInWindow } from '../utils/analysis-window'
 
 interface ReflectionViewProps {
   tasks: Task[]
@@ -89,6 +89,7 @@ const MIN_CHAT_WIDTH = 320
 const MAX_CHAT_RATIO = 0.65
 /** 数据区最小宽度 */
 const MIN_DATA_WIDTH = 300
+const ANALYSIS_WINDOW_STORAGE_KEY = 'reflection.analysisWindow'
 
 function getReflectionFullscreenSize(): { width: number; height: number } {
   const screenWidth = window.screen?.availWidth || REFLECTION_FULLSCREEN_MAX_WIDTH
@@ -208,7 +209,26 @@ function formatDateFriendly(dateStr: string): string {
   return `${d.getMonth() + 1}月${d.getDate()}日 ${WEEKDAYS[d.getDay()]}`
 }
 
+function loadStoredAnalysisWindow(): { startHour: number; endHour: number } {
+  try {
+    const raw = localStorage.getItem(ANALYSIS_WINDOW_STORAGE_KEY)
+    if (!raw) return { startHour: 0, endHour: 24 }
+    const parsed = JSON.parse(raw) as { startHour?: unknown; endHour?: unknown }
+    const startHour = Number(parsed.startHour)
+    let endHour = Number(parsed.endHour)
+    if (!Number.isInteger(startHour) || !Number.isInteger(endHour)) return { startHour: 0, endHour: 24 }
+    if (startHour < 0 || startHour > 23) return { startHour: 0, endHour: 24 }
+    if (endHour <= startHour) endHour += 24
+    if (endHour <= startHour || endHour > 36) return { startHour: 0, endHour: 24 }
+    return { startHour, endHour }
+  } catch {
+    return { startHour: 0, endHour: 24 }
+  }
+}
+
 const APP_USAGE_SAMPLE_INTERVAL_SEC = 2
+const START_HOUR_OPTIONS = Array.from({ length: 24 }, (_, hour) => hour)
+const END_HOUR_OPTIONS = Array.from({ length: 36 }, (_, index) => index + 1)
 const PROMPT_EXCLUDED_APP_NAMES = new Set([
   'electron',
   'metaplan',
@@ -363,21 +383,27 @@ function getWeekTaskDurations(days: WeekDayData[]): TaskDurationItem[] {
     .sort((a, b) => b.durationSec - a.durationSec)
 }
 
-function buildActivityTargets(records: ActivityRecord[], chartId: string, rangeStart: number, rangeEnd: number): VisualTarget[] {
+function buildActivityTargets(records: ActivityRecord[], chartId: string, rangeStart: number, rangeEnd: number, windowStartTs?: number): VisualTarget[] {
   const targets: VisualTarget[] = []
-  const hourBuckets = Array.from({ length: 24 }, () => 0)
+  const hourBuckets = Array.from({ length: Math.max(24, rangeEnd) }, () => 0)
   for (const record of records) {
-    const hour = new Date(record.ts).getHours()
+    const hour = typeof windowStartTs === 'number'
+      ? getWindowHourIndex(record.ts, windowStartTs)
+      : new Date(record.ts).getHours()
+    if (hour < 0 || hour >= hourBuckets.length) continue
     hourBuckets[hour] += getActiveRatio(record)
   }
 
   for (let hour = rangeStart; hour < rangeEnd; hour++) {
     if (hourBuckets[hour] <= 0) continue
+    const label = typeof windowStartTs === 'number'
+      ? getWindowHourLabel(windowStartTs, hour)
+      : `${hour}:00-${hour + 1}:00`
     targets.push({
       targetId: `activity:hour:${hour}`,
       type: 'activity_hour',
       chartId,
-      label: `${hour}:00-${hour + 1}:00 电脑活动`,
+      label: `${label} 电脑活动`,
       value: String(hour),
       startHour: hour,
       endHour: hour + 1,
@@ -391,11 +417,14 @@ function buildActivityTargets(records: ActivityRecord[], chartId: string, rangeS
     if ((!isActive || hour === rangeEnd) && activeRangeStart != null) {
       const activeRangeEnd = hour
       if (activeRangeEnd - activeRangeStart >= 2) {
+        const label = typeof windowStartTs === 'number'
+          ? `${getWindowHourLabel(windowStartTs, activeRangeStart).split('-')[0]}-${getWindowHourLabel(windowStartTs, activeRangeEnd - 1).split('-')[1]}`
+          : `${activeRangeStart}:00-${activeRangeEnd}:00`
         targets.push({
           targetId: `activity:range:${activeRangeStart}-${activeRangeEnd}`,
           type: 'activity_range',
           chartId,
-          label: `${activeRangeStart}:00-${activeRangeEnd}:00 电脑活动`,
+          label: `${label} 电脑活动`,
           value: `${activeRangeStart}-${activeRangeEnd}`,
           startHour: activeRangeStart,
           endHour: activeRangeEnd,
@@ -600,6 +629,11 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
   const today = getToday()
   const [selectedDate, setSelectedDate] = useState(today)
   const isToday = selectedDate === today
+  const [{ startHour: analysisStartHour, endHour: analysisEndHour }, setAnalysisWindowHours] = useState(loadStoredAnalysisWindow)
+  const analysisWindow = useMemo(
+    () => buildAnalysisWindow(selectedDate, analysisStartHour, analysisEndHour),
+    [analysisEndHour, analysisStartHour, selectedDate],
+  )
   const [displayDate, setDisplayDate] = useState(today)
   const [displayEvents, setDisplayEvents] = useState<TrackEvent[]>([])
   const [displaySummary, setDisplaySummary] = useState<DailySummary | null>(null)
@@ -607,6 +641,7 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
   const [displayTasks, setDisplayTasks] = useState<Task[]>(propTasks)
   const [displayMoodRecord, setDisplayMoodRecord] = useState<DailyMoodRecord | null>(null)
   const [moodNoteExpanded, setMoodNoteExpanded] = useState(false)
+  const [analysisWindowEditorOpen, setAnalysisWindowEditorOpen] = useState(false)
   const moodPillRef = useRef<HTMLDivElement>(null)
   const [isDataTransitioning, setIsDataTransitioning] = useState(false)
   const [contentVisible, setContentVisible] = useState(true)
@@ -651,6 +686,26 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
   const goToday = useCallback(() => {
     changeReflectionDate(getToday(), 'today')
   }, [changeReflectionDate])
+
+  const updateAnalysisWindowHours = useCallback((next: { startHour?: number; endHour?: number }) => {
+    setAnalysisWindowHours(current => {
+      const draft = {
+        startHour: next.startHour ?? current.startHour,
+        endHour: next.endHour ?? current.endHour,
+      }
+      if (draft.endHour <= draft.startHour) draft.endHour += 24
+      if (draft.endHour > 36) draft.endHour = Math.min(36, draft.startHour + 1)
+      const updated = draft.endHour > draft.startHour
+        ? draft
+        : { startHour: draft.startHour, endHour: Math.min(36, draft.startHour + 1) }
+      try {
+        localStorage.setItem(ANALYSIS_WINDOW_STORAGE_KEY, JSON.stringify(updated))
+      } catch {
+        // localStorage 不可用时，本次会话内仍保留设置。
+      }
+      return updated
+    })
+  }, [])
 
   // const handleReflectionStyleChange = useCallback((style: ReflectionStyle) => {
   //   setReflectionStyle(style)
@@ -715,29 +770,34 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
       }
       setSummary(null)  // 立即清空，防止 systemPrompt 用旧日期数据初始化 AI 对话
       try {
-        // ★ 如果是今天，先刷新 tracker 缓冲区确保最新数据
-        if (selectedDate === getToday()) {
+        // ★ 如果窗口包含今天，先刷新 tracker 缓冲区确保最新数据
+        if (analysisWindow.loadDates.includes(getToday())) {
           await tracker.flushAsync()
         }
 
-        const [raw, rawActivity, rawTasks, rawMood] = await Promise.all([
-          window.electronAPI.loadTrackerEvents(selectedDate),
-          window.electronAPI.loadActivityData(selectedDate),
+        const [rawEventGroups, rawActivityGroups, rawTasks, rawMood] = await Promise.all([
+          Promise.all(analysisWindow.loadDates.map(date => window.electronAPI.loadTrackerEvents(date).catch(() => []))),
+          Promise.all(analysisWindow.loadDates.map(date => window.electronAPI.loadActivityData(date).catch(() => []))),
           window.electronAPI.loadTasks(selectedDate),
           window.electronAPI.loadMoodRecord(selectedDate),
         ])
 
         if (cancelled) return  // 防止切换日期后旧请求覆盖新数据
 
-        const typedEvents = raw as TrackEvent[]
+        const typedEvents = rawEventGroups
+          .flatMap(group => group as TrackEvent[])
+          .filter(event => isTimestampInWindow(event.timestamp, analysisWindow))
+        const typedActivity = rawActivityGroups
+          .flatMap(group => group as ActivityRecord[])
+          .filter(record => isTimestampInWindow(record.ts, analysisWindow))
         setEvents(typedEvents)
-        setActivityData(rawActivity as ActivityRecord[])
+        setActivityData(typedActivity)
         setLocalTasks(rawTasks as Task[])
 
         const s = buildDailySummary(selectedDate, typedEvents)
         setDisplayDate(selectedDate)
         setDisplayEvents(typedEvents)
-        setDisplayActivityData(rawActivity as ActivityRecord[])
+        setDisplayActivityData(typedActivity)
         setDisplayTasks(rawTasks as Task[])
         setDisplayMoodRecord(parseMoodRecord(rawMood))
         setMoodNoteExpanded(false)
@@ -759,7 +819,7 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
       cancelled = true
       if (transitionTimer) clearTimeout(transitionTimer)
     }
-  }, [selectedDate])
+  }, [analysisWindow, selectedDate])
 
   // 加载记忆上下文（开场 prompt 注入用）；随当前数据更新，挑选相关记忆而不是塞入全部历史。
   useEffect(() => {
@@ -1103,8 +1163,8 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
 
   // 热力图与节奏曲线共享的动态时间范围
   const { rangeStart: sharedRangeStart, rangeEnd: sharedRangeEnd } = useMemo(
-    () => computeActiveTimeRange(displayActivityData),
-    [displayActivityData],
+    () => ({ rangeStart: 0, rangeEnd: analysisWindow.durationHours }),
+    [analysisWindow.durationHours],
   )
 
   const visualTargets = useMemo<VisualTarget[]>(() => {
@@ -1134,7 +1194,7 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
       },
     ]
 
-    targets.push(...buildActivityTargets(displayActivityData, 'chart-activity-heatmap', sharedRangeStart, sharedRangeEnd))
+    targets.push(...buildActivityTargets(displayActivityData, 'chart-activity-heatmap', sharedRangeStart, sharedRangeEnd, analysisWindow.startTs))
 
     for (const task of taskDurations.slice(0, 8)) {
       targets.push({
@@ -1157,7 +1217,7 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
     }
 
     return targets
-  }, [displayActivityData, sharedRangeEnd, sharedRangeStart, taskDurations, viewMode])
+  }, [analysisWindow.startTs, displayActivityData, sharedRangeEnd, sharedRangeStart, taskDurations, viewMode])
 
   const weekVisualTargets = useMemo<VisualTarget[]>(() => {
     if (viewMode !== 'week' || !weekDayData || weekDayData.length === 0) return []
@@ -1806,7 +1866,8 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
     const EXPECTED_PER_HOUR = 120 // 每小时应有 120 条 30 秒采样，和图表保持一致
     const hourBuckets: Record<number, number> = {}
     for (const r of displayActivityData) {
-      const h = new Date(r.ts).getHours()
+      const h = getWindowHourIndex(r.ts, analysisWindow.startTs)
+      if (h < 0 || h >= analysisWindow.durationHours) continue
       if (!hourBuckets[h]) hourBuckets[h] = 0
       hourBuckets[h] += getActiveRatio(r)
     }
@@ -1817,15 +1878,16 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
     for (const h of hours) {
       const ratio = Math.min(Math.round((hourBuckets[h] / EXPECTED_PER_HOUR) * 100), 100)
       const label = ratio >= 70 ? '活跃' : ratio >= 30 ? '一般' : '基本空闲'
-      segments.push(`${h}:00 ${label}(${ratio}%)`)
+      segments.push(`${getWindowHourLabel(analysisWindow.startTs, h)} ${label}(${ratio}%)`)
     }
     return segments.join('、')
-  }, [displayActivityData])
+  }, [analysisWindow.durationHours, analysisWindow.startTs, displayActivityData])
 
   // 构建 AI system prompt
   const systemPrompt = useMemo(() => {
     if (!summary || !memoryLoaded || !insightLoaded) return ''
     const context = summaryToLLMContext(summary, events)
+    const windowInfo = `\n\n分析窗口说明：\n- 当前图表和反思的分析窗口是：${analysisWindow.label}。\n- 请只基于这个窗口解释行为数据；这里的“今天/当天”指这个分析窗口，不是自然日 00:00-23:59。\n- 任务列表和心情记录仍是选中日期背景，不能当作已按小时窗口精确过滤。`
     const taskInfo = `\n\n额外信息：\n- 当前任务总数：${localTasks.length}\n- 已完成任务：${localTasks.filter(t => t.completed).length}\n- 完成率：${completionRate}%\n- 待办任务：${localTasks.filter(t => !t.completed).map(t => t.title).join('、') || '无'}`
     const productivityInfo = `\n\n生产力指标：\n- 电脑使用时长：${totalUsageMinutes}分钟\n- 专注时长：${summary.stats.totalFocusMinutes}分钟\n- 生产力比率：${productivityRatio}%（专注/使用）\n- 心流占比：${flowRatio}%（心流/专注）`
     const activityInfo = activityTimeDistribution
@@ -1855,10 +1917,10 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
     const visualMarkerInfo = `\n\n${buildVisualMarkerPromptContext(visualTargets)}`
     const taskSessionContext = taskSessionInfo ? `\n\n${taskSessionInfo}` : ''
     const appUsageContext = appUsageInfo ? `\n\n${appUsageInfo}` : ''
-    const prompt = buildReflectionSystemPrompt(context + taskInfo + productivityInfo + activityInfo + moodInfo + taskSessionContext + appUsageContext + taskDurationInfo + insightInfo + visualMarkerInfo, false, isToday, memoryContext, selectedDate, userProfile.preferredName ?? '', reflectionStyle)
+    const prompt = buildReflectionSystemPrompt(context + windowInfo + taskInfo + productivityInfo + activityInfo + moodInfo + taskSessionContext + appUsageContext + taskDurationInfo + insightInfo + visualMarkerInfo, false, isToday, memoryContext, selectedDate, userProfile.preferredName ?? '', reflectionStyle)
     console.log('[Memory Debug] systemPrompt 构建完成, 包含记忆:', prompt.includes('对话记忆'), ', memoryContext长度:', memoryContext.length)
     return prompt
-  }, [summary, events, localTasks, completionRate, totalUsageMinutes, productivityRatio, flowRatio, activityTimeDistribution, displayMoodRecord, displayMoodOption, displayMoodNote, activityData, taskDurations, visualTargets, isToday, memoryContext, memoryLoaded, insightContext, insightLoaded, selectedDate, reflectionStyle])
+  }, [analysisWindow.label, summary, events, localTasks, completionRate, totalUsageMinutes, productivityRatio, flowRatio, activityTimeDistribution, displayMoodRecord, displayMoodOption, displayMoodNote, activityData, taskDurations, visualTargets, isToday, memoryContext, memoryLoaded, insightContext, insightLoaded, selectedDate, reflectionStyle])
 
   // ---- 周视图数据回调 ----
   const handleWeekDataReady = useCallback((data: WeekDayData[]) => {
@@ -1894,6 +1956,7 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
 
     return [
       `日期：${selectedDate}`,
+      `分析窗口：${analysisWindow.label}`,
       `模式：日反思`,
       `完成任务：${localTasks.filter(task => task.completed).length}/${localTasks.length}`,
       `专注：${summary.stats.totalFocusMinutes}分钟`,
@@ -1903,7 +1966,7 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
       durationLines.length > 0 ? `任务用时：${durationLines.join('；')}` : '',
       activityTimeDistribution ? `电脑活跃：${activityTimeDistribution}` : '',
     ].filter(Boolean).join('\n')
-  }, [activityTimeDistribution, displayMoodNote, displayMoodOption, displayMoodRecord, localTasks, selectedDate, summary, taskDurations])
+  }, [activityTimeDistribution, analysisWindow.label, displayMoodNote, displayMoodOption, displayMoodRecord, localTasks, selectedDate, summary, taskDurations])
 
   const weeklyMemoryMatchContext = useMemo(() => {
     if (!weekDayData || weekDayData.length === 0) return ''
@@ -2492,38 +2555,77 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
           ) : (
             /* ---- 日视图 ---- */
             <div
-              className={`p-6 space-y-6 transition-all duration-200 ease-out max-w-xl mx-auto ${
+              className={`px-6 pt-4 pb-24 space-y-6 transition-all duration-200 ease-out max-w-xl mx-auto ${
                 contentVisible ? 'opacity-100 translate-y-0' : 'opacity-70 translate-y-1'
               }`}
             >
-              {/* 圆环图 + 核心指标 + 心情状态，所有日视图日期保持同一结构 */}
-              <div className={chatOpen ? 'flex items-center gap-6' : 'space-y-4'}>
-                <ChartFocusSection
-                  id="chart-completion-rate"
-                  className={chatOpen ? 'flex-shrink-0' : 'flex justify-center'}
-                >
-                  <DonutChart
-                    percentage={completionRate}
-                    size={chatOpen ? 120 : 180}
-                    strokeWidth={chatOpen ? 10 : 14}
-                    label="任务完成率"
-                  />
-                </ChartFocusSection>
-                <ChartFocusSection
-                  id="chart-key-metrics"
-                  className={chatOpen ? 'min-w-0 flex-1 space-y-2' : 'space-y-2'}
-                >
-                  <div className="grid grid-cols-3 gap-3 w-full">
-                    {metricCards}
-                  </div>
-                  {moodPill && (
-                    <div className="flex justify-start">
-                      {moodPill}
-                    </div>
+              <div className="space-y-3">
+                <div className="flex flex-wrap items-center gap-1.5 text-xs leading-none text-gray-400">
+                  <span className="text-gray-400">当前展示</span>
+                  {analysisWindowEditorOpen ? (
+                    <>
+                      <span className="text-gray-300">开始</span>
+                      <select
+                        value={analysisStartHour}
+                        onChange={(e) => updateAnalysisWindowHours({ startHour: Number(e.target.value) })}
+                        className="h-5 rounded border border-gray-200 bg-white px-1 text-xs text-gray-600 outline-none transition-colors hover:border-gray-300 focus:border-blue-300"
+                        title="分析窗口开始时间"
+                      >
+                        {START_HOUR_OPTIONS.map(hour => (
+                          <option key={hour} value={hour}>{formatHour(hour)}</option>
+                        ))}
+                      </select>
+                      <span className="text-gray-300">结束</span>
+                      <select
+                        value={analysisEndHour}
+                        onChange={(e) => updateAnalysisWindowHours({ endHour: Number(e.target.value) })}
+                        className="h-5 rounded border border-gray-200 bg-white px-1 text-xs text-gray-600 outline-none transition-colors hover:border-gray-300 focus:border-blue-300"
+                        title="分析窗口结束时间"
+                      >
+                        {END_HOUR_OPTIONS.map(hour => (
+                          <option key={hour} value={hour}>{formatWindowOffsetHour(hour)}</option>
+                        ))}
+                      </select>
+                    </>
+                  ) : (
+                    <span>{analysisWindow.label}</span>
                   )}
-                </ChartFocusSection>
-              </div>
+                  <button
+                    onClick={() => setAnalysisWindowEditorOpen(v => !v)}
+                    className="rounded px-1 py-0.5 text-xs font-medium text-blue-500 transition-colors hover:bg-blue-50 hover:text-blue-600"
+                  >
+                    {analysisWindowEditorOpen ? '收起' : '调整'}
+                  </button>
+                </div>
 
+                {/* 圆环图 + 核心指标 + 心情状态，所有日视图日期保持同一结构 */}
+                <div className={chatOpen ? 'flex items-center gap-6' : 'space-y-4'}>
+                  <ChartFocusSection
+                    id="chart-completion-rate"
+                    className={chatOpen ? 'flex-shrink-0' : 'flex justify-center'}
+                  >
+                    <DonutChart
+                      percentage={completionRate}
+                      size={chatOpen ? 120 : 180}
+                      strokeWidth={chatOpen ? 10 : 14}
+                      label="任务完成率"
+                    />
+                  </ChartFocusSection>
+                  <ChartFocusSection
+                    id="chart-key-metrics"
+                    className={chatOpen ? 'min-w-0 flex-1 space-y-2' : 'space-y-2'}
+                  >
+                    <div className="grid grid-cols-3 gap-3 w-full">
+                      {metricCards}
+                    </div>
+                    {moodPill && (
+                      <div className="flex justify-start">
+                        {moodPill}
+                      </div>
+                    )}
+                  </ChartFocusSection>
+                </div>
+              </div>
               {/* 分隔线 */}
               <div className="border-t border-gray-100" />
 
@@ -2571,6 +2673,7 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
                     events={displayEvents}
                     rangeStart={sharedRangeStart}
                     rangeEnd={sharedRangeEnd}
+                    windowStartTs={analysisWindow.startTs}
                     highlightHour={highlightedHour}
                     highlightHourRange={highlightedHourRange}
                     highlightPulseKey={highlightPulseKey}
@@ -2582,6 +2685,7 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
                     events={displayEvents}
                     rangeStart={sharedRangeStart}
                     rangeEnd={sharedRangeEnd}
+                    windowStartTs={analysisWindow.startTs}
                     highlightTask={hoveredTask}
                     highlightHour={highlightedHour}
                     highlightHourRange={highlightedHourRange}
@@ -2732,14 +2836,14 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
                 // 暂时不传 onReflectionStyleChange，恢复切换时可放开上方保留的 handler。
                 <ReflectionChat
                   ref={chatRef}
-                  key={viewMode === 'week' ? `week-${weekEndDate}` : `day-${selectedDate}`}
+                  key={viewMode === 'week' ? `week-${weekEndDate}` : `day-${selectedDate}-${analysisWindow.storageKey}`}
                   systemPrompt={activeSystemPrompt}
                   aiConfig={aiConfig}
                   mode={viewMode === 'week' ? 'weekly' : 'daily'}
                   reflectionStyle={reflectionStyle}
                   screenshotBase64={null}
                   selectedDate={viewMode === 'week' ? weekEndDate : selectedDate}
-                  storageKey={viewMode === 'week' ? `week-${weekEndDate}` : selectedDate}
+                  storageKey={viewMode === 'week' ? `week-${weekEndDate}` : `${selectedDate}-${analysisWindow.storageKey}`}
                   visualTargets={viewMode === 'week' ? weekVisualTargets : visualTargets}
                   memoryMatchContext={activeMemoryMatchContext}
                   memoryContext={memoryContext}

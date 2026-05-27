@@ -14,11 +14,13 @@ import { getActiveRatio } from './ActivityHeatmap'
 import type { TrackEvent } from '../services/tracker'
 import { HEATMAP_PAD_LEFT_PCT, HEATMAP_PAD_RIGHT_PCT } from './ActivityRhythmChart'
 import { computeActiveTimeRange } from '../utils/activity-time-range'
+import { getWindowHourIndex, getWindowHourLabel } from '../utils/analysis-window'
 
 // ===================== 常量 =====================
 
 const TOTAL_BLOCKS = 24
 const EXPECTED_RECORDS_PER_BLOCK = 120
+const HOUR_MS = 60 * 60 * 1000
 function ratioToLevel(usageRatio: number): number {
   if (usageRatio <= 0) return 0
   if (usageRatio <= 0.25) return 1
@@ -42,6 +44,7 @@ interface TaskTimeSegment {
   startFrac: number   // 该小时内的起始比例 0~1
   endFrac: number     // 该小时内的结束比例 0~1
   taskTitle: string
+  label: string
 }
 
 interface Props {
@@ -55,6 +58,7 @@ interface Props {
   highlightPulseKey?: string
   showAllTasks?: boolean
   taskTitles?: string[]
+  windowStartTs?: number
 }
 
 // ===================== 工具函数 =====================
@@ -64,25 +68,29 @@ function addSessionSegments(
   taskTitle: string,
   startMs: number,
   endMs: number,
+  windowStartTs?: number,
 ) {
   if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs) return
 
   let cursor = startMs
   while (cursor < endMs) {
     const cursorDate = new Date(cursor)
-    const hourStart = new Date(cursorDate)
-    hourStart.setMinutes(0, 0, 0)
-
-    const hourStartMs = hourStart.getTime()
+    const hour = typeof windowStartTs === 'number'
+      ? getWindowHourIndex(cursor, windowStartTs)
+      : cursorDate.getHours()
+    if (hour < 0) return
+    const hourStartMs = typeof windowStartTs === 'number'
+      ? windowStartTs + hour * HOUR_MS
+      : new Date(cursorDate.getFullYear(), cursorDate.getMonth(), cursorDate.getDate(), cursorDate.getHours(), 0, 0, 0).getTime()
     const nextHourMs = hourStartMs + 60 * 60 * 1000
     const segmentEndMs = Math.min(endMs, nextHourMs)
-    const hour = cursorDate.getHours()
     const startFrac = (cursor - hourStartMs) / (60 * 60 * 1000)
     const endFrac = (segmentEndMs - hourStartMs) / (60 * 60 * 1000)
+    const label = `${new Date(cursor).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}–${new Date(segmentEndMs).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}`
 
     if (endFrac > startFrac) {
       if (!result.has(hour)) result.set(hour, [])
-      result.get(hour)!.push({ hour, startFrac, endFrac, taskTitle })
+      result.get(hour)!.push({ hour, startFrac, endFrac, taskTitle, label })
     }
 
     cursor = segmentEndMs
@@ -99,6 +107,7 @@ function addSessionSegments(
 function buildTaskTimeSegments(
   events: TrackEvent[],
   taskTitle: string,
+  windowStartTs?: number,
 ): Map<number, TaskTimeSegment[]> {
   const result = new Map<number, TaskTimeSegment[]>()
 
@@ -109,7 +118,7 @@ function buildTaskTimeSegments(
 
     const endMs = e.timestamp
     const startMs = endMs - p.totalDurationSeconds * 1000
-    addSessionSegments(result, p.taskTitle, startMs, endMs)
+    addSessionSegments(result, p.taskTitle, startMs, endMs, windowStartTs)
   }
 
   return result
@@ -118,6 +127,7 @@ function buildTaskTimeSegments(
 function buildAllTaskTimeSegments(
   events: TrackEvent[],
   taskTitles: string[],
+  windowStartTs?: number,
 ): Map<number, TaskTimeSegment[]> {
   const result = new Map<number, TaskTimeSegment[]>()
   const allowedTitles = new Set(taskTitles)
@@ -129,7 +139,7 @@ function buildAllTaskTimeSegments(
 
     const endMs = e.timestamp
     const startMs = endMs - p.totalDurationSeconds * 1000
-    addSessionSegments(result, p.taskTitle, startMs, endMs)
+    addSessionSegments(result, p.taskTitle, startMs, endMs, windowStartTs)
   }
 
   return result
@@ -159,6 +169,7 @@ export default function InteractiveActivityHeatmap({
   highlightPulseKey,
   showAllTasks = false,
   taskTitles = [],
+  windowStartTs,
 }: Props) {
   const [tooltip, setTooltip] = useState<{
     x: number; y: number; label: string; usagePct?: number; level?: number; taskName?: string; kind?: 'activity' | 'task'
@@ -166,13 +177,17 @@ export default function InteractiveActivityHeatmap({
 
   // ---- 聚合热力条（全 24 小时） ----
   const blocks = useMemo(() => {
+    const bucketCount = typeof windowStartTs === 'number' && propEnd != null ? Math.max(propEnd, 1) : TOTAL_BLOCKS
     const buckets: { totalRatio: number; count: number }[] = Array.from(
-      { length: TOTAL_BLOCKS },
+      { length: bucketCount },
       () => ({ totalRatio: 0, count: 0 })
     )
     for (const r of data) {
       const d = new Date(r.ts)
-      const blockIdx = Math.min(d.getHours(), TOTAL_BLOCKS - 1)
+      const blockIdx = typeof windowStartTs === 'number'
+        ? getWindowHourIndex(r.ts, windowStartTs)
+        : Math.min(d.getHours(), TOTAL_BLOCKS - 1)
+      if (blockIdx < 0 || blockIdx >= buckets.length) continue
       buckets[blockIdx].totalRatio += getActiveRatio(r)
       buckets[blockIdx].count++
     }
@@ -182,10 +197,12 @@ export default function InteractiveActivityHeatmap({
         index: i,
         avgUsageRatio,
         count: b.count,
-        label: `${String(i).padStart(2, '0')}:00–${String(i + 1 === 24 ? 0 : i + 1).padStart(2, '0')}:00`,
+        label: typeof windowStartTs === 'number'
+          ? getWindowHourLabel(windowStartTs, i)
+          : `${String(i).padStart(2, '0')}:00–${String(i + 1 === 24 ? 0 : i + 1).padStart(2, '0')}:00`,
       }
     })
-  }, [data])
+  }, [data, propEnd, windowStartTs])
 
   // ---- 自适应时间范围（优先使用外部传入的值） ----
   const { rangeStart, rangeEnd } = useMemo(() => {
@@ -236,13 +253,13 @@ export default function InteractiveActivityHeatmap({
   // ---- hover 高亮：计算指定任务的精确时间段 ----
   const highlightSegments = useMemo(() => {
     if (!highlightTask) return null
-    return buildTaskTimeSegments(events, highlightTask)
-  }, [events, highlightTask])
+    return buildTaskTimeSegments(events, highlightTask, windowStartTs)
+  }, [events, highlightTask, windowStartTs])
 
   const allTaskSegments = useMemo(() => {
     if (!showAllTasks || taskTitles.length === 0) return null
-    return buildAllTaskTimeSegments(events, taskTitles)
-  }, [events, showAllTasks, taskTitles])
+    return buildAllTaskTimeSegments(events, taskTitles, windowStartTs)
+  }, [events, showAllTasks, taskTitles, windowStartTs])
 
   if (data.length === 0) {
     return (
@@ -295,7 +312,7 @@ export default function InteractiveActivityHeatmap({
                       setTooltip({
                         x: rect.left + rect.width / 2,
                         y: rect.top,
-                        label: formatSegmentTime(seg.hour, seg.startFrac, seg.endFrac),
+                        label: seg.label || formatSegmentTime(seg.hour, seg.startFrac, seg.endFrac),
                         taskName: seg.taskTitle,
                         kind: 'task',
                       })
