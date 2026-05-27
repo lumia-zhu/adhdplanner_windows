@@ -89,7 +89,8 @@ create table if not exists mood_records (
   primary key (user_id, date)
 );
 
-alter table mood_records enable row level security;
+-- Dashboard 需要匿名读取每日情绪状态，直接关闭这张表的 RLS。
+alter table mood_records disable row level security;
 create policy "mood_records_user_policy" on mood_records
   for all using (auth.uid() = user_id)
   with check (auth.uid() = user_id);

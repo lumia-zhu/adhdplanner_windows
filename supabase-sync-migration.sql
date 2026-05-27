@@ -10,7 +10,8 @@ create table if not exists mood_records (
   primary key (user_id, date)
 );
 
-alter table mood_records enable row level security;
+-- Dashboard 需要匿名读取每日情绪状态，直接关闭这张表的 RLS。
+alter table mood_records disable row level security;
 
 do $$
 begin

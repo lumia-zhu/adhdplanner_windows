@@ -16,6 +16,7 @@ import {
 } from '@/lib/daily-status'
 
 const STATUS_EVENT_TYPES = [
+  'mood.saved',
   'session.started',
   'exec.micro_started',
   'plan.first_micro',
@@ -119,6 +120,22 @@ function HeaderWithDefinition({
   )
 }
 
+function csvCell(value: unknown): string {
+  const text = String(value ?? '')
+  return `"${text.replace(/"/g, '""')}"`
+}
+
+function downloadCsv(filename: string, rows: string[][]) {
+  const csv = rows.map(row => row.map(csvCell).join(',')).join('\r\n')
+  const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  link.click()
+  URL.revokeObjectURL(url)
+}
+
 export default function DailyStatusPage() {
   const today = format(new Date(), 'yyyy-MM-dd')
   const [selectedDate, setSelectedDate] = useState(today)
@@ -135,7 +152,7 @@ export default function DailyStatusPage() {
         supabase.from('profiles').select('user_id, plan_time, reflection_time'),
         supabase.from('mood_records').select('user_id, mood').eq('date', selectedDate),
         supabase.from('tasks').select('user_id, id').eq('date', selectedDate),
-        supabase.from('tracker_events').select('user_id, event_type, timestamp')
+        supabase.from('tracker_events').select('user_id, event_type, timestamp, payload')
           .eq('date', selectedDate)
           .in('event_type', STATUS_EVENT_TYPES),
       ])
@@ -179,6 +196,22 @@ export default function DailyStatusPage() {
 
   const metrics = useMemo(() => buildDailyStatusMetrics(rows), [rows])
 
+  const handleExportCsv = useCallback(() => {
+    const exportTime = format(new Date(), 'HHmmss')
+    downloadCsv(`daily-status_${selectedDate}_${exportTime}.csv`, [
+      ['账号', '情绪记录', '计划状态', '反思状态', '计划提醒时间', '反思提醒时间', '最后活动时间'],
+      ...rows.map(row => [
+        row.email,
+        row.moodText,
+        row.planStatusText,
+        row.reflectionStatusText,
+        row.planTimeText,
+        row.reflectionTimeText,
+        row.lastActivityText,
+      ]),
+    ])
+  }, [rows, selectedDate])
+
   return (
     <div className="min-h-screen bg-gray-50" style={pageStyle}>
       <header className="sticky top-0 z-40 border-b border-gray-200 bg-white px-6 py-4 shadow-sm" style={headerStyle}>
@@ -204,6 +237,21 @@ export default function DailyStatusPage() {
               style={buttonStyle}
             >
               刷新
+            </button>
+            <button
+              onClick={handleExportCsv}
+              disabled={loading || rows.length === 0}
+              className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+              style={{
+                ...buttonStyle,
+                background: '#fff',
+                border: '1px solid #d1d5db',
+                color: '#374151',
+                cursor: loading || rows.length === 0 ? 'not-allowed' : 'pointer',
+                opacity: loading || rows.length === 0 ? 0.5 : 1,
+              }}
+            >
+              导出 CSV
             </button>
           </div>
         </div>
@@ -276,7 +324,7 @@ export default function DailyStatusPage() {
                       <tr key={row.userId} className="border-b border-gray-100 hover:bg-blue-50/40">
                         <td className="whitespace-nowrap px-4 py-3 font-medium text-gray-900" style={{ ...tableCellStyle, color: '#111827', fontWeight: 700 }}>{row.email}</td>
                         <td className="whitespace-nowrap px-4 py-3" style={tableCellStyle}>
-                          <StatusBadge tone={row.mood !== null ? 'success' : 'danger'}>{row.moodText}</StatusBadge>
+                          <StatusBadge tone={row.moodRecorded ? 'success' : 'danger'}>{row.moodText}</StatusBadge>
                         </td>
                         <td className="whitespace-nowrap px-4 py-3" style={tableCellStyle}>
                           <StatusBadge tone={row.planTone}>{row.planStatusText}</StatusBadge>

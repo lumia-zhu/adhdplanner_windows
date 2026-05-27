@@ -9,7 +9,7 @@ export type DailyStatusDefinitionKey =
 export const DAILY_STATUS_DEFINITIONS: Record<DailyStatusDefinitionKey, { label: string; description: string }> = {
   mood: {
     label: '情绪记录',
-    description: '来自 mood_records。所选日期有一条 mood 记录就算已记录；有记录时显示对应情绪图标和 1-5 数值。',
+    description: '优先来自 mood_records；如果看板读不到 mood_records，则用 tracker_events 里的 mood.saved 判断。任一来源存在就算已记录。',
   },
   planStarted: {
     label: '计划状态',
@@ -51,6 +51,7 @@ export interface DashboardUser {
 export interface DailyStatusRow {
   userId: string
   email: string
+  moodRecorded: boolean
   mood: number | null
   moodText: string
   taskCount: number
@@ -78,6 +79,11 @@ interface BuildRowsParams {
 
 const PLAN_START_EVENTS = new Set(['session.started', 'exec.micro_started', 'plan.first_micro'])
 
+function parseMoodValue(raw: unknown): number | null {
+  const value = Number(raw)
+  return Number.isInteger(value) && value >= 1 && value <= 5 ? value : null
+}
+
 function formatTime(ts: number | null): string {
   if (!ts) return '-'
   return new Date(ts).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
@@ -96,6 +102,7 @@ export function buildDailyStatusRows({
     rows.set(user.user_id, {
       userId: user.user_id,
       email: user.email,
+      moodRecorded: false,
       mood: null,
       moodText: '未记录',
       taskCount: 0,
@@ -119,6 +126,7 @@ export function buildDailyStatusRows({
       rows.set(userId, {
         userId,
         email: `${userId.slice(0, 12)}...`,
+        moodRecorded: false,
         mood: null,
         moodText: '未记录',
         taskCount: 0,
@@ -151,8 +159,9 @@ export function buildDailyStatusRows({
     const userId = String(mood.user_id || '')
     if (!userId) continue
     const row = ensure(userId)
-    const value = Number(mood.mood)
-    row.mood = Number.isInteger(value) ? value : null
+    const value = parseMoodValue(mood.mood)
+    row.moodRecorded = true
+    row.mood = value
     row.moodText = row.mood ? `${MOOD_EMOJI[row.mood] ?? '🙂'} ${row.mood}` : '已记录'
   }
 
@@ -172,6 +181,15 @@ export function buildDailyStatusRows({
     const timestamp = typeof event.timestamp === 'number' ? event.timestamp : Number(event.timestamp) || null
 
     if (PLAN_START_EVENTS.has(type)) row.hasTaskStart = true
+    if (type === 'mood.saved' && !row.moodRecorded) {
+      const payload = event.payload && typeof event.payload === 'object'
+        ? event.payload as Record<string, unknown>
+        : {}
+      const value = parseMoodValue(payload.mood)
+      row.moodRecorded = true
+      row.mood = value
+      row.moodText = row.mood ? `${MOOD_EMOJI[row.mood] ?? '🙂'} ${row.mood}` : '已记录'
+    }
     if (type === 'reflect.opened') row.reflectOpened = true
     if (type === 'reflect.message_sent') row.reflectMessageSent = true
     if (timestamp && (!row.lastActivityAt || timestamp > row.lastActivityAt)) {
@@ -204,17 +222,17 @@ export function buildDailyStatusRows({
     }
 
     return row
-  }).sort((a, b) => a.email.localeCompare(b.email))
+  }).sort((a, b) => a.email.localeCompare(b.email, undefined, { numeric: true, sensitivity: 'base' }))
 }
 
 export function buildDailyStatusMetrics(rows: DailyStatusRow[]) {
-  const moodCount = rows.filter(r => r.mood !== null).length
+  const moodCount = rows.filter(r => r.moodRecorded).length
   const planCount = rows.filter(r => r.hasTaskInput && r.hasTaskStart).length
   const reflectionCount = rows.filter(r => r.reflectOpened && r.reflectMessageSent).length
 
   return [
     { label: '账号总数', value: String(rows.length), detail: '当前看板可见账号', definitionKey: undefined },
-    { label: '已记录情绪', value: `${moodCount}/${rows.length}`, detail: '当天 mood_records 有记录', definitionKey: 'mood' as const },
+    { label: '已记录情绪', value: `${moodCount}/${rows.length}`, detail: 'mood_records 或 mood.saved 有记录', definitionKey: 'mood' as const },
     { label: '已开始计划', value: `${planCount}/${rows.length}`, detail: '有任务且有启动事件', definitionKey: 'planStarted' as const },
     { label: '已开始反思', value: `${reflectionCount}/${rows.length}`, detail: '进入反思且发送消息', definitionKey: 'reflectionStarted' as const },
   ]
