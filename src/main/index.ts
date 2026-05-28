@@ -43,6 +43,35 @@ process.on('unhandledRejection', (reason) => {
   console.error('[FATAL] Unhandled rejection:', reason)
 })
 
+const AUTH_TIMEOUT_MS = 15_000
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(`${label} timed out after ${timeoutMs}ms`))
+    }, timeoutMs)
+
+    promise.then(
+      (value) => {
+        clearTimeout(timer)
+        resolve(value)
+      },
+      (error) => {
+        clearTimeout(timer)
+        reject(error)
+      },
+    )
+  })
+}
+
+function toAuthErrorMessage(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error)
+  if (message.includes('timed out')) {
+    return '登录请求超时，请检查网络或稍后重试'
+  }
+  return message
+}
+
 // ===================== E2E 测试：自定义数据目录 =====================
 
 if (process.env.TEST_USER_DATA_DIR) {
@@ -86,7 +115,11 @@ function setupIPC(): void {
   ipcMain.handle('auth:signUp', async (_, username: string, password: string) => {
     try {
       const email = toEmail(username)
-      const { data, error } = await getSupabase().auth.signUp({ email, password })
+      const { data, error } = await withTimeout(
+        getSupabase().auth.signUp({ email, password }),
+        AUTH_TIMEOUT_MS,
+        'auth sign up',
+      )
       if (error) return { ok: false, error: error.message }
       if (data.user) {
         setCachedUserId(data.user.id)
@@ -103,14 +136,18 @@ function setupIPC(): void {
       }
       return { ok: true }
     } catch (e) {
-      return { ok: false, error: String(e) }
+      return { ok: false, error: toAuthErrorMessage(e) }
     }
   })
 
   ipcMain.handle('auth:signIn', async (_, username: string, password: string) => {
     try {
       const email = toEmail(username)
-      const { data, error } = await getSupabase().auth.signInWithPassword({ email, password })
+      const { data, error } = await withTimeout(
+        getSupabase().auth.signInWithPassword({ email, password }),
+        AUTH_TIMEOUT_MS,
+        'auth sign in',
+      )
       if (error) return { ok: false, error: error.message }
       if (data.user && data.session) {
         setCachedUserId(data.user.id)
@@ -124,7 +161,7 @@ function setupIPC(): void {
       }
       return { ok: true, user: { id: data.user?.id, email: username } }
     } catch (e) {
-      return { ok: false, error: String(e) }
+      return { ok: false, error: toAuthErrorMessage(e) }
     }
   })
 

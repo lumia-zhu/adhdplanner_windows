@@ -17,6 +17,7 @@
     "@dnd-kit/modifiers": "^9.0.0",
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
+    "@mapbox/node-pre-gyp": "^1.0.11",
     "@supabase/supabase-js": "^2.99.3",
     "get-windows": "^9.3.0",
     "html2canvas": "^1.4.1",
@@ -46,6 +47,10 @@
     "directories": {
       "output": "release"
     },
+    "asarUnpack": [
+      "node_modules/get-windows/**/*",
+      "node_modules/@mapbox/node-pre-gyp/**/*"
+    ],
     "files": [
       "out/**/*",
       "resources/**/*"

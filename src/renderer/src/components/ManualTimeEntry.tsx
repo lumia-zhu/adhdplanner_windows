@@ -8,7 +8,7 @@
  * 确认时自动把输入框中的未添加任务一并提交
  */
 
-import { useState, useMemo, useCallback } from 'react'
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react'
 import type { Task } from '../types'
 import type { TrackEvent } from '../services/tracker'
 
@@ -101,6 +101,7 @@ export default function ManualTimeEntry({
 }: ManualTimeEntryProps) {
   const [expanded, setExpanded] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+  const containerRef = useRef<HTMLDivElement>(null)
 
   const tasksWithSession = useMemo(() => {
     const set = new Set<string>()
@@ -122,6 +123,14 @@ export default function ManualTimeEntry({
   const [newTitle, setNewTitle] = useState('')
   const [newStart, setNewStart] = useState(9 * 60)
   const [newEnd, setNewEnd] = useState(10 * 60)
+
+  useEffect(() => {
+    if (!expanded) return
+    const raf = window.requestAnimationFrame(() => {
+      containerRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+    })
+    return () => window.cancelAnimationFrame(raf)
+  }, [expanded])
 
   const handleExpand = useCallback(() => {
     const next = !expanded
@@ -262,7 +271,7 @@ export default function ManualTimeEntry({
   })()
 
   return (
-    <div className="mt-2">
+    <div ref={containerRef} className="mt-2">
       {/* ---- 收起态按钮 ---- */}
       <button
         onClick={handleExpand}
@@ -289,83 +298,84 @@ export default function ManualTimeEntry({
 
       {/* ---- 展开态面板 ---- */}
       {expanded && (
-        <div className="mt-2 bg-white border border-gray-200 rounded-lg overflow-hidden">
-
-          {/* 已有任务区域 */}
-          {existingRows.length > 0 && (
-            <div className="px-3 pt-3 pb-2">
-              <p className="text-xxs text-gray-400 mb-2 text-center">
-                以下任务没有专注记录，勾选并填写时间即可补记
-              </p>
-              <div className="space-y-1">
-                {existingRows.map((row) => (
-                  <RowItem
-                    key={row.id}
-                    row={row}
-                    onToggle={toggleRow}
-                    onUpdateTime={updateRowTime}
-                  />
-                ))}
+        <div className="mt-2 flex max-h-[60vh] flex-col overflow-hidden rounded-lg border border-gray-200 bg-white">
+          <div className="min-h-0 overflow-y-auto overscroll-contain">
+            {/* 已有任务区域 */}
+            {existingRows.length > 0 && (
+              <div className="px-3 pt-3 pb-2">
+                <p className="text-xxs text-gray-400 mb-2 text-center">
+                  以下任务没有专注记录，勾选并填写时间即可补记
+                </p>
+                <div className="space-y-1">
+                  {existingRows.map((row) => (
+                    <RowItem
+                      key={row.id}
+                      row={row}
+                      onToggle={toggleRow}
+                      onUpdateTime={updateRowTime}
+                    />
+                  ))}
+                </div>
               </div>
-            </div>
-          )}
-
-          {/* 新增的任务列表 */}
-          {newRows.length > 0 && (
-            <div className={`px-3 pb-2 ${existingRows.length > 0 ? 'pt-1' : 'pt-3'}`}>
-              <p className="text-xxs text-gray-400 mb-2 text-center">已添加的任务</p>
-              <div className="space-y-1">
-                {newRows.map((row) => (
-                  <RowItem
-                    key={row.id}
-                    row={row}
-                    onToggle={toggleRow}
-                    onUpdateTime={updateRowTime}
-                    onRemove={removeRow}
-                    removable
-                  />
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* 添加新任务区域 */}
-          <div className="border-t border-gray-100 px-3 py-2.5">
-            <p className="text-xxs text-gray-400 mb-2 text-center">
-              做了别的事？在这里添加
-            </p>
-            <div className="flex items-center gap-2">
-              <input
-                value={newTitle}
-                onChange={(e) => setNewTitle(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && addNewRow()}
-                placeholder="任务名称..."
-                className="flex-1 text-xs border border-gray-200 rounded-md px-2.5 py-1.5
-                           focus:outline-none focus:border-blue-300 focus:ring-1 focus:ring-blue-100"
-              />
-              <TimePicker value={newStart} onChange={updateNewStart} />
-              <span className="text-xs text-gray-300">→</span>
-              <TimePicker value={newEnd} onChange={setNewEnd} />
-              <button
-                onClick={addNewRow}
-                disabled={!newTitle.trim()}
-                className="text-xs px-2.5 py-1.5 rounded-md bg-gray-100 text-gray-500
-                           hover:bg-gray-200 disabled:opacity-30 disabled:cursor-not-allowed
-                           transition-colors whitespace-nowrap"
-                title="添加到列表（也可直接点确认补记）"
-              >
-                +
-              </button>
-            </div>
-            {hasPendingInput && (
-              <p className="text-xxs text-blue-400 mt-1 text-center">
-                点击"确认补记"会自动包含此任务
-              </p>
             )}
+
+            {/* 新增的任务列表 */}
+            {newRows.length > 0 && (
+              <div className={`px-3 pb-2 ${existingRows.length > 0 ? 'pt-1' : 'pt-3'}`}>
+                <p className="text-xxs text-gray-400 mb-2 text-center">已添加的任务</p>
+                <div className="space-y-1">
+                  {newRows.map((row) => (
+                    <RowItem
+                      key={row.id}
+                      row={row}
+                      onToggle={toggleRow}
+                      onUpdateTime={updateRowTime}
+                      onRemove={removeRow}
+                      removable
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* 添加新任务区域 */}
+            <div className="border-t border-gray-100 px-3 py-2.5">
+              <p className="text-xxs text-gray-400 mb-2 text-center">
+                做了别的事？在这里添加
+              </p>
+              <div className="flex items-center gap-2">
+                <input
+                  value={newTitle}
+                  onChange={(e) => setNewTitle(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && addNewRow()}
+                  placeholder="任务名称..."
+                  className="flex-1 text-xs border border-gray-200 rounded-md px-2.5 py-1.5
+                             focus:outline-none focus:border-blue-300 focus:ring-1 focus:ring-blue-100"
+                />
+                <TimePicker value={newStart} onChange={updateNewStart} />
+                <span className="text-xs text-gray-300">→</span>
+                <TimePicker value={newEnd} onChange={setNewEnd} />
+                <button
+                  onClick={addNewRow}
+                  disabled={!newTitle.trim()}
+                  className="text-xs px-2.5 py-1.5 rounded-md bg-gray-100 text-gray-500
+                             hover:bg-gray-200 disabled:opacity-30 disabled:cursor-not-allowed
+                             transition-colors whitespace-nowrap"
+                  title="添加到列表（也可直接点确认补记）"
+                >
+                  +
+                </button>
+              </div>
+              {hasPendingInput && (
+                <p className="text-xxs text-blue-400 mt-1 text-center">
+                  点击"确认补记"会自动包含此任务
+                </p>
+              )}
+            </div>
           </div>
 
           {/* 底部操作栏 */}
-          <div className="flex items-center justify-between border-t border-gray-100 px-3 py-2 bg-gray-50/50">
+          <div className="flex flex-shrink-0 items-center justify-between border-t border-gray-100 bg-gray-50/95 px-3 py-2">
             <span className="text-xxs text-gray-400">{statusText}</span>
             <button
               onClick={handleConfirm}

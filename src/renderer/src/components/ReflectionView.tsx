@@ -89,7 +89,6 @@ const MIN_CHAT_WIDTH = 320
 const MAX_CHAT_RATIO = 0.65
 /** 数据区最小宽度 */
 const MIN_DATA_WIDTH = 300
-const ANALYSIS_WINDOW_STORAGE_KEY = 'reflection.analysisWindow'
 
 function getReflectionFullscreenSize(): { width: number; height: number } {
   const screenWidth = window.screen?.availWidth || REFLECTION_FULLSCREEN_MAX_WIDTH
@@ -207,23 +206,6 @@ const WEEKDAYS = ['周日', '周一', '周二', '周三', '周四', '周五', '�
 function formatDateFriendly(dateStr: string): string {
   const d = new Date(dateStr + 'T00:00:00')
   return `${d.getMonth() + 1}月${d.getDate()}日 ${WEEKDAYS[d.getDay()]}`
-}
-
-function loadStoredAnalysisWindow(): { startHour: number; endHour: number } {
-  try {
-    const raw = localStorage.getItem(ANALYSIS_WINDOW_STORAGE_KEY)
-    if (!raw) return { startHour: 0, endHour: 24 }
-    const parsed = JSON.parse(raw) as { startHour?: unknown; endHour?: unknown }
-    const startHour = Number(parsed.startHour)
-    let endHour = Number(parsed.endHour)
-    if (!Number.isInteger(startHour) || !Number.isInteger(endHour)) return { startHour: 0, endHour: 24 }
-    if (startHour < 0 || startHour > 23) return { startHour: 0, endHour: 24 }
-    if (endHour <= startHour) endHour += 24
-    if (endHour <= startHour || endHour > 36) return { startHour: 0, endHour: 24 }
-    return { startHour, endHour }
-  } catch {
-    return { startHour: 0, endHour: 24 }
-  }
 }
 
 const APP_USAGE_SAMPLE_INTERVAL_SEC = 2
@@ -629,10 +611,15 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
   const today = getToday()
   const [selectedDate, setSelectedDate] = useState(today)
   const isToday = selectedDate === today
-  const [{ startHour: analysisStartHour, endHour: analysisEndHour }, setAnalysisWindowHours] = useState(loadStoredAnalysisWindow)
+  const [{ startHour: analysisStartHour, endHour: analysisEndHour }, setAnalysisWindowHours] = useState({ startHour: 0, endHour: 24 })
+  const [analysisWindowChatRun, setAnalysisWindowChatRun] = useState(0)
   const analysisWindow = useMemo(
     () => buildAnalysisWindow(selectedDate, analysisStartHour, analysisEndHour),
     [analysisEndHour, analysisStartHour, selectedDate],
+  )
+  const dailyChatStorageKey = useMemo(
+    () => `${selectedDate}-${analysisWindow.storageKey}-run${analysisWindowChatRun}`,
+    [analysisWindow.storageKey, analysisWindowChatRun, selectedDate],
   )
   const [displayDate, setDisplayDate] = useState(today)
   const [displayEvents, setDisplayEvents] = useState<TrackEvent[]>([])
@@ -698,10 +685,8 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
       const updated = draft.endHour > draft.startHour
         ? draft
         : { startHour: draft.startHour, endHour: Math.min(36, draft.startHour + 1) }
-      try {
-        localStorage.setItem(ANALYSIS_WINDOW_STORAGE_KEY, JSON.stringify(updated))
-      } catch {
-        // localStorage 不可用时，本次会话内仍保留设置。
+      if (updated.startHour !== current.startHour || updated.endHour !== current.endHour) {
+        setAnalysisWindowChatRun(run => run + 1)
       }
       return updated
     })
@@ -2836,14 +2821,14 @@ export default function ReflectionView({ tasks: propTasks, aiConfig, userProfile
                 // 暂时不传 onReflectionStyleChange，恢复切换时可放开上方保留的 handler。
                 <ReflectionChat
                   ref={chatRef}
-                  key={viewMode === 'week' ? `week-${weekEndDate}` : `day-${selectedDate}-${analysisWindow.storageKey}`}
+                  key={viewMode === 'week' ? `week-${weekEndDate}` : `day-${dailyChatStorageKey}`}
                   systemPrompt={activeSystemPrompt}
                   aiConfig={aiConfig}
                   mode={viewMode === 'week' ? 'weekly' : 'daily'}
                   reflectionStyle={reflectionStyle}
                   screenshotBase64={null}
                   selectedDate={viewMode === 'week' ? weekEndDate : selectedDate}
-                  storageKey={viewMode === 'week' ? `week-${weekEndDate}` : `${selectedDate}-${analysisWindow.storageKey}`}
+                  storageKey={viewMode === 'week' ? `week-${weekEndDate}` : dailyChatStorageKey}
                   visualTargets={viewMode === 'week' ? weekVisualTargets : visualTargets}
                   memoryMatchContext={activeMemoryMatchContext}
                   memoryContext={memoryContext}
