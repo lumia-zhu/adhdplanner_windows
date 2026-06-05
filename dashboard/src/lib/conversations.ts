@@ -37,6 +37,32 @@ function asMetadata(value: unknown): Record<string, unknown> | undefined {
   return value as Record<string, unknown>
 }
 
+function asTimestamp(value: unknown): number {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string') {
+    const numeric = Number(value)
+    if (Number.isFinite(numeric)) return numeric
+
+    const parsed = Date.parse(value)
+    if (Number.isFinite(parsed)) return parsed
+  }
+  return 0
+}
+
+function getSortDate(conversation: DashboardConversation): string {
+  return conversation.date || ''
+}
+
+export function compareConversationsDesc(a: DashboardConversation, b: DashboardConversation): number {
+  const dateCompare = getSortDate(b).localeCompare(getSortDate(a))
+  if (dateCompare !== 0) return dateCompare
+
+  const timeCompare = b.startedAt - a.startedAt
+  if (timeCompare !== 0) return timeCompare
+
+  return b.id.localeCompare(a.id)
+}
+
 export function normalizeAIConversations(rows: Array<Record<string, unknown>>): DashboardConversation[] {
   return rows
     .map((row): DashboardConversation | null => {
@@ -49,7 +75,7 @@ export function normalizeAIConversations(rows: Array<Record<string, unknown>>): 
         type,
         date: String(row.logical_date ?? row.date ?? ''),
         mode: String(row.mode ?? type),
-        startedAt: Number(row.started_at ?? row.saved_at ?? 0),
+        startedAt: asTimestamp(row.started_at ?? row.saved_at),
         messages: asMessages(row.messages),
         taskTitle: typeof row.task_title === 'string' ? row.task_title : undefined,
         sessionId: typeof row.session_id === 'string' ? row.session_id : undefined,
@@ -83,7 +109,7 @@ export function normalizeLegacyReflectionSessions(
         type: 'reflection',
         date: String(row.date ?? ''),
         mode: String(row.mode ?? 'daily'),
-        startedAt: Number(row.started_at ?? row.saved_at ?? 0),
+        startedAt: asTimestamp(row.started_at ?? row.saved_at),
         messages: asMessages(row.messages),
         source: 'reflection_sessions',
       }
@@ -97,5 +123,5 @@ export function normalizeConversations(
 ): DashboardConversation[] {
   const aiConversations = normalizeAIConversations(aiRows)
   const legacyReflections = normalizeLegacyReflectionSessions(legacyReflectionRows, aiConversations)
-  return [...aiConversations, ...legacyReflections].sort((a, b) => b.startedAt - a.startedAt)
+  return [...aiConversations, ...legacyReflections].sort(compareConversationsDesc)
 }

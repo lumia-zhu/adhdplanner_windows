@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import ChatViewer from './ChatViewer'
 import { buildCSVFilename, exportCSV } from '@/lib/export-csv'
-import type { ConversationType, DashboardConversation } from '@/lib/conversations'
+import { compareConversationsDesc, type ConversationType, type DashboardConversation } from '@/lib/conversations'
 
 interface Props {
   conversations: DashboardConversation[]
@@ -38,10 +38,30 @@ function getStuckSummary(conversation: DashboardConversation): string {
   return reason || microTask || '未记录卡顿原因'
 }
 
+function conversationsToCSVRows(conversations: DashboardConversation[]): Record<string, unknown>[] {
+  return conversations.flatMap(conversation =>
+    (conversation.messages ?? []).map((message, index) => ({
+      conversation_id: conversation.id,
+      conversation_type: conversation.type,
+      conversation_label: TYPE_META[conversation.type].label,
+      date: conversation.date,
+      mode: conversation.mode,
+      mode_label: modeLabel(conversation),
+      task_title: conversation.taskTitle ?? '',
+      session_id: conversation.sessionId ?? '',
+      source: conversation.source,
+      msg_index: index,
+      role: message.role,
+      content: message.content,
+      ts: message.ts ?? '',
+    }))
+  )
+}
+
 export default function ChatsTab({ conversations, exportUserLabel = 'all-users' }: Props) {
   const [selectedKey, setSelectedKey] = useState<string | null>(null)
   const [activeType, setActiveType] = useState<ConversationType>('reflection')
-  const sorted = [...conversations].sort((a, b) => b.startedAt - a.startedAt)
+  const sorted = [...conversations].sort(compareConversationsDesc)
   const counts = {
     reflection: sorted.filter(conversation => conversation.type === 'reflection').length,
     stuck: sorted.filter(conversation => conversation.type === 'stuck').length,
@@ -50,21 +70,13 @@ export default function ChatsTab({ conversations, exportUserLabel = 'all-users' 
   const selected = visible.find(conversation => conversation.id === selectedKey)
 
   const handleExport = () => {
-    const rows = visible.flatMap(conversation =>
-      (conversation.messages ?? []).map((m, i) => ({
-        conversation_id: conversation.id,
-        conversation_type: conversation.type,
-        date: conversation.date,
-        mode: conversation.mode,
-        task_title: conversation.taskTitle ?? '',
-        session_id: conversation.sessionId ?? '',
-        msg_index: i,
-        role: m.role,
-        content: m.content,
-        ts: m.ts ?? '',
-      }))
-    )
+    const rows = conversationsToCSVRows(visible)
     exportCSV(rows, buildCSVFilename(exportUserLabel, `${activeType}_chats`))
+  }
+
+  const handleExportAll = () => {
+    const rows = conversationsToCSVRows(sorted)
+    exportCSV(rows, buildCSVFilename(exportUserLabel, 'all_chats'))
   }
 
   const handleSwitchType = (type: ConversationType) => {
@@ -98,6 +110,19 @@ export default function ChatsTab({ conversations, exportUserLabel = 'all-users' 
       <div className="grid grid-cols-3 gap-4" style={{ minHeight: 400 }}>
         {/* 左侧：对话列表 */}
         <div className="col-span-1 border border-gray-200 rounded-lg overflow-y-auto max-h-[calc(100vh-320px)]">
+          <div className="sticky top-0 z-10 bg-white border-b border-gray-100 px-3 py-2">
+            <button
+              onClick={handleExportAll}
+              disabled={sorted.length === 0}
+              className={`w-full rounded-md border px-3 py-1.5 text-xs font-medium transition-colors ${
+                sorted.length === 0
+                  ? 'cursor-not-allowed border-gray-100 bg-gray-50 text-gray-300'
+                  : 'border-blue-100 bg-blue-50 text-blue-700 hover:bg-blue-100'
+              }`}
+            >
+              一键导出所有对话 CSV
+            </button>
+          </div>
           {visible.length === 0 && (
             <div className="text-center py-8 text-gray-400">{TYPE_META[activeType].emptyText}</div>
           )}
